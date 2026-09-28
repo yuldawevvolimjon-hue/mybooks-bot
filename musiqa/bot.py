@@ -290,8 +290,9 @@ def ydl_sozlama(papka, **qoshimcha):
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "socket_timeout": 30,
-        "retries": 3,
+        "socket_timeout": 15,           # sekin javobni uzoq kutmaymiz
+        "retries": 2,
+        "extractor_retries": 1,
         "concurrent_fragment_downloads": 8,     # HLS/DASH bo'laklarini parallel yuklash
         "http_chunk_size": 10 * 1024 * 1024,
         "outtmpl": os.path.join(papka, "%(title).80B [%(id)s].%(ext)s"),
@@ -482,7 +483,9 @@ def fayllar(papka):
 
 # YouTube server (GitHub) manzillaridan kelgan so'rovlarni ba'zan «bot» deb to'sadi.
 # Unda boshqa «ilova» nomidan kirib ko'ramiz; ishlagani eslab qolinadi.
-YT_MIJOZLAR = [None, ["tv_simply"], ["web_embedded"], ["android_vr"], ["mweb"], ["tv"]]
+YT_MIJOZLAR = [None, ["tv_simply"], ["android_vr"], ["web_embedded"]]
+YT_TOSIQ_VAQT = 15 * 60    # hamma mijoz to'silsa, shuncha vaqt faqat bittasini sinaymiz
+_yt_tosiq = [0.0]
 _yaxshi_mijoz = [None]
 _nomlar = {}               # YouTube ID → (nomi, davomiyligi) — qidiruv natijalaridan
 
@@ -503,17 +506,21 @@ def yt_bilan(url, ish):
     if not YT_URL_RE.search(url):
         return ish({})
     tartib = _yaxshi_mijoz[:1] + [m for m in YT_MIJOZLAR if m != _yaxshi_mijoz[0]]
+    if time.time() < _yt_tosiq[0]:
+        tartib = tartib[:1]                   # yaqinda hammasi to'silgan — vaqt yo'qotmaymiz
     oxirgi = None
     for mijoz in tartib:
         try:
             natija = ish(mijoz_sozlama(mijoz))
             _yaxshi_mijoz[0] = mijoz
+            _yt_tosiq[0] = 0.0
             return natija
         except Exception as e:
             if not yt_tosildi(e):
                 raise
             print("youtube to'sdi (%s): %s" % (mijoz or "odatiy", str(e)[:150]), file=sys.stderr)
             oxirgi = e
+    _yt_tosiq[0] = time.time() + YT_TOSIQ_VAQT
     raise oxirgi
 
 
@@ -560,6 +567,16 @@ def audio_yukla(chat, url, db, reply_to=None):
     m = YT_URL_RE.search(url)
     if m and kesh_audio(chat, db, "audio:Youtube:" + m.group(1), reply_to):
         return None
+    holat = send(chat, "🎵 <b>MP3 tayyorlanmoqda...</b>\n⏳ Bir necha soniya", reply_to=reply_to)
+    hid = holat.get("result", {}).get("message_id")
+    try:
+        return _audio_manba(chat, url, db, reply_to, m)
+    finally:
+        if hid:
+            call("deleteMessage", chat_id=chat, message_id=hid)
+
+
+def _audio_manba(chat, url, db, reply_to, m):
     try:
         return yt_bilan(url, lambda q: _audio(chat, url, db, reply_to, q))
     except Exception as e:
@@ -787,8 +804,10 @@ def tg_fayl(msg):
 # ---------------------------------------------------------------- ishlov
 def ish(band, chat, fn, *args):
     """Yuklashni alohida oqimda bajaradi; bitta foydalanuvchi — bitta yuklash."""
+    boshi = time.time()
     try:
         fn(chat, *args)
+        print("tayyor: %s %.1f s" % (fn.__name__, time.time() - boshi))
     except Exception as e:
         print("yuklash xatosi:", fn.__name__, repr(e)[:500], file=sys.stderr)
         reply = args[2] if len(args) > 2 else None
@@ -851,6 +870,7 @@ _kanal_nomi = {}           # "@kanal" → kanal sarlavhasi (getChat)
 _obuna_ok = {}             # user_id → oxirgi muvaffaqiyatli tekshiruv vaqti
 _kutayotgan = {}           # user_id → obunadan oldin yozgan so'rovi (keyin bajariladi)
 _ogohlantirildi = set()
+_tekshirilmaydi = {}       # "@kanal" → shu vaqtgacha tekshirilmaydi (bot admin emas)
 
 
 def kanal_nomlari():
@@ -869,8 +889,11 @@ def obuna_emas(user_id):
         return []
     yoq = []
     for k in KANALLAR:
+        if time.time() < _tekshirilmaydi.get(k, 0):
+            continue                          # bot kanalda admin emas — har safar so'ramaymiz
         r = call("getChatMember", chat_id=k, user_id=user_id)
         if not r.get("ok"):
+            _tekshirilmaydi[k] = time.time() + OBUNA_KESH
             # Bot kanalda admin emas — tekshira olmaymiz, foydalanuvchini to'smaymiz.
             if k not in _ogohlantirildi:
                 _ogohlantirildi.add(k)
@@ -1040,6 +1063,9 @@ def process(updates, db, pool):
     for upd in updates:
         last = upd["update_id"]
         try:                                      # bitta xato botni to'xtatmasin
+            m = upd.get("message") or {}
+            print("so'rov:", (m.get("text") or (upd.get("callback_query") or {}).get("data")
+                              or "-")[:40].replace("\n", " "))
             if upd.get("message"):
                 handle(upd["message"], db, pool)
             elif upd.get("callback_query"):
