@@ -958,6 +958,14 @@ def obuna_tekshir(cq, db, pool):
     return salom(chat, cq["from"])
 
 
+def foydalanuvchilar_soni():
+    """Botga yozgan odamlar soni (guruhlar hisobga kirmaydi)."""
+    if _DB is None:
+        return 0
+    with _db_lock:
+        return sum(1 for k in _DB["users"] if not k.startswith("-"))
+
+
 def salom(chat, frm):
     ism = escape(frm.get("first_name") or "do'stim")
     tugmalar = [[("📖 Qanday ishlaydi?", "h")]]
@@ -965,6 +973,10 @@ def salom(chat, frm):
         tugmalar.append([("➕ Guruhga qo'shish",
                           "https://t.me/%s?startgroup=true" % BOT_USERNAME)])
     matn = SALOM % (ism, escape(BOT_NOMI or "musiqa boti"))
+    soni = foydalanuvchilar_soni()
+    if soni:
+        matn = matn.replace("✨ Qani, boshladik", "👥 Botdan <b>%s</b> kishi foydalanmoqda\n\n"
+                            "✨ Qani, boshladik" % "{:,}".format(soni).replace(",", " "), 1)
     kb = inline(tugmalar)
     return rasm_bilan(chat, SALOM_RASM, "salom_rasm", matn, kb)
 
