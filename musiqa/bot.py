@@ -85,7 +85,8 @@ _DB = None                 # main() da o'rnatiladi — rasm file_id keshi uchun
 YANGI_NUSXA = 90           # shundan keyin «Conflict» kelsa — yangi nusxa bor, eskisi chiqadi
 OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
 
-NATIJA_SONI = 10           # qidiruvda nechta qo'shiq ko'rsatiladi
+NATIJA_SONI = 10           # bitta sahifada nechta qo'shiq
+JAMI_NATIJA = 30           # qidiruvda jami nechta qo'shiq (3 sahifa)
 ENG_UZUN = 20 * 60         # qidiruvda 20 daqiqadan uzun videolar (mikslar) chiqmasin
 ALBOM = 10                 # bitta havoladan ko'pi bilan nechta fayl (Instagram karusel)
 
@@ -345,7 +346,7 @@ def qidir(soz):
     return natija
 
 
-UZBEKCHA_ULUSH = 7          # 10 ta natijadan nechtasi o'zbekcha bo'lsin (70%)
+UZBEKCHA_ULUSH = JAMI_NATIJA * 7 // 10   # natijalarning 70% i o'zbekcha
 _UZ_HARF = re.compile(r"[ўқғҳЎҚҒҲ]|\b(?:o|g)['‘’ʻʼ`]", re.I)
 _UZ_SOZ = re.compile(
     r"\b(?:uzbek\w*|o['‘’ʻʼ`]?zbek\w*|ozbek\w*|uzb|qo['‘’ʻʼ`]?shi\w*|yangi|klip|jonli|ijro\w*|"
@@ -413,10 +414,10 @@ def _qidir(soz):
     asl qidiruv natijalari bilan to'ldiriladi. Ruscha so'rovga tegmaymiz.
     """
     if _RUS_HARF.search(soz) or re.search(r"\buzbek|o['‘’ʻʼ`]?zbek", soz, re.I):
-        return _yt_qidir(soz, NATIJA_SONI + 5)[:NATIJA_SONI]
+        return _yt_qidir(soz, JAMI_NATIJA + 5)[:JAMI_NATIJA]
     with ThreadPoolExecutor(max_workers=2) as p:
-        asl_f = p.submit(_yt_qidir, soz, NATIJA_SONI + 5)
-        uz_f = p.submit(_yt_qidir, soz + " uzbek", NATIJA_SONI + 5)
+        asl_f = p.submit(_yt_qidir, soz, JAMI_NATIJA + 5)
+        uz_f = p.submit(_yt_qidir, soz + " uzbek", JAMI_NATIJA + 5)
         asl, uz = asl_f.result(), uz_f.result()
     sozlar = [w for w in re.findall(r"\w{3,}", soz.lower())]
 
@@ -428,7 +429,7 @@ def _qidir(soz):
 
     def qosh(r):
         k = r["id"] or r["url"]
-        if k not in bor and len(natija) < NATIJA_SONI:
+        if k not in bor and len(natija) < JAMI_NATIJA:
             bor.add(k)
             natija.append(r)
 
@@ -454,22 +455,40 @@ def qidiruv_xabar(chat, soz, reply_to):
                 "💡 Nomini boshqacha yozib ko'ring — masalan, ijrochi va qo'shiq nomini "
                 "birga yozing." % escape(soz))
         return edit(chat, mid, matn) if mid else send(chat, matn)
-    qatorlar = ["🔎 <b>%s</b>\n🎶 Topildi: %d ta qo'shiq\n" % (escape(soz), len(natija))]
+    k = kalit_saqla({"soz": soz, "natija": natija})
+    matn, kb = sahifa(k, 0)
+    return edit(chat, mid, matn, kb) if mid else send(chat, matn, kb)
+
+
+def sahifa(k, n):
+    """Qidiruv natijalarining n-sahifasi (10 tadan): matn va tugmalar."""
+    q = _xotira[k]
+    soz, natija = q["soz"], q["natija"]
+    jami = (len(natija) + NATIJA_SONI - 1) // NATIJA_SONI
+    n = max(0, min(n, jami - 1))
+    bosh = n * NATIJA_SONI
+    qatorlar = ["🔎 <b>%s</b>\n🎶 Topildi: %d ta qo'shiq%s\n" % (
+        escape(soz), len(natija), (" · %d-sahifa" % (n + 1)) if jami > 1 else "")]
     tugmalar = []
-    for i, r in enumerate(natija, 1):
+    for i, r in enumerate(natija[bosh:bosh + NATIJA_SONI]):
         qatorlar.append("%s %s%s" % (
-            RAQAM[i - 1], escape(r["nom"][:80]),
+            RAQAM[i], escape(r["nom"][:80]),
             (" <i>· %s</i>" % vaqt(r["vaqt"])) if r["vaqt"] else ""))
         if r["manba"] == "youtube" and r["id"] and YT_ID_RE.match(r["id"]):
             data = "y:" + r["id"]                 # qayta ishga tushsa ham ishlaydi
             _nomlar[r["id"]] = (r["nom"], r["vaqt"])
         else:
             data = "u:" + kalit_saqla(r["url"])
-        tugmalar.append((str(i), data))
+        tugmalar.append((str(i + 1), data))
     qatorlar.append("\n👇 <b>Kerakli raqamni bosing</b> — MP3 qilib yuboraman")
-    kb = inline([q for q in (tugmalar[:5], tugmalar[5:10]) if q] + [[("❌ Yopish", "x")]])
-    matn = "\n".join(qatorlar)
-    return edit(chat, mid, matn, kb) if mid else send(chat, matn, kb)
+    rows = [q for q in (tugmalar[:5], tugmalar[5:10]) if q]
+    if jami > 1:                                  # ⬅️ 2/3 ➡️
+        rows.append([("⬅️" if n > 0 else "·", "p:%s:%d" % (k, n - 1) if n > 0 else "-"),
+                     ("%d/%d" % (n + 1, jami), "-"),
+                     ("➡️" if n < jami - 1 else "·",
+                      "p:%s:%d" % (k, n + 1) if n < jami - 1 else "-")])
+    rows.append([("❌ Yopish", "x")])
+    return "\n".join(qatorlar), inline(rows)
 
 
 # ---------------------------------------------------------------- yuklash
@@ -1041,6 +1060,15 @@ def callback(cq, db, pool):
     if tur == "x":                                  # ❌ Yopish
         call("answerCallbackQuery", callback_query_id=cq["id"])
         return call("deleteMessage", chat_id=chat, message_id=cq["message"]["message_id"])
+    if tur == "-":                                  # bo'sh tugma (sahifa raqami)
+        return call("answerCallbackQuery", callback_query_id=cq["id"])
+    if tur == "p":                                  # ⬅️ ➡️ sahifalar
+        k, _, n = qiymat.rpartition(":")
+        call("answerCallbackQuery", callback_query_id=cq["id"])
+        if k not in _xotira:
+            return send(chat, "Bu ro'yxat eskirgan — qo'shiq nomini qayta yozing 🙂")
+        matn, kb = sahifa(k, int(n))
+        return edit(chat, cq["message"]["message_id"], matn, kb)
     if tur == "h":                                  # 📖 Qanday ishlaydi?
         call("answerCallbackQuery", callback_query_id=cq["id"])
         return send(chat, YORDAM)
