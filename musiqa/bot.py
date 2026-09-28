@@ -794,8 +794,14 @@ def havola_yukla(chat, url, db, reply_to=None):
                         reply_to=reply_to)
 
         natija = None
-        for i, f in enumerate(topildi[:ALBOM]):
-            oxirgi = i == len(topildi[:ALBOM]) - 1
+        topildi = topildi[:ALBOM]
+        albom = [f for f in topildi if os.path.splitext(f)[1].lower() not in AUDIO]
+        if len(albom) >= 2:                       # Instagram karusel — bitta albom bo'lib
+            natija = albom_yubor(chat, albom, info, reply_to)
+            if natija.get("ok"):
+                topildi = [f for f in topildi if f not in albom]
+        for i, f in enumerate(topildi):
+            oxirgi = i == len(topildi) - 1
             natija = fayl_yubor(chat, f, info, url if oxirgi else None, reply_to if i == 0 else None)
         if yagona and kalit and natija and natija.get("ok") and len(topildi) == 1:
             saqla = tg_fayl(natija.get("result") or {})
@@ -812,6 +818,24 @@ def audio_tugma(url, maydon):
     if maydon not in ("video", "animation"):
         return None
     return inline([[("🎵 Musiqasini yuklash (MP3)", "a:" + kalit_saqla(url))]])
+
+
+def albom_yubor(chat, fayllar_, info, reply_to):
+    """Bir nechta rasm/video — Telegram albomi (sendMediaGroup), izoh birinchisida."""
+    call("sendChatAction", chat_id=chat, action="upload_photo")
+    media, files = [], {}
+    for i, yol in enumerate(fayllar_):
+        tur = "photo" if os.path.splitext(yol)[1].lower() in RASM else "video"
+        m = {"type": tur, "media": "attach://f%d" % i}
+        if tur == "video":
+            m["supports_streaming"] = True
+        if i == 0:
+            m.update(caption=imzo(info.get("title"), "📸"), parse_mode="HTML")
+        media.append(m)
+        files["f%d" % i] = yol
+    return upload("sendMediaGroup", {"chat_id": chat, "media": media,
+                                     "reply_to_message_id": reply_to,
+                                     "allow_sending_without_reply": "true"}, files)
 
 
 def fayl_yubor(chat, yol, info, url, reply_to):
