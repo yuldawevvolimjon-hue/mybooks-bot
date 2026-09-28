@@ -72,6 +72,8 @@ KANALLAR = [x.strip() for x in (os.environ.get("KANALLAR")
             or "@AI_VIDEOLA_VARASIMLA,@music_uz0007").split(",") if x.strip()]
 TIKTOK = os.environ.get("TIKTOK", "https://www.tiktok.com/@yuldawev.olimjon0007").strip()
 INSTAGRAM = os.environ.get("INSTAGRAM", "https://www.instagram.com/____0007y.o").strip()
+SALOM_RASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "tavsif.png")
+_DB = None                 # main() da o'rnatiladi — rasm file_id keshi uchun
 OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
 
 NATIJA_SONI = 10           # qidiruvda nechta qo'shiq ko'rsatiladi
@@ -793,7 +795,28 @@ def salom(chat, frm):
     if BOT_USERNAME:
         tugmalar.append([("➕ Guruhga qo'shish",
                           "https://t.me/%s?startgroup=true" % BOT_USERNAME)])
-    return send(chat, SALOM % (ism, escape(BOT_NOMI or "musiqa boti")), inline(tugmalar))
+    matn = SALOM % (ism, escape(BOT_NOMI or "musiqa boti"))
+    kb = inline(tugmalar)
+    return rasm_bilan(chat, SALOM_RASM, "salom_rasm", matn, kb)
+
+
+def rasm_bilan(chat, yol, kesh_kalit, matn, kb=None):
+    """Rasm + matn: rasm bir marta yuklanadi, keyin Telegram file_id si ishlatiladi."""
+    db = _DB
+    fid = kesh_ol(db, kesh_kalit) if db is not None else None
+    if fid:
+        r = call("sendPhoto", chat_id=chat, photo=fid, caption=matn, parse_mode="HTML",
+                 reply_markup=kb)
+        if r.get("ok"):
+            return r
+    if os.path.exists(yol):
+        r = upload("sendPhoto", {"chat_id": chat, "caption": matn, "parse_mode": "HTML",
+                                 "reply_markup": kb}, {"photo": yol})
+        if r.get("ok"):
+            if db is not None:
+                kesh_yoz(db, kesh_kalit, r["result"]["photo"][-1]["file_id"])
+            return r
+    return send(chat, matn, kb)
 
 
 def qidiruv_ish(chat, soz, db, reply_to):
@@ -876,7 +899,8 @@ def main(argv):
         sys.exit("yt-dlp o'rnatilmagan: pip install -U 'yt-dlp[default]'")
     if not shutil.which("ffmpeg"):
         print("ogohlantirish: ffmpeg topilmadi — MP3 ga aylantirib bo'lmaydi.", file=sys.stderr)
-    db = load()
+    global _DB
+    db = _DB = load()
 
     if "--setup" in argv:
         sys.exit(0 if setup() else 1)
