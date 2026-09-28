@@ -33,7 +33,8 @@ Do'kon egasi (ADMIN_IDS) uchun buyruqlar:
 
 Rejimlar:
     python3 bot.py              # doimiy (server bo'lsa): long polling
-    python3 bot.py --once       # GitHub Actions: xabarlar + eslatmalar
+    python3 bot.py --once       # bir martalik: kelgan xabarlar + eslatmalar
+    python3 bot.py --uzluksiz 50  # GitHub Actions: 50 daqiqa darhol javob beradi
     python3 bot.py --setup      # buyruqlar va tavsif
 
 Muhit o'zgaruvchilari:
@@ -1189,6 +1190,34 @@ def main(argv):
     if "--setup" in argv:
         sys.exit(0 if setup() else 1)
 
+    if "--uzluksiz" in argv:
+        # GitHub Actions: belgilangan daqiqa davomida long polling — xabarlarga
+        # darhol javob beradi. Jadval navbatdagi ishga tushishni tayyorlab qo'yadi.
+        i = argv.index("--uzluksiz")
+        daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
+        tugash = time.time() + daqiqa * 60
+        offset, soni = None, 0
+        while True:
+            qoldi = int(tugash - time.time())
+            if qoldi <= 0:
+                break
+            r = call("getUpdates", offset=offset, timeout=max(1, min(50, qoldi)),
+                     allowed_updates=["message", "callback_query"])
+            natija = r.get("result", [])
+            last = process(natija, db)
+            if last is not None:
+                offset = last + 1
+                soni += len(natija)
+            elif not r.get("ok"):
+                time.sleep(5)                    # tarmoq xatosi — biroz kutamiz
+            eslatmalar(db)
+            save(db)
+        if offset is not None:
+            call("getUpdates", offset=offset, timeout=0)   # «shulargacha ko'rdim»
+        print("qayta ishlandi: %d ta, mijozlar: %d" % (
+            soni, sum(1 for u in db["users"].values() if u.get("royxat"))))
+        return
+
     if "--once" in argv:
         r = call("getUpdates", timeout=0, allowed_updates=["message", "callback_query"])
         last = process(r.get("result", []), db)
@@ -1215,4 +1244,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-  

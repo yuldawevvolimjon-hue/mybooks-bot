@@ -1,7 +1,10 @@
 # Kitob olami — Telegram bot GitHub Actions'da ishlaydi (server kerak emas).
 #
-# Har 5 daqiqada: botga kelgan xabarlarga javob beradi va juma aksiyasi
-# eslatmalarini tekshiradi (Toshkent vaqti bilan soat 10 dan keyin yuboradi).
+# Har ishga tushish 50 daqiqa uzluksiz ishlaydi — xabarlarga darhol javob
+# beradi va juma aksiyasi eslatmalarini tekshiradi (Toshkent vaqti bilan soat
+# 10 dan keyin yuboradi). Jadval har 10 daqiqada navbatdagi ishga tushishni
+# tayyorlab qo'yadi: oldingisi tugashi bilan keyingisi boshlanadi. Navbatda
+# kutib qolgan eski ishga tushishlar «cancelled» bo'ladi — bu normal holat.
 # "Run workflow" → rejim "sozlash": buyruqlar va tavsifni bir marta o'rnatadi.
 #
 # Kerak: Settings → Secrets and variables → Actions →
@@ -16,7 +19,7 @@ name: Kitob olami bot
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       rejim:
@@ -35,7 +38,7 @@ permissions:
 jobs:
   bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       BOT_TOKEN: ${{ secrets.KITOB_OLAMI_BOT_TOKEN }}
       ADMIN_IDS: ${{ vars.KITOB_OLAMI_ADMIN_IDS }}
@@ -57,7 +60,7 @@ jobs:
           mkdir -p state
           case "$REJIM" in
             sozlash) python3 kitob/bot.py --setup ;;
-            *)       python3 kitob/bot.py --once ;;
+            *)       python3 kitob/bot.py --uzluksiz 50 ;;
           esac
 
       - name: Mijozlar va aksiyalarni saqlash
