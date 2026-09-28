@@ -49,6 +49,7 @@ Muhit o'zgaruvchilari:
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -71,6 +72,11 @@ ESLATMA_SOAT = int(os.environ.get("ESLATMA_SOAT") or 10)
 TOLOV_KARTA = os.environ.get("TOLOV_KARTA", "").strip()
 APP_URL = os.environ.get("APP_URL", "").strip()
 APP_URL_ASL = APP_URL        # sahifa hali ochilmasa ham, keyinroq qayta tekshiramiz
+try:                         # sahifa versiyasi: yangilanganda Telegram eski nusxani ochmasin
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "index.html"), "rb") as _f:
+        APP_VERSIYA = hashlib.md5(_f.read()).hexdigest()[:8]
+except OSError:
+    APP_VERSIYA = ""
 BOT_USERNAME = ""           # getMe dan olinadi — Mini App bot chatiga havola yasaydi
 MENYU_MATN = "📚 Kitoblar"  # pastki chap burchakdagi Mini App tugmasi
 API = "https://api.telegram.org/bot%s/" % TOKEN
@@ -209,7 +215,8 @@ def menyu(chat, db):
 # ochiladi. Telefon raqamlari va ismlar ro'yxati bu yerga kirmaydi.
 def app_havola(data):
     xom = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return APP_URL + "#d=" + base64.urlsafe_b64encode(xom).decode().rstrip("=")
+    return (APP_URL + ("?v=" + APP_VERSIYA if APP_VERSIYA else "") + "#d="
+            + base64.urlsafe_b64encode(xom).decode().rstrip("="))
 
 
 def promo_qisqa(db, p):
@@ -320,18 +327,15 @@ def menyu_tugma(chat, db, majburiy=False):
     u = db["users"].get(chat)
     if u is None or u.get("bloklagan"):
         return
-    # Do'kon egasi /admin rejimida — mijozlar ro'yxati bilan (havola juda uzun
-    # bo'lsa, qisqartiramiz). /mijoz rejimida — oddiy mijoz ko'rinishi.
-    admin_rejim = chat in ADMINS and u.get("kor") == "admin"
-    for n in ((30, 12, 0) if admin_rejim else (None,)):
-        url = app_havola(ega_data(chat, db, n) if n is not None else mijoz_data(chat, db))
-        if url == u.get("mb") and not majburiy:
-            return
-        r = call("setChatMenuButton", chat_id=chat,
-                 menu_button={"type": "web_app", "text": MENYU_MATN, "web_app": {"url": url}})
-        if r.get("ok"):
-            u["mb"] = url
-            return
+    # Bu tugma — faqat mijoz ko'rinishi (do'kon egasida ham). Admin panel —
+    # /admin buyrug'i yuboradigan alohida tugmada.
+    url = app_havola(mijoz_data(chat, db))
+    if url == u.get("mb") and not majburiy:
+        return
+    r = call("setChatMenuButton", chat_id=chat,
+             menu_button={"type": "web_app", "text": MENYU_MATN, "web_app": {"url": url}})
+    if r.get("ok"):
+        u["mb"] = url
 
 
 def menyularni_yangila(db):
@@ -1448,13 +1452,13 @@ BOLIMLAR = {"/admin": ("admin", "🛠 Admin panel"),
 
 
 def bolim_och(chat, u, text, db):
-    """Mini App'ni kerakli bo'limda ochadi: shu xabardagi tugma darhol, pastki
-    «📚 Kitoblar» tugmasi esa keyingi safar ham o'sha bo'limda ochiladi."""
+    """Mini App'ni kerakli ko'rinishda ochadigan tugma yuboradi. /admin — admin
+    panel (marketing bilan), /mijoz — mijoz ko'rinishi (pastki «📚 Kitoblar» ham shu)."""
     kor, nom = BOLIMLAR[text]
     if kor != "dokon" and chat not in ADMINS:
         send(chat, "Bu bo'lim faqat do'kon egasi uchun.", menyu(chat, db))
         return
-    u["kor"] = kor
+    u.pop("kor", None)
     admin_rejim = kor == "admin"
     url = app_havola(ega_data(chat, db, 30) if admin_rejim else mijoz_data(chat, db))
     r = send(chat, "%s ochiladi 👇" % nom,
