@@ -333,8 +333,35 @@ def qidir(soz):
     return natija
 
 
-def _qidir(soz):
-    for manba, prefiks in (("youtube", "ytsearch%d:" % (NATIJA_SONI + 5)),
+UZBEKCHA_ULUSH = 7          # 10 ta natijadan nechtasi o'zbekcha bo'lsin (70%)
+_UZ_HARF = re.compile(r"[ўқғҳЎҚҒҲ]|\b(?:o|g)['‘’ʻʼ`]", re.I)
+_UZ_SOZ = re.compile(
+    r"\b(?:uzbek\w*|o['‘’ʻʼ`]?zbek\w*|ozbek\w*|uzb|qo['‘’ʻʼ`]?shi\w*|yangi|klip|jonli|ijro\w*|"
+    r"konsert\w*|xit|tarona\w*|sevgi\w*|onajon\w*|yor\w*|yurag\w*|muhabbat\w*|jonim|"
+    r"sevaman|ketma|kelgin|kechir\w*|dunyo\w*|hayot\w*|bahor\w*|uzbekistan|toshkent\w*|"
+    r"sevimli|milliy|zo['‘’ʻʼ`]?r ?tv|yoshlar|musiqa\w*|ashula\w*|qizlar|bolalar|"
+    r"юраг\w*|севги\w*|узбек\w*|янги|клип|жонли|онажон\w*|муҳаббат\w*|ёр\w*)\b", re.I)
+# Mashhur o'zbek xonandalari — nomida shular bo'lsa ham o'zbekcha deb hisoblanadi.
+_UZ_IJROCHI = re.compile(
+    r"\b(?:shahzoda|sevara|yulduz|ozoda|lola|rayhon|rayxon|jaloliddin|ulug['‘’ʻʼ`]?bek|"
+    r"shohruhxon|shoxruxxon|konsta|ummon|bojalar|xamdam|hamdam|sardor|jasur umirov|munisa|"
+    r"dilsoz|farrux|sherali|ziyoda|manzura|shaxriyor|shahriyor|lobar|benom|xurshid|alisher|"
+    r"muxlisa|nigina|diyor|asilbek|bahrom|doston|mohirbek|ozodbek|nasiba|nilufar|"
+    r"gulsanam|dildora|kumush|zarina|madina|mirjalol|rustam|ruhshona|shabnam|surayyo|xamid|"
+    r"yunus|g['‘’ʻʼ`]?ayrat|abdulla|ortiqov|jahongir|javlon|izzat|fayz|shoira|umid|otabek|"
+    r"xushnud|mehriniso|feruza|dilnoza|sanjar|zafar|shaxzoda|sevinch|nigora|oybek)\b", re.I)
+_RUS_HARF = re.compile(r"[ыэщъЫЭЩЪ]")
+
+
+def uzbekchami(r):
+    """Natija o'zbekcha qo'shiqqa o'xshaydimi (nomi yoki kanali bo'yicha)."""
+    matn = "%s %s" % (r["nom"], r["ijrochi"])
+    return bool(_UZ_HARF.search(matn) or _UZ_SOZ.search(matn) or _UZ_IJROCHI.search(matn))
+
+
+def _yt_qidir(soz, soni):
+    """Bitta manbadan qidiruv: YouTube, bo'lmasa SoundCloud."""
+    for manba, prefiks in (("youtube", "ytsearch%d:" % soni),
                            ("soundcloud", "scsearch%d:" % NATIJA_SONI)):
         try:
             with yt_dlp.YoutubeDL(ydl_sozlama(tempfile.gettempdir(), extract_flat=True,
@@ -361,11 +388,48 @@ def _qidir(soz):
                            "nom": e.get("title") or "Nomsiz",
                            "ijrochi": e.get("uploader") or e.get("channel") or "",
                            "vaqt": dur})
-            if len(natija) >= NATIJA_SONI:
-                break
         if natija:
             return natija
     return []
+
+
+def _qidir(soz):
+    """Ko'pchilik o'zbekcha qo'shiq qidiradi: natijalarning ~70% i o'zbekcha bo'ladi.
+
+    Ikki qidiruv parallel: so'zning o'zi va «so'z + uzbek». O'zbekcha natijalar
+    (so'rovdagi so'zlardan biri nomida bo'lsa) oldinga chiqadi, qolgan joylar
+    asl qidiruv natijalari bilan to'ldiriladi. Ruscha so'rovga tegmaymiz.
+    """
+    if _RUS_HARF.search(soz) or re.search(r"\buzbek|o['‘’ʻʼ`]?zbek", soz, re.I):
+        return _yt_qidir(soz, NATIJA_SONI + 5)[:NATIJA_SONI]
+    with ThreadPoolExecutor(max_workers=2) as p:
+        asl_f = p.submit(_yt_qidir, soz, NATIJA_SONI + 5)
+        uz_f = p.submit(_yt_qidir, soz + " uzbek", NATIJA_SONI + 5)
+        asl, uz = asl_f.result(), uz_f.result()
+    sozlar = [w for w in re.findall(r"\w{3,}", soz.lower())]
+
+    def mos(r):                                   # so'rovga aloqasi bormi
+        matn = ("%s %s" % (r["nom"], r["ijrochi"])).lower()
+        return not sozlar or any(w in matn for w in sozlar)
+
+    natija, bor = [], set()
+
+    def qosh(r):
+        k = r["id"] or r["url"]
+        if k not in bor and len(natija) < NATIJA_SONI:
+            bor.add(k)
+            natija.append(r)
+
+    # Asl qidiruvning birinchisi — eng aniq javob, doim birinchi turadi.
+    if asl:
+        qosh(asl[0])
+    for r in [x for x in asl + uz if uzbekchami(x) and mos(x)]:
+        if len(natija) >= UZBEKCHA_ULUSH:
+            break
+        qosh(r)
+    for r in asl + uz:                            # qolgan joylar — asl natijalar
+        qosh(r)
+    return natija
 
 
 def qidiruv_xabar(chat, soz, reply_to):
