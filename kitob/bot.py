@@ -62,6 +62,9 @@ from urllib.request import Request, urlopen
 
 TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMINS = {x.strip() for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip()}
+# Username bo'yicha adminlar (@siz): botga birinchi yozganda ID si eslab qolinadi.
+ADMIN_USERNAMES = {x.strip().lstrip("@").lower()
+                   for x in os.environ.get("ADMIN_USERNAMES", "").split(",") if x.strip()}
 STORE = os.environ.get("STATE_FILE") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "kitob.json")
 ESLATMA_SOAT = int(os.environ.get("ESLATMA_SOAT") or 10)
@@ -383,6 +386,8 @@ def load():
     db.setdefault("seq", 0)
     db.setdefault("orders", [])
     db.setdefault("oseq", 1000)             # buyurtma raqamlari #1001 dan boshlanadi
+    db.setdefault("adminlar", [])           # username orqali tanilgan adminlar (ID)
+    ADMINS.update(db["adminlar"])
     return db
 
 
@@ -1253,6 +1258,13 @@ def handle(msg, db):
     user = msg.get("from", {})
     u = db["users"].setdefault(chat, {"id": chat, "since": int(time.time())})
     u["username"] = user.get("username", "")
+    if (u["username"] or "").lower() in ADMIN_USERNAMES and chat not in ADMINS:
+        ADMINS.add(chat)
+        db["adminlar"].append(chat)
+        ega_buyruqlari()                    # /admin va /marketing — endi unga ham
+        send(chat, "🔑 Siz do'kon egasi sifatida qo'shildingiz. Pastki chap burchakdagi "
+                   "«%s» tugmasida endi 🛠 Admin va 📊 Marketing bo'limlari bor "
+                   "(/admin, /marketing)." % MENYU_MATN)
     u.pop("bloklagan", None)               # yozdi — demak botni o'chirmagan
 
     # Mini App menyu tugmasidan: t.me/<bot>?start=royxat | start=b_<aksiya>_<soni>
