@@ -730,7 +730,7 @@ def imzo(sarlavha=None, belgi="🎧"):
     if sarlavha:
         qator.append("%s <b>%s</b>" % (belgi, escape(sarlavha[:200])))
     if BOT_USERNAME:
-        qator.append("📥 @%s orqali yuklandi" % BOT_USERNAME)
+        qator.append("📥 @%s | Istalgan qo'shiq va video bir zumda ✅" % BOT_USERNAME)
     return "\n\n".join(qator) or None
 
 
