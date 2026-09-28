@@ -29,7 +29,8 @@ on:
         default: xabarlar
 
 concurrency:
-  group: musiqa-bot
+  # «sozlash» bot ishlab turganda ham alohida, darhol bajariladi.
+  group: musiqa-bot-${{ github.event.inputs.rejim || 'xabarlar' }}
   cancel-in-progress: false
 
 permissions:
