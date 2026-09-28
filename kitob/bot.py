@@ -186,13 +186,8 @@ def kb(rows):
 
 def menyu(chat, db):
     if APP_URL:
-        # Mini App bor: mijoz uchun hammasi pastki chap burchakdagi «📚 Kitoblar»
-        # menyu tugmasida (menyu_tugma), boshqa tugma yo'q. Do'kon egasiga —
-        # admin va marketing panellari (klaviatura tugmalari: ular botga
-        # ma'lumot yubora oladi, menyu tugmasi esa yubora olmaydi).
-        if chat in ADMINS:
-            return kb([[{"text": BTN_PANEL, "web_app": {"url": app_havola(panel_data(db))}},
-                        {"text": BTN_MARKETING_APP, "web_app": {"url": app_havola(admin_data(db))}}]])
+        # Mini App bor: hammasi pastki chap burchakdagi «📚 Kitoblar» tugmasida
+        # (menyu_tugma) — do'kon egasiga u yerda admin va marketing panellari ham.
         return {"remove_keyboard": True}
     if not royxatda(db, chat):
         rows = [[BTN_ROYXAT], [BTN_AKSIYA]]
@@ -226,7 +221,7 @@ def mijoz_data(chat, db):
     bronlar = [[o["promo"], o["soni"], o["holat"][0]] for o in db["orders"]
                if o["chat"] == chat and o["holat"] != "rad"][-3:]
     return {"v": 1, "r": 1 if u.get("royxat") else 0, "n": (u.get("ism") or "")[:30],
-            "q": (u.get("qiziqish") or "")[:40], "u": BOT_USERNAME,
+            "q": (u.get("qiziqish") or "")[:40], "u": BOT_USERNAME, "y": u.get("yosh") or 0,
             "p": promo_qisqa(db, yaqin[0]) if yaqin else None, "b": bronlar,
             "k": 1 if TOLOV_KARTA else 0}
 
@@ -250,7 +245,8 @@ def admin_data(db):
             sot[h] += o["soni"]
     janr = {}
     for u in us:
-        janr[u.get("qiziqish", "?")] = janr.get(u.get("qiziqish", "?"), 0) + 1
+        k = u.get("qiziqish") or "Tanlanmagan"
+        janr[k] = janr.get(k, 0) + 1
     yosh = [0, 0, 0, 0, 0]                   # <18, 18-24, 25-34, 35-44, 45+
     for u in us:
         y = u.get("yosh") or 0
@@ -285,6 +281,34 @@ def panel_data(db):
     }
 
 
+def mijozlar_royxati(db, n):
+    """Admin panel uchun: oxirgi n ta mijoz — ism, telefon, yosh, janr, sana."""
+    us = sorted((u for u in db["users"].values() if u.get("royxat")),
+                key=lambda u: -u["royxat"])[:n]
+    janr = lambda q: JANRLAR.index(q) if q in JANRLAR else -1
+    return [[("%s %s" % (u.get("ism", ""), u.get("familiya", "")))[:30],
+             re.sub(r"\D", "", u.get("telefon", "")), u.get("yosh") or 0,
+             janr(u.get("qiziqish")), datetime.fromtimestamp(u["royxat"], TOSHKENT).strftime("%d.%m")]
+            for u in us]
+
+
+def ega_data(chat, db, n):
+    """Do'kon egasining ilovasi: do'kon + admin panel + marketing + mijozlar ro'yxati."""
+    b = bugun()
+    hafta = hafta_boshi(b)
+    us = list(db["users"].values())
+    kun = lambda u: datetime.fromtimestamp(u["royxat"], TOSHKENT).date()
+    royxat = [u for u in us if u.get("royxat")]
+    d = mijoz_data(chat, db)
+    mk = admin_data(db)
+    mk.pop("p", None)                    # aksiyalar — panel_data'da bor, takrorlamaymiz
+    mk.pop("f", None)
+    d.update({"A": 1, "pn": panel_data(db), "mk": mk, "c": mijozlar_royxati(db, n),
+              "st": [len(us), len(royxat), len(us) - len(royxat),
+                     sum(1 for u in royxat if kun(u) == b), sum(1 for u in royxat if kun(u) >= hafta)]})
+    return d
+
+
 def menyu_tugma(chat, db, majburiy=False):
     """Mijozning pastki chap «📚 Kitoblar» tugmasini uning holati bilan yangilaydi.
     Havola o'zgarmagan bo'lsa, Telegram'ga qayta so'rov yuborilmaydi."""
@@ -293,13 +317,16 @@ def menyu_tugma(chat, db, majburiy=False):
     u = db["users"].get(chat)
     if u is None or u.get("bloklagan"):
         return
-    url = app_havola(mijoz_data(chat, db))
-    if url == u.get("mb") and not majburiy:
-        return
-    r = call("setChatMenuButton", chat_id=chat,
-             menu_button={"type": "web_app", "text": MENYU_MATN, "web_app": {"url": url}})
-    if r.get("ok"):
-        u["mb"] = url
+    # Do'kon egasi — mijozlar ro'yxati bilan; havola juda uzun bo'lsa, qisqartiramiz.
+    for n in ((30, 12, 0) if chat in ADMINS else (None,)):
+        url = app_havola(ega_data(chat, db, n) if n is not None else mijoz_data(chat, db))
+        if url == u.get("mb") and not majburiy:
+            return
+        r = call("setChatMenuButton", chat_id=chat,
+                 menu_button={"type": "web_app", "text": MENYU_MATN, "web_app": {"url": url}})
+        if r.get("ok"):
+            u["mb"] = url
+            return
 
 
 def menyularni_yangila(db):
@@ -539,6 +566,9 @@ def royxat_qadam(chat, u, msg, text, db):
                        "yoki «%s» tugmasini bosing." % BTN_TELEFON)
             return
         q["telefon"] = raqam
+        if APP_URL:                  # yosh va janr — Mini App ichida tanlanadi
+            royxat_tugat(chat, u, q, db)
+            return
         u["qadam"] = "yosh"
         send(chat, "Yoshingiz nechada?", kb([[BTN_BEKOR]]))
         return
@@ -570,9 +600,12 @@ def royxat_tugat(chat, u, q, db):
     u["royxat"] = u.get("royxat") or int(time.time())
     u.pop("vaqtincha", None)
     u.pop("qadam", None)
-    send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\n"
-               "Juma aksiyasini bir hafta oldin shu yerga yozamiz. "
-               "Botni o'chirib qo'ymang 🙂" % profil(u), menyu(chat, db))
+    keyin_matn = ("👇 Endi pastki chap burchakdagi <b>«%s»</b> tugmasini bosing — u yerda "
+                  "qiziqqan kitoblaringizni tanlaysiz va juma aksiyasini ko'rasiz." % MENYU_MATN
+                  if APP_URL else "Juma aksiyasini bir hafta oldin shu yerga yozamiz. "
+                                  "Botni o'chirib qo'ymang 🙂")
+    send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\n%s" % (profil(u), keyin_matn),
+         menyu(chat, db))
     if yangi:
         for a in ADMINS:
             send(a, "🆕 Yangi mijoz (%d-chi):\n%s" % (
@@ -585,10 +618,13 @@ def royxat_tugat(chat, u, q, db):
 
 
 def profil(u):
-    return ("👤 %s %s\n📱 %s\n🎂 %s yosh\n📚 %s" % (
-        escape(u.get("ism", "")), escape(u.get("familiya", "")),
-        escape(u.get("telefon", "")), u.get("yosh", "?"),
-        escape(u.get("qiziqish", ""))))
+    qator = ["👤 %s %s" % (escape(u.get("ism", "")), escape(u.get("familiya", ""))),
+             "📱 %s" % escape(u.get("telefon", ""))]
+    if u.get("yosh"):
+        qator.append("🎂 %s yosh" % u["yosh"])
+    if u.get("qiziqish"):
+        qator.append("📚 %s" % escape(u["qiziqish"]))
+    return "\n".join(qator)
 
 
 # ---------------------------------------------------------------- aksiya qo'shish (do'kon egasi)
@@ -1219,18 +1255,12 @@ def handle(msg, db):
     u.pop("bloklagan", None)               # yozdi — demak botni o'chirmagan
 
     # Mini App menyu tugmasidan: t.me/<bot>?start=royxat | start=b_<aksiya>_<soni>
-    m = re.match(r"^/start (royxat|b_(\d+)_(\d+))$", text)
-    if m:
+    m = re.match(r"^/start ([a-z]+)((?:_[0-9a-z]+)*)$", text)
+    if m and m.group(1) in ILOVA_BUYRUQLARI:
+        call("deleteMessage", chat_id=chat, message_id=msg.get("message_id"))  # «/start …» ni yashiramiz
         u.pop("qadam", None)
         u.pop("vaqtincha", None)
-        if m.group(1) == "royxat":
-            u["qadam"] = "ism"
-            u["vaqtincha"] = {}
-            send(chat, "📝 Ro'yxatdan o'tamiz. Ismingizni yozing:", kb([[BTN_BEKOR]]))
-        else:
-            buyurtma_boshla(chat, u, int(m.group(2)), db)
-            if u.get("qadam") == "b_soni":
-                buyurtma_qadam(chat, u, {}, m.group(3), db)
+        ILOVA_BUYRUQLARI[m.group(1)](chat, u, m.group(2).split("_")[1:], db)
         return
 
     if text == BTN_BEKOR or text.startswith("/start") or text == "/bekor":
@@ -1242,6 +1272,9 @@ def handle(msg, db):
             send(chat, "Assalomu alaykum, %s! <b>Kitoblar olamiga xush kelibsiz</b> 📚\n\n"
                        "Juma aksiyasini bir hafta oldin shu yerga yozamiz.%s"
                  % (escape(u.get("ism", "")), tugma), menyu(chat, db))
+        elif text.startswith("/start") and APP_URL:
+            send(chat, SALOM.split("\n\nRo'yxatdan")[0], menyu(chat, db))
+            ilova_royxat(chat, u, [], db)
         elif text.startswith("/start"):
             send(chat, SALOM + tugma, menyu(chat, db))
         else:
@@ -1254,6 +1287,29 @@ def handle(msg, db):
 
     if msg.get("web_app_data"):
         ilova_xabari(chat, u, msg, db)
+        return
+
+    if u.get("qadam") == "a_nom" and chat in ADMINS:    # Mini App'dan: kitob nomi
+        q = u.get("vaqtincha") or {}
+        q["kitob"] = text[:120]
+        xato = aksiya_xato(q, db)
+        if xato:
+            u.pop("qadam", None)
+            u.pop("vaqtincha", None)
+            send(chat, "❌ Aksiya saqlanmadi: " + xato, menyu(chat, db))
+            return
+        p = aksiya_saqla(chat, q, db)
+        u["qadam"] = "a_rasm_keyin"
+        u["vaqtincha"] = {"pid": p["id"]}
+        send(chat, "🖼 Kitob muqovasining rasmini yuboring — e'londa chiqadi "
+                   "(ixtiyoriy: kerak bo'lmasa, /bekor).")
+        return
+
+    if u.get("qadam") == "x_matn" and chat in ADMINS:
+        u.pop("qadam", None)
+        if text:
+            n = hammaga(db, lambda c, uu: send(c, escape(text), menyu(c, db)))
+            send(chat, "✉️ Xabar %d ta mijozga yuborildi." % n, menyu(chat, db))
         return
 
     if u.get("qadam") == "a_rasm_keyin":          # Mini App'dan qo'shilgan aksiyaga muqova
@@ -1365,6 +1421,83 @@ def handle(msg, db):
 
     send(chat, ("Pastki chap burchakdagi «%s» tugmasini bosing 👇" % MENYU_MATN) if APP_URL
          else "Pastdagi tugmalardan foydalaning 👇", menyu(chat, db))
+
+
+# ---------------------------------------------------------------- Mini App → bot
+# Menyu tugmasidan ochilgan ilova botga faqat t.me/<bot>?start=<buyruq>_<a>_<b>
+# havolasi orqali «gapira» oladi (64 belgigacha). Admin buyruqlari faqat ADMINS uchun.
+def ilova_royxat(chat, u, args, db):
+    u["qadam"] = "ism"
+    u["vaqtincha"] = {}
+    send(chat, "📝 Ro'yxatdan o'tamiz. Ismingizni yozing:", kb([[BTN_BEKOR]]))
+
+
+def ilova_bron(chat, u, args, db):
+    if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
+        return
+    buyurtma_boshla(chat, u, int(args[0]), db)
+    if u.get("qadam") == "b_soni":
+        buyurtma_qadam(chat, u, {}, args[1], db)
+
+
+def ilova_qiziqish(chat, u, args, db):
+    """q_<janr raqami>_<yosh> — Mini App'da tanlangan janr va yosh."""
+    if not royxatda(db, chat):
+        ilova_royxat(chat, u, args, db)
+        return
+    if args and args[0].isdigit() and int(args[0]) < len(JANRLAR):
+        u["qiziqish"] = JANRLAR[int(args[0])]
+    if len(args) > 1 and args[1].isdigit() and 5 <= int(args[1]) <= 100:
+        u["yosh"] = int(args[1])
+    send(chat, "✅ Saqlandi!\n\n%s\n\nJuma aksiyasini bir hafta oldin shu yerga yozamiz 📚"
+         % profil(u), menyu(chat, db))
+
+
+def ilova_aksiya(chat, u, args, db):
+    """a_<yyyymmdd>_<odatiy>_<tannarx>_<narx>_<janr> — kitob nomini chatda so'raymiz."""
+    if chat not in ADMINS or len(args) < 4:
+        return
+    try:
+        sana = datetime.strptime(args[0], "%Y%m%d").date().isoformat()
+    except ValueError:
+        return
+    janr = JANRLAR[int(args[4])] if len(args) > 4 and args[4].isdigit() and int(args[4]) < len(JANRLAR) else HAMMA
+    u["qadam"] = "a_nom"
+    u["vaqtincha"] = {"sana": sana, "janr": janr, "odatiy": son(args[1]),
+                      "tannarx": son(args[2]), "narx": son(args[3]), "soni": AKSIYA_SONI}
+    q = u["vaqtincha"]
+    send(chat, "📚 Aksiya: %s, juma · %s → <b>%s</b> · foyda %s/dona\n\n"
+               "✍️ Endi <b>kitob nomini</b> yozing:"
+         % (sana_matn(date.fromisoformat(sana)), som(q["odatiy"] or 0), som(q["narx"] or 0),
+            som((q["narx"] or 0) - (q["tannarx"] or 0))), kb([[BTN_BEKOR]]))
+
+
+def ilova_ochir(chat, u, args, db):
+    if chat not in ADMINS or not args:
+        return
+    ilova_xabari(chat, u, {"web_app_data": {"data": json.dumps({"t": "ochir", "id": args[0]})}}, db)
+
+
+def ilova_xabar(chat, u, args, db):
+    if chat not in ADMINS:
+        return
+    u["qadam"] = "x_matn"
+    send(chat, "✉️ Hamma mijozga yuboriladigan xabarni yozing:", kb([[BTN_BEKOR]]))
+
+
+def ilova_bronlar(chat, u, args, db):
+    if chat in ADMINS:
+        buyurtmalar(chat, db)
+
+
+def ilova_mijozlar(chat, u, args, db):
+    if chat in ADMINS:
+        mijozlar(chat, db)
+
+
+ILOVA_BUYRUQLARI = {"royxat": ilova_royxat, "b": ilova_bron, "q": ilova_qiziqish,
+                    "a": ilova_aksiya, "o": ilova_ochir, "xabar": ilova_xabar,
+                    "bronlar": ilova_bronlar, "mijozlar": ilova_mijozlar}
 
 
 def ilova_xabari(chat, u, msg, db):

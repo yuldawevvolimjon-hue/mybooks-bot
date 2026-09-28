@@ -61,7 +61,7 @@
           background: var(--bg); color: var(--text); border: 1px solid var(--line); }
   .chip.on { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
   .tabs { display: flex; gap: 6px; background: var(--bg2); padding: 4px; border-radius: 12px; margin: 14px 0; }
-  .tabs button { background: transparent; color: var(--hint); padding: 9px; font-size: 14px; }
+  .tabs button { background: transparent; color: var(--hint); padding: 9px 4px; font-size: 14px; white-space: nowrap; }
   .tabs button.on { background: var(--bg); color: var(--text); }
   .err { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 8px; }
   .ok { color: var(--green); }
@@ -87,7 +87,7 @@ const OYLAR = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgu
   "sentabr", "oktabr", "noyabr", "dekabr"];
 const BIR_KISHIGA = 5;
 
-// ---- ma'lumot: bot uni havolaning #d=... qismiga joylaydi
+// ---- ma'lumot: bot uni havolaning #d=... qismiga joylaydi (serverga ketmaydi)
 function oqi() {
   const m = location.hash.match(/d=([A-Za-z0-9_-]+)/);
   if (!m) return null;
@@ -100,35 +100,53 @@ function oqi() {
 const D = oqi();
 
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const som = n => Math.round(n).toLocaleString("ru-RU").replace(/ |,/g, " ") + " so'm";
 const sana = iso => { const d = new Date(iso + "T00:00:00"); return d.getDate() + "-" + OYLAR[d.getMonth()]; };
 const kunQoldi = iso => Math.round((new Date(iso + "T00:00:00") - new Date(new Date().toDateString())) / 864e5);
 const yarmi = jami => Math.min(jami, Math.ceil(Math.floor(jami / 2) / 1000) * 1000);
 const raqam = s => parseInt(String(s).replace(/\D/g, ""), 10) || 0;
+const tel = t => t ? "+" + t.replace(/^(\d{3})(\d{2})(\d{3})(\d{2})(\d{2})$/, "$1 $2 $3 $4 $5") : "";
 
-// Menyu tugmasidan («📚 Kitoblar») ochilganda sendData ishlamaydi — o'rniga
-// bot chatiga t.me/<bot>?start=... havolasi bilan o'tamiz.
-const KLAVIATURADAN = !!(tg && tg.initData && !(tg.initDataUnsafe && tg.initDataUnsafe.query_id));
+// Menyu tugmasidan ochilgan ilova botga t.me/<bot>?start=<buyruq> orqali «gapiradi»:
+// ilova yopiladi, bot chatda davom etadi.
 function botga(param) {
   const url = `https://t.me/${(D && D.u) || "My_books_07bot"}?start=${param}`;
-  if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); setTimeout(() => tg.close(), 300); }
+  if (tg && tg.openTelegramLink) { tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light"); tg.openTelegramLink(url); setTimeout(() => tg.close(), 300); }
   else location.href = url;
 }
+const tasdiq = (matn, ish) => tg && tg.showConfirm ? tg.showConfirm(matn, ok => ok && ish()) : (confirm(matn) && ish());
 
-function yubor(obj) {
-  if (!tg || !tg.sendData) { alert("Bu sahifa faqat Telegram ichida ishlaydi."); return; }
-  tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
-  tg.sendData(JSON.stringify(obj));        // ilova yopiladi, bot javob beradi
+function gorizontal(qator) {
+  if (!qator.length) return `<p class="muted">Hali ma'lumot yo'q.</p>`;
+  const maks = Math.max(1, ...qator.map(q => q[1]));
+  const jami = qator.reduce((a, q) => a + q[1], 0) || 1;
+  return qator.map(([k, v]) => `<div class="hbar"><div class="row"><span class="grow">${esc(k)}</span>
+    <span class="muted">${v} · ${Math.round(100 * v / jami)}%</span></div><div class="bar"><i style="width:${100 * v / maks}%"></i></div></div>`).join("");
 }
 
-// ================================================================ mijoz
-function mijozView() {
+// Haftalik grafik: har hafta uchun ikki ustun (yangi mijozlar va sotuv).
+function grafik([mij, sot], w0) {
+  const W = 320, H = 150, pad = 18, n = mij.length, g = (W - pad) / n, bw = g * 0.32;
+  const maks = Math.max(1, ...mij, ...sot);
+  const y = v => H - 20 - (H - 34) * v / maks;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Haftalik grafik">`;
+  for (let i = 0; i < n; i++) {
+    const x = pad + i * g + g * 0.16;
+    const d = new Date(w0 + "T00:00:00"); d.setDate(d.getDate() + 7 * i);
+    s += `<rect x="${x}" y="${y(mij[i])}" width="${bw}" height="${H - 20 - y(mij[i])}" rx="2" fill="var(--gold)"><title>${mij[i]} mijoz</title></rect>`;
+    s += `<rect x="${x + bw + 2}" y="${y(sot[i])}" width="${bw}" height="${H - 20 - y(sot[i])}" rx="2" fill="var(--green)"><title>${sot[i]} kitob</title></rect>`;
+    if (mij[i]) s += `<text x="${x + bw / 2}" y="${y(mij[i]) - 3}" text-anchor="middle">${mij[i]}</text>`;
+    s += `<text x="${x + bw}" y="${H - 5}" text-anchor="middle">${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}</text>`;
+  }
+  return s + `<line x1="${pad}" x2="${W}" y1="${H - 20}" y2="${H - 20}" stroke="var(--line)"/></svg>`;
+}
+
+// ================================================================ 🛍 Do'kon (hammaga)
+function dokon(el) {
   const p = D.p;                           // [id, sana, kitob, narx, odatiy, qoldi, soni]
-  let html = `
-    <div class="brand">KITOB OLAMI</div>
-    <h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
-    <p class="muted">${D.n ? "Assalomu alaykum, " + esc(D.n) + "! " : ""}Har juma — bitta kitob aksiya narxida.</p>`;
+  let html = `<p class="muted">${D.n ? "Assalomu alaykum, " + esc(D.n) + "! " : ""}Har juma — bitta kitob aksiya narxida.</p>`;
 
   if (p) {
     const [id, sn, kitob, narx, odatiy, qoldi, soni] = p;
@@ -149,8 +167,8 @@ function mijozView() {
         ${tugadi ? `<p>😔 Kitob qolmadi — keyingi juma aksiyasida olasiz!</p>` : `
           <div class="stepper"><button id="kam">−</button><b id="soni">1</b><button id="kop">+</button>
             <span class="muted grow" id="hisob"></span></div>
-          <button id="bron" ${D.r ? "" : "disabled"}>📌 Band qilish — yarim pulini to'lab</button>
-          ${D.r ? "" : `<p class="muted">Band qilish uchun avval pastda ro'yxatdan o'ting.</p>`}`}
+          <button id="bron">📌 Band qilish — yarim pulini to'lab</button>
+          ${D.r ? "" : `<p class="muted">Band qilish uchun avval ro'yxatdan o'tasiz (bot so'raydi).</p>`}`}
       </div>`;
   } else {
     html += `<div class="card"><b>📅 Juma aksiyasi</b><p class="muted">Keyingi juma aksiyasi haqida bir hafta oldin xabar beramiz.</p></div>`;
@@ -162,76 +180,161 @@ function mijozView() {
       `<div class="row" style="margin-top:8px"><span class="grow">${n} ta kitob</span><span class="muted">${H[h] || ""}</span></div>`).join("")}</div>`;
   }
 
-  if (D.r) {
-    html += `<div class="card"><div class="row"><span class="grow ok">✅ Ro'yxatdan o'tgansiz</span>
-      <button class="ghost" style="width:auto;padding:8px 12px" id="tahrir">✏️ O'zgartirish</button></div>
-      <p class="muted" style="margin:6px 0 0">${D.q ? "Sevimli janr: " + esc(D.q) + ". " : ""}Aksiyalarni bir hafta oldin botga yozamiz.</p></div>`;
+  if (!D.r) {
+    html += `<div class="card"><b>📝 Ro'yxatdan o'tish</b>
+      <p class="muted">Ism, familiya va telefon — 30 soniya. Juma aksiyasini birinchilardan bo'lib bilasiz.</p>
+      <button id="royxat">📝 Ro'yxatdan o'tish</button></div>`;
+  } else {
+    const j = JANRLAR.indexOf(D.q);
+    html += `<div class="card"><b>📚 Qaysi kitoblarga qiziqasiz?</b>
+      <p class="muted" style="margin:4px 0 10px">Tanlasangiz, shu janrdagi aksiyalarni alohida belgilab yuboramiz.</p>
+      <div class="chips" id="janrlar">${JANRLAR.map((x, i) => `<button class="chip ${i === j ? "on" : ""}" data-i="${i}">${esc(x)}</button>`).join("")}</div>
+      <label>Yoshingiz</label><input id="yosh" type="number" min="5" max="100" inputmode="numeric" value="${D.y || ""}">
+      <div class="err" id="q_xato"></div>
+      <button id="q_saqla">✅ Saqlash</button>
+      <p class="muted" style="margin-top:10px">Ism yoki telefonni o'zgartirish: <a href="#" id="tahrir" style="color:var(--link)">qayta ro'yxatdan o'tish</a></p></div>`;
   }
-  {
-    html += `
-      <div class="card ${D.r ? "hidden" : ""}" id="royxat">
-        <b>📝 ${D.r ? "Ma'lumotni o'zgartirish" : "Ro'yxatdan o'tish"}</b>
-        <p class="muted" style="margin:4px 0 0">Juma aksiyasini birinchilardan bo'lib biling.</p>
-        <label>Ism</label><input id="ism" autocomplete="given-name" maxlength="50">
-        <label>Familiya</label><input id="familiya" autocomplete="family-name" maxlength="50">
-        <label>Telefon</label><input id="telefon" type="tel" placeholder="+998 90 123 45 67" autocomplete="tel">
-        <label>Yosh</label><input id="yosh" type="number" min="5" max="100" inputmode="numeric">
-        <label>Qaysi kitoblarni yoqtirasiz?</label>
-        <div class="chips" id="janrlar">${JANRLAR.map(j => `<button class="chip" data-j="${esc(j)}">${esc(j)}</button>`).join("")}</div>
-        <div class="err" id="xato"></div>
-        <button id="saqla">✅ ${D.r ? "Saqlash" : "Ro'yxatdan o'tish"}</button>
-      </div>`;
-  }
-  $("#app").innerHTML = html;
+  el.innerHTML = html;
 
   if (p && p[5] !== 0) {
     const narx = p[3], maks = Math.min(BIR_KISHIGA, p[5] < 0 ? BIR_KISHIGA : p[5]);
     let n = 1;
     const yangila = () => {
-      $("#soni").textContent = n;
-      $("#hisob").textContent = `Jami ${som(n * narx)} · oldindan ${som(yarmi(n * narx))}`;
+      $("#soni", el).textContent = n;
+      $("#hisob", el).textContent = `Jami ${som(n * narx)} · oldindan ${som(yarmi(n * narx))}`;
     };
-    $("#kam").onclick = () => { n = Math.max(1, n - 1); yangila(); };
-    $("#kop").onclick = () => { n = Math.min(maks, n + 1); yangila(); };
-    $("#bron").onclick = () => KLAVIATURADAN ? yubor({t: "bron", p: p[0], n}) : botga(`b_${p[0]}_${n}`);
+    $("#kam", el).onclick = () => { n = Math.max(1, n - 1); yangila(); };
+    $("#kop", el).onclick = () => { n = Math.min(maks, n + 1); yangila(); };
+    $("#bron", el).onclick = () => botga(`b_${p[0]}_${n}`);
     yangila();
   }
+  if (!D.r) { $("#royxat", el).onclick = () => botga("royxat"); return; }
 
-  if (!KLAVIATURADAN) {
-    // Menyu tugmasi: ro'yxat bot chatida (ism → familiya → telefon → yosh → janr).
-    $("#royxat").innerHTML = `<b>📝 ${D.r ? "Ma'lumotni o'zgartirish" : "Ro'yxatdan o'tish"}</b>
-      <p class="muted">Bot 5 ta savol beradi — 1 daqiqa. Juma aksiyasini birinchilardan bo'lib bilasiz.</p>
-      <button id="saqla">📝 ${D.r ? "O'zgartirish" : "Ro'yxatdan o'tish"}</button>`;
-    $("#saqla").onclick = () => botga("royxat");
-    if (D.r) $("#tahrir").onclick = () => botga("royxat");
-  } else {
-    if (D.r) $("#tahrir").onclick = () => { $("#royxat").classList.remove("hidden"); $("#royxat").scrollIntoView({behavior: "smooth"}); };
-    let janr = "";
-    document.querySelectorAll("#janrlar .chip").forEach(b => b.onclick = () => {
-      document.querySelectorAll("#janrlar .chip").forEach(x => x.classList.remove("on"));
-      b.classList.add("on"); janr = b.dataset.j;
-    });
-    $("#saqla").onclick = () => {
-      const v = id => $("#" + id).value.trim();
-      const tel = v("telefon").replace(/\D/g, "");
-      const yosh = raqam(v("yosh"));
-      const xato = !v("ism") ? "Ismingizni yozing." : !v("familiya") ? "Familiyangizni yozing."
-        : (tel.length < 9 || tel.length > 15) ? "Telefon raqami noto'g'ri." : (yosh < 5 || yosh > 100) ? "Yoshingizni yozing."
-        : !janr ? "Yoqtirgan janringizni tanlang." : "";
-      $("#xato").textContent = xato;
-      if (!xato) yubor({t: "royxat", ism: v("ism"), familiya: v("familiya"), telefon: v("telefon"), yosh, qiziqish: janr});
-    };
-  }
+  let janr = JANRLAR.indexOf(D.q);
+  $$("#janrlar .chip", el).forEach(b => b.onclick = () => {
+    $$("#janrlar .chip", el).forEach(x => x.classList.toggle("on", x === b)); janr = +b.dataset.i;
+  });
+  $("#tahrir", el).onclick = e => { e.preventDefault(); botga("royxat"); };
+  $("#q_saqla", el).onclick = () => {
+    const yosh = raqam($("#yosh", el).value);
+    const xato = janr < 0 ? "Janrni tanlang." : (yosh < 5 || yosh > 100) ? "Yoshingizni yozing." : "";
+    $("#q_xato", el).textContent = xato;
+    if (!xato) botga(`q_${janr}_${yosh}`);
+  };
 }
 
-// ================================================================ marketing paneli
-function marketingView() {
-  const [mij, yangi, bronlar, kutil, sotildi, tushum, foyda, bloklagan, olganlar] = D.s;
+// ================================================================ 🛠 Admin (faqat do'kon egasiga)
+function admin(el) {
+  const P = D.pn, [jami, royxat, royxatsiz, bugun, hafta] = D.st;
+  el.innerHTML = `
+    <p class="muted">Holat: ${sana(P.t)}. Yangilash uchun ilovani yopib, qayta oching.</p>
+    <div class="tiles">
+      <div class="tile gold"><b>${royxat}</b><span>✅ Ro'yxatdan o'tgan mijozlar</span></div>
+      <div class="tile"><b>${royxatsiz}</b><span>⏸ Botga kirgan, o'tmagan</span></div>
+      <div class="tile"><b>+${bugun}</b><span>📅 Bugun qo'shildi</span></div>
+      <div class="tile"><b>+${hafta}</b><span>🗓 Bu hafta qo'shildi</span></div>
+    </div>
+    ${P.k ? `<button style="margin-top:10px" id="bronlar">⏳ ${P.k} ta bronning to'lovini tekshirish</button>` : ""}
+
+    <div class="tabs"><button class="on" data-t="mijoz">👥 Mijozlar</button><button data-t="qosh">➕ Aksiya</button><button data-t="royxat">📅 ${P.p.length}</button><button data-t="xabar">✉️</button></div>
+
+    <section data-s="mijoz">
+      <input id="izla" placeholder="🔎 Ism yoki telefon bo'yicha qidirish">
+      <div class="card" id="mijozlar" style="padding:4px 16px"></div>
+      ${royxat > D.c.length ? `<button class="ghost" id="hammasi">👥 Hammasi (${royxat} ta) — chatda</button>` : ""}
+    </section>
+
+    <section data-s="qosh" class="hidden"><div class="card">
+      <b>📚 Juma aksiyasiga kitob qo'shish</b>
+      ${P.f.length ? `
+      <label>Qaysi juma?</label>
+      <select id="a_sana">${P.f.map(f => `<option value="${f}">${sana(f)}, juma (${kunQoldi(f)} kun)</option>`).join("")}</select>
+      <label>Janr</label>
+      <select id="a_janr"><option value="">${esc(HAMMA)}</option>${JANRLAR.map((j, i) => `<option value="${i}">${esc(j)}</option>`).join("")}</select>
+      <label>Odatiy (do'kondagi) narx</label><input id="a_odatiy" inputmode="numeric" placeholder="400 000">
+      <label>Tannarx (mijozlar ko'rmaydi)</label><input id="a_tannarx" inputmode="numeric" placeholder="340 000">
+      <label>Aksiya narxi</label><input id="a_narx" inputmode="numeric" placeholder="360 000">
+      <p class="muted" id="a_hisob"></p>
+      <div class="err" id="a_xato"></div>
+      <button id="a_saqla">Davom etish → kitob nomi</button>
+      <p class="muted">Keyin bot chatda <b>kitob nomini</b> va <b>muqova rasmini</b> so'raydi. Har aksiyada 100 ta kitob.</p>`
+      : `<p class="muted">Kelgusi 8 jumaning hammasiga aksiya qo'yilgan.</p>`}
+    </div></section>
+
+    <section data-s="royxat" class="hidden"><div class="card">${P.p.length ? P.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx, rasm]) => {
+      const band = soni - Math.max(qoldi, 0), k = kunQoldi(sn);
+      return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)} · ${k} kun</span></div>
+        <div class="muted" style="margin:4px 0 8px">${som(odatiy)} → <b style="color:var(--text)">${som(narx)}</b> · foyda ${som(narx - tannarx)}/dona${rasm ? " · 🖼" : ""}
+          · ${k <= 7 ? "mijozlar biladi" : "e'lon " + (k - 7) + " kundan keyin"}</div>
+        <div class="row"><div class="bar grow"><i style="width:${soni ? Math.max(2, 100 * band / soni) : 0}%"></i></div><span class="muted">${band}/${soni}</span></div>
+        ${band ? "" : `<button class="ghost" style="margin-top:10px" data-ochir="${id}" data-nom="${esc(kitob)}">🗑 O'chirish</button>`}</div>`;
+    }).join("") : `<p class="muted">Rejada aksiya yo'q — «➕ Aksiya» ni bosing.</p>`}</div></section>
+
+    <section data-s="xabar" class="hidden"><div class="card">
+      <b>✉️ Hamma mijozga xabar</b>
+      <p class="muted">Masalan: «Yangi kitoblar keldi! Do'konimizga keling 📚». Tugmani bosing — bot chatda matnni so'raydi.</p>
+      <button id="xabar">✍️ Xabar yozish (${royxat} ta mijozga)</button>
+    </div></section>`;
+
+  $$(".tabs button", el).forEach(b => b.onclick = () => {
+    $$(".tabs button", el).forEach(x => x.classList.toggle("on", x === b));
+    $$("section[data-s]", el).forEach(s => s.classList.toggle("hidden", s.dataset.s !== b.dataset.t));
+  });
+
+  // --- mijozlar ro'yxati (ism, telefon, yosh, janr, sana)
+  const chiz = (f = "") => {
+    const q = f.toLowerCase().replace(/\s/g, "");
+    const r = D.c.filter(([ism, t]) => !q || (ism + t).toLowerCase().replace(/\s/g, "").includes(q));
+    $("#mijozlar", el).innerHTML = r.length ? r.map(([ism, t, yosh, j, kun]) => `
+      <div class="promo" style="padding:12px 0"><div class="row"><b class="grow">👤 ${esc(ism)}</b><span class="muted">${esc(kun)}</span></div>
+        <div class="row" style="margin-top:4px"><a class="grow" href="tel:+${esc(t)}" style="color:var(--link);text-decoration:none">📱 ${esc(tel(t))}</a>
+          <span class="muted">${yosh ? yosh + " yosh" : ""}</span></div>
+        ${j >= 0 ? `<div class="muted" style="margin-top:2px">${esc(JANRLAR[j])}</div>` : ""}</div>`).join("")
+      : `<p class="muted">${D.c.length ? "Topilmadi." : "Hali hech kim ro'yxatdan o'tmagan."}</p>`;
+  };
+  chiz();
+  $("#izla", el).oninput = e => chiz(e.target.value);
+  if ($("#hammasi", el)) $("#hammasi", el).onclick = () => botga("mijozlar");
+  if ($("#bronlar", el)) $("#bronlar", el).onclick = () => botga("bronlar");
+  $("#xabar", el).onclick = () => botga("xabar");
+  $$("[data-ochir]", el).forEach(b => b.onclick = () =>
+    tasdiq(`«${b.dataset.nom}» aksiyasini o'chiramizmi?`, () => botga(`o_${b.dataset.ochir}`)));
+
+  if (!P.f.length) return;
+  const v = id => raqam($("#" + id, el).value);
+  let narxQolda = false;
+  $("#a_narx", el).oninput = () => { narxQolda = true; hisobla(); };
+  ["a_odatiy", "a_tannarx"].forEach(id => $("#" + id, el).oninput = () => {
+    const od = v("a_odatiy"), tn = v("a_tannarx");
+    if (!narxQolda && od) $("#a_narx", el).value = Math.max(tn, Math.floor(od * 0.9 / 1000) * 1000) || "";
+    hisobla();
+  });
+  const xato = () => {
+    const od = v("a_odatiy"), tn = v("a_tannarx"), nx = v("a_narx");
+    if (!od || !tn || !nx) return "Narxlarni to'liq yozing.";
+    if (tn >= od) return "Tannarx odatiy narxdan kam bo'lishi kerak.";
+    if (nx < tn) return "Aksiya narxi tannarxdan past — zarar bo'ladi.";
+    if (nx >= od) return "Aksiya narxi odatiy narxdan arzon bo'lishi kerak.";
+    return "";
+  };
+  function hisobla() {
+    const od = v("a_odatiy"), tn = v("a_tannarx"), nx = v("a_narx");
+    $("#a_hisob", el).textContent = od && tn && nx && nx >= tn && nx < od
+      ? `Chegirma −${Math.round(100 * (od - nx) / od)}% · foyda ${som(nx - tn)}/dona · 100 tasi sotilsa: ${som(100 * (nx - tn))}` : "";
+  }
+  $("#a_saqla", el).onclick = () => {
+    const x = xato();
+    $("#a_xato", el).textContent = x;
+    const janr = $("#a_janr", el).value;
+    if (!x) botga(`a_${$("#a_sana", el).value.replace(/-/g, "")}_${v("a_odatiy")}_${v("a_tannarx")}_${v("a_narx")}${janr ? "_" + janr : ""}`);
+  };
+}
+
+// ================================================================ 📊 Marketing (faqat do'kon egasiga)
+function marketing(el) {
+  const M = D.mk, [mij, yangi, bronlar, kutil, sotildi, tushum, foyda, bloklagan, olganlar] = M.s;
   const konv = mij ? Math.round(100 * olganlar / mij) : 0;
-  $("#app").innerHTML = `
-    <div class="brand">KITOB OLAMI · MARKETING</div>
-    <h1>📊 Marketing <em>paneli</em></h1>
-    <p class="muted">Holat: ${sana(D.t)}. Yangilash uchun botga /start yozing.</p>
+  el.innerHTML = `
     <div class="tiles">
       <div class="tile gold"><b>${mij}</b><span>👥 Mijozlar (bu hafta +${yangi})</span></div>
       <div class="tile"><b>${sotildi}</b><span>📚 Sotilgan (band) kitob</span></div>
@@ -240,19 +343,15 @@ function marketingView() {
       <div class="tile"><b>${konv}%</b><span>🎯 Xarid qilganlar (${olganlar} kishi)</span></div>
       <div class="tile"><b>${bloklagan}</b><span>🚫 Botni o'chirganlar</span></div>
     </div>
-
     <h2>📈 Auditoriya o'sishi (8 hafta)</h2>
-    <div class="card">${grafik(D.w, D.w0)}
+    <div class="card">${grafik(M.w, M.w0)}
       <div class="legend"><span><i style="background:var(--gold)"></i>Yangi mijozlar</span><span><i style="background:var(--green)"></i>Sotilgan kitoblar</span></div></div>
-
     <h2>📚 Mijozlar nimani yoqtiradi</h2>
-    <div class="card">${gorizontal(D.g.map(([k, v]) => [k, v]))}</div>
-
+    <div class="card">${gorizontal(M.g)}</div>
     <h2>🎂 Yosh bo'yicha</h2>
-    <div class="card">${gorizontal(["18 gacha", "18–24", "25–34", "35–44", "45+"].map((k, i) => [k, D.y[i]]))}</div>
-
+    <div class="card">${gorizontal(["18 gacha", "18–24", "25–34", "35–44", "45+"].map((k, i) => [k, M.y[i]]).filter(q => q[1]))}</div>
     <h2>📅 Aksiyalar natijasi</h2>
-    <div class="card">${D.p.length ? D.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx]) => {
+    <div class="card">${D.pn.p.length ? D.pn.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx]) => {
       const band = soni - Math.max(qoldi, 0);
       return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)}</span></div>
         <div class="muted" style="margin:4px 0 8px">band: ${band} ta · foyda ${som(band * (narx - tannarx))}</div>
@@ -260,135 +359,29 @@ function marketingView() {
     }).join("") : `<p class="muted">Rejada aksiya yo'q.</p>`}</div>`;
 }
 
-// ================================================================ admin paneli
-function panelView() {
-  $("#app").innerHTML = `
-    <div class="brand">KITOB OLAMI · ADMIN</div>
-    <h1>🛠 Admin <em>panel</em></h1>
-    <p class="muted">Holat: ${sana(D.t)}. Yangilash uchun botga /start yozing.</p>
-    <div class="tiles">
-      <div class="tile gold"><b>${D.m}</b><span>👥 Mijozlar</span></div>
-      <div class="tile ${D.k ? "gold" : ""}"><b>${D.k}</b><span>⏳ To'lovi tekshirilmagan bron${D.k ? " — botda /buyurtmalar" : ""}</span></div>
-    </div>
-    <div class="tabs"><button class="on" data-tab="qosh">➕ Qo'shish</button><button data-tab="royxat">📅 Aksiyalar ${D.p.length}</button><button data-tab="xabar">✉️ Xabar</button></div>
-
-    <section id="qosh">
-      <div class="card">
-        <b>📚 Juma aksiyasiga kitob qo'shish</b>
-        ${D.f.length ? `
-        <label>Qaysi juma?</label>
-        <select id="a_sana">${D.f.map(f => `<option value="${f}">${sana(f)}, juma (${kunQoldi(f)} kun)</option>`).join("")}</select>
-        <label>Kitob nomi</label><input id="a_kitob" maxlength="120" placeholder="Muqaddima">
-        <label>Janr</label>
-        <select id="a_janr">${[HAMMA, ...JANRLAR].map(j => `<option>${esc(j)}</option>`).join("")}</select>
-        <label>Odatiy (do'kondagi) narx</label><input id="a_odatiy" inputmode="numeric" placeholder="400 000">
-        <label>Tannarx (mijozlar ko'rmaydi)</label><input id="a_tannarx" inputmode="numeric" placeholder="340 000">
-        <label>Aksiya narxi</label><input id="a_narx" inputmode="numeric" placeholder="360 000">
-        <p class="muted" id="a_hisob"></p>
-        <div class="err" id="a_xato"></div>
-        <button id="a_saqla">✅ Aksiyani saqlash</button>
-        <p class="muted">Har aksiyada 100 ta kitob. Saqlangach, bot muqova rasmini so'raydi — rasmni chatga yuborasiz.</p>`
-        : `<p class="muted">Kelgusi 8 jumaning hammasiga aksiya qo'yilgan.</p>`}
-      </div>
-    </section>
-
-    <section id="royxat" class="hidden">
-      <div class="card">${D.p.length ? D.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx, rasm]) => {
-        const band = soni - Math.max(qoldi, 0), k = kunQoldi(sn);
-        return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)} · ${k} kun</span></div>
-          <div class="muted" style="margin:4px 0 8px">${som(odatiy)} → <b style="color:var(--text)">${som(narx)}</b> · foyda ${som(narx - tannarx)}/dona${rasm ? " · 🖼" : ""}
-            · ${k <= 7 ? "mijozlar biladi" : "e'lon " + (k - 7) + " kundan keyin"}</div>
-          <div class="row"><div class="bar grow"><i style="width:${soni ? Math.max(2, 100 * band / soni) : 0}%"></i></div><span class="muted">${band}/${soni}</span></div>
-          ${band ? "" : `<button class="ghost" style="margin-top:10px" data-ochir="${id}" data-nom="${esc(kitob)}">🗑 O'chirish</button>`}</div>`;
-      }).join("") : `<p class="muted">Rejada aksiya yo'q — «➕ Aksiya qo'shish» ni bosing.</p>`}</div>
-    </section>
-
-    <section id="xabar" class="hidden">
-      <div class="card">
-        <b>✉️ Hamma mijozga xabar</b>
-        <p class="muted">Masalan: «Yangi kitoblar keldi! Do'konimizga keling 📚»</p>
-        <textarea id="x_matn" rows="5" maxlength="3000" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit"></textarea>
-        <div class="err" id="x_xato"></div>
-        <button id="x_yubor">📨 ${D.m} ta mijozga yuborish</button>
-      </div>
-    </section>`;
-
-  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
-    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-    ["qosh", "royxat", "xabar"].forEach(t => $("#" + t).classList.toggle("hidden", b.dataset.tab !== t));
-  });
-
-  const tasdiq = (matn, ish) => tg && tg.showConfirm ? tg.showConfirm(matn, ok => ok && ish()) : (confirm(matn) && ish());
-  document.querySelectorAll("[data-ochir]").forEach(b => b.onclick = () =>
-    tasdiq(`«${b.dataset.nom}» aksiyasini o'chiramizmi?`, () => yubor({t: "ochir", id: +b.dataset.ochir})));
-  $("#x_yubor").onclick = () => {
-    const m = $("#x_matn").value.trim();
-    $("#x_xato").textContent = m ? "" : "Xabar matnini yozing.";
-    if (m) tasdiq(`Xabar ${D.m} ta mijozga yuboriladi. Yuboramizmi?`, () => yubor({t: "xabar", matn: m}));
-  };
-  if (!D.f.length) return;
-
-  const v = id => raqam($("#" + id).value);
-  let narxQolda = false;
-  $("#a_narx").oninput = () => { narxQolda = true; hisobla(); };
-  ["a_odatiy", "a_tannarx"].forEach(id => $("#" + id).oninput = () => {
-    const od = v("a_odatiy"), tn = v("a_tannarx");
-    if (!narxQolda && od) $("#a_narx").value = Math.max(tn, Math.floor(od * 0.9 / 1000) * 1000) || "";
-    hisobla();
-  });
-  function xato() {
-    const od = v("a_odatiy"), tn = v("a_tannarx"), nx = v("a_narx");
-    if (!$("#a_kitob").value.trim()) return "Kitob nomini yozing.";
-    if (!od || !tn || !nx) return "Narxlarni to'liq yozing.";
-    if (tn >= od) return "Tannarx odatiy narxdan kam bo'lishi kerak.";
-    if (nx < tn) return "Aksiya narxi tannarxdan past — zarar bo'ladi.";
-    if (nx >= od) return "Aksiya narxi odatiy narxdan arzon bo'lishi kerak.";
-    return "";
-  }
-  function hisobla() {
-    const od = v("a_odatiy"), tn = v("a_tannarx"), nx = v("a_narx");
-    $("#a_hisob").textContent = od && tn && nx && nx >= tn && nx < od
-      ? `Chegirma −${Math.round(100 * (od - nx) / od)}% · foyda ${som(nx - tn)}/dona · 100 tasi sotilsa: ${som(100 * (nx - tn))}` : "";
-  }
-  $("#a_saqla").onclick = () => {
-    const x = xato();
-    $("#a_xato").textContent = x;
-    if (!x) yubor({t: "aksiya", sana: $("#a_sana").value, kitob: $("#a_kitob").value.trim(),
-      janr: $("#a_janr").value, odatiy: v("a_odatiy"), tannarx: v("a_tannarx"), narx: v("a_narx")});
-  };
-}
-
-// Haftalik grafik: har hafta uchun ikki ustun (mijozlar va sotuv).
-function grafik([mij, sot], w0) {
-  const W = 320, H = 150, pad = 18, n = mij.length, g = (W - pad) / n, bw = g * 0.32;
-  const maks = Math.max(1, ...mij, ...sot);
-  const y = v => H - 20 - (H - 34) * v / maks;
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Haftalik grafik">`;
-  for (let i = 0; i < n; i++) {
-    const x = pad + i * g + g * 0.16;
-    const d = new Date(w0 + "T00:00:00"); d.setDate(d.getDate() + 7 * i);
-    s += `<rect x="${x}" y="${y(mij[i])}" width="${bw}" height="${H - 20 - y(mij[i])}" rx="2" fill="var(--gold)"><title>${mij[i]} mijoz</title></rect>`;
-    s += `<rect x="${x + bw + 2}" y="${y(sot[i])}" width="${bw}" height="${H - 20 - y(sot[i])}" rx="2" fill="var(--green)"><title>${sot[i]} kitob</title></rect>`;
-    if (mij[i]) s += `<text x="${x + bw / 2}" y="${y(mij[i]) - 3}" text-anchor="middle">${mij[i]}</text>`;
-    s += `<text x="${x + bw}" y="${H - 5}" text-anchor="middle">${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}</text>`;
-  }
-  return s + `<line x1="${pad}" x2="${W}" y1="${H - 20}" y2="${H - 20}" stroke="var(--line)"/></svg>`;
-}
-
-function gorizontal(qator) {
-  const maks = Math.max(1, ...qator.map(q => q[1]));
-  const jami = qator.reduce((a, q) => a + q[1], 0) || 1;
-  if (!qator.length) return `<p class="muted">Hali ma'lumot yo'q.</p>`;
-  return qator.map(([k, v]) => `<div class="hbar"><div class="row"><span class="grow">${esc(k)}</span>
-    <span class="muted">${v} · ${Math.round(100 * v / jami)}%</span></div><div class="bar"><i style="width:${100 * v / maks}%"></i></div></div>`).join("");
-}
-
+// ================================================================ sahifa
+const app = $("#app");
 if (!D) {
-  $("#app").innerHTML = `<div class="brand">KITOB OLAMI</div><h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
-    <p class="muted">Bu ilova Telegram botimiz ichida ochiladi: <a href="https://t.me/My_books_07bot" style="color:var(--link)">@My_books_07bot</a> → pastdagi «📚 Kitob olami» tugmasi.</p>`;
-} else if (D.a === "p") panelView();
-else if (D.a === "m") marketingView();
-else mijozView();
+  app.innerHTML = `<div class="brand">KITOB OLAMI</div><h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
+    <p class="muted">Bu ilova Telegram botimiz ichida ochiladi: <a href="https://t.me/My_books_07bot" style="color:var(--link)">@My_books_07bot</a> → pastki chap burchakdagi «📚 Kitoblar» tugmasi.</p>`;
+} else {
+  app.innerHTML = `<div class="brand">KITOB OLAMI${D.A ? " · DO'KON EGASI" : ""}</div>
+    <h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
+    ${D.A ? `<div class="tabs" id="bosh"><button class="on" data-v="dokon">🛍 Do'kon</button><button data-v="admin">🛠 Admin</button><button data-v="marketing">📊 Marketing</button></div>` : ""}
+    <div data-v="dokon"></div>${D.A ? `<div data-v="admin" class="hidden"></div><div data-v="marketing" class="hidden"></div>` : ""}`;
+  dokon($('div[data-v="dokon"]'));
+  if (D.A) {
+    admin($('div[data-v="admin"]'));
+    marketing($('div[data-v="marketing"]'));
+    let ochiq = null; try { ochiq = sessionStorage.getItem("v"); } catch (e) {}
+    $$("#bosh button").forEach(b => b.onclick = () => {
+      $$("#bosh button").forEach(x => x.classList.toggle("on", x === b));
+      $$("div[data-v]").forEach(d => d.classList.toggle("hidden", d.dataset.v !== b.dataset.v));
+      try { sessionStorage.setItem("v", b.dataset.v); } catch (e) {}
+    });
+    if (ochiq) { const b = $(`#bosh button[data-v="${ochiq}"]`); b && b.click(); }
+  }
+}
 </script>
 </body>
 </html>
