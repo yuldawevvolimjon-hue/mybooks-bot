@@ -117,12 +117,13 @@ YORDAM = (
     "<b>👥 Guruhda ham ishlaydi</b> — meni guruhga qo'shing, "
     "havola tashlansa, videoni o'zim yuklab beraman."
 )
-TAVSIF = ("🎧 Istalgan qo'shiqni bir zumda topaman!\n\n"
+TAVSIF = ("🎧 Navo Music — istalgan qo'shiq bir zumda!\n\n"
           "🎵 Qo'shiq nomini yozing — o'zbek, rus, ingliz va boshqa tillarda "
           "MP3 qilib yuboraman.\n\n"
-          "📥 Instagram, TikTok, YouTube, Facebook va boshqa tarmoqlardan "
-          "havola yuboring — videoni yuklab beraman.\n\n"
-          "👇 START tugmasini bosing")
+          "📥 Instagram, TikTok, YouTube, Facebook havolasini yuboring — "
+          "videoni yuklab beraman.\n\n"
+          "⚡ Tez, bepul va qulay.\n\n"
+          "👇 START tugmasini bosing!")
 QISQA_TAVSIF = "🎧 Qo'shiq topish va Instagram, TikTok, YouTube'dan video yuklash"
 RAQAM = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
@@ -1047,12 +1048,15 @@ def bot_nomi():
     BOT_NOMI = me.get("first_name", "") or BOT_NOMI
 
 
+# Menyudagi buyruqlar. /privacy ro'yxatda yo'q, lekin yozilsa ishlaydi.
+BUYRUQLAR = [
+    {"command": "start", "description": "🏠 Bosh sahifa"},
+    {"command": "help", "description": "📖 Qanday foydalaniladi"},
+]
+
+
 def setup():
-    r1 = call("setMyCommands", commands=[
-        {"command": "start", "description": "🏠 Bosh sahifa"},
-        {"command": "help", "description": "📖 Qanday foydalaniladi"},
-        {"command": "privacy", "description": "🔒 Maxfiylik siyosati"},
-    ])
+    r1 = call("setMyCommands", commands=BUYRUQLAR)
     r2 = call("setMyDescription", description=TAVSIF)
     r3 = call("setMyShortDescription", short_description=QISQA_TAVSIF)
     bot_nomi()
@@ -1092,6 +1096,8 @@ def main(argv):
     kanal_nomlari()
     if not db.get("buyruqlar_v3"):                   # bir marta: buyruqlar va tavsif
         db["buyruqlar_v3"] = setup()
+    if not db.get("buyruqlar_v4"):                   # bir marta: menyu faqat /start va /help
+        db["buyruqlar_v4"] = bool(call("setMyCommands", commands=BUYRUQLAR).get("ok"))
     print("Musiqa boti ishga tushdi: @%s" % BOT_USERNAME)
     # Qidiruv tez — alohida ishchilar, uzoq yuklashlar ularni to'sib qo'ymasin.
     pool = {"q": ThreadPoolExecutor(max_workers=8), "d": ThreadPoolExecutor(max_workers=ISHCHILAR)}
