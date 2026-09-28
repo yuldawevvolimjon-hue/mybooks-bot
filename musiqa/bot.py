@@ -72,6 +72,14 @@ KANALLAR = [x.strip() for x in (os.environ.get("KANALLAR")
             or "@AI_VIDEOLA_VARASIMLA,@music_uz0007").split(",") if x.strip()]
 TIKTOK = os.environ.get("TIKTOK", "https://www.tiktok.com/@yuldawev.olimjon0007").strip()
 INSTAGRAM = os.environ.get("INSTAGRAM", "https://www.instagram.com/____0007y.o").strip()
+BOTPIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "botpic.png")
+MAXFIYLIK_URL = os.environ.get("MAXFIYLIK_URL") or \
+    "https://yuldawevvolimjon-hue.github.io/mybooks-bot/musiqa-maxfiylik.html"
+MAXFIYLIK = ("🔒 <b>Maxfiylik siyosati</b>\n\n"
+             "• Faqat Telegram ID va ismingiz saqlanadi.\n"
+             "• Qidiruvlar, havolalar va yuklangan fayllar saqlanmaydi.\n"
+             "• Ma'lumotlaringiz hech kimga berilmaydi.\n\n"
+             "📄 To'liq matn: %s" % MAXFIYLIK_URL)
 SALOM_RASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "tavsif.png")
 _DB = None                 # main() da o'rnatiladi — rasm file_id keshi uchun
 OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
@@ -713,6 +721,8 @@ def handle(msg, db, pool):
         u = db["users"].setdefault(chat, {"birinchi": int(time.time()), "soni": 0})
         u["ism"] = frm.get("first_name", "")
         u["soni"] = u.get("soni", 0) + 1
+    if text.split()[:1] and text.split()[0].split("@")[0].lower() == "/privacy":
+        return send(chat, MAXFIYLIK)              # obunasiz ham ko'rinsin
     if msg["chat"].get("type") == "private" and not obunachi(db, chat):
         kutilgan = msg if text and not text.startswith("/") else None
         return obuna_sora(chat, frm, kutilgan)
@@ -947,12 +957,19 @@ def setup():
     r1 = call("setMyCommands", commands=[
         {"command": "start", "description": "🏠 Bosh sahifa"},
         {"command": "help", "description": "📖 Qanday foydalaniladi"},
+        {"command": "privacy", "description": "🔒 Maxfiylik siyosati"},
     ])
     r2 = call("setMyDescription", description=TAVSIF)
     r3 = call("setMyShortDescription", short_description=QISQA_TAVSIF)
     bot_nomi()
+    # Bot rasmi (Botpic). Yangi Bot API'da bor; eski serverda bo'lmasa — shunchaki o'tamiz.
+    r4 = {"ok": False}
+    if os.path.exists(BOTPIC):
+        r4 = upload("setMyProfilePhoto", {"photo": {"type": "static", "photo": "attach://rasm"}},
+                    {"rasm": BOTPIC})
     print("bot: @%s" % (BOT_USERNAME or "?"))
-    print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"))
+    print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"),
+          "| bot rasmi:", r4.get("ok"), r4.get("description") or "")
     return all(x.get("ok") for x in (r1, r2, r3))
 
 
@@ -979,8 +996,8 @@ def main(argv):
 
     bot_nomi()
     kanal_nomlari()
-    if not db.get("buyruqlar_v2"):                   # bir marta: buyruqlar va tavsif
-        db["buyruqlar_v2"] = setup()
+    if not db.get("buyruqlar_v3"):                   # bir marta: buyruqlar va tavsif
+        db["buyruqlar_v3"] = setup()
     print("Musiqa boti ishga tushdi: @%s" % BOT_USERNAME)
     # Qidiruv tez — alohida ishchilar, uzoq yuklashlar ularni to'sib qo'ymasin.
     pool = {"q": ThreadPoolExecutor(max_workers=8), "d": ThreadPoolExecutor(max_workers=ISHCHILAR)}
