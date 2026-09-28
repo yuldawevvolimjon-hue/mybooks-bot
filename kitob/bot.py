@@ -611,12 +611,12 @@ def royxat_tugat(chat, u, q, db):
     u["royxat"] = u.get("royxat") or int(time.time())
     u.pop("vaqtincha", None)
     u.pop("qadam", None)
-    keyin_matn = ("👇 Endi pastki chap burchakdagi <b>«%s»</b> tugmasini bosing — u yerda "
-                  "qiziqqan kitoblaringizni tanlaysiz va juma aksiyasini ko'rasiz." % MENYU_MATN
-                  if APP_URL else "Juma aksiyasini bir hafta oldin shu yerga yozamiz. "
-                                  "Botni o'chirib qo'ymang 🙂")
-    send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\n%s" % (profil(u), keyin_matn),
-         menyu(chat, db))
+    if APP_URL:
+        send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s" % profil(u), menyu(chat, db))
+        ilova_tugmasi(chat, db, KEYINGI_QADAMLAR)
+    else:
+        send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\nJuma aksiyasini bir hafta oldin "
+                   "shu yerga yozamiz. Botni o'chirib qo'ymang 🙂" % profil(u), menyu(chat, db))
     if yangi:
         for a in ADMINS:
             send(a, "🆕 Yangi mijoz (%d-chi):\n%s" % (
@@ -626,6 +626,22 @@ def royxat_tugat(chat, u, q, db):
     if p and korinadi(p):
         aksiya_yubor(db, chat, p, u)
     return
+
+
+KEYINGI_QADAMLAR = (
+    "👇 <b>Endi nima qilasiz:</b>\n\n"
+    "1️⃣ Pastdagi <b>«📚 Kitoblarni ochish»</b> tugmasini bosing "
+    "(yoki pastki chap burchakdagi <b>«📚 Kitoblar»</b>)\n"
+    "2️⃣ Qaysi kitoblarga qiziqishingizni tanlang va <b>Saqlash</b> ni bosing\n"
+    "3️⃣ Juma aksiyasi chiqqanda — sonini tanlab, <b>📌 Band qiling</b>\n"
+    "4️⃣ Kitob pulining yarmini to'laysiz, qolganini juma kuni kitobni olganda\n\n"
+    "Aksiyani bir hafta oldin shu yerga ham yozamiz 🔔")
+
+
+def ilova_tugmasi(chat, db, matn):
+    """Matn + Mini App'ni (mijoz ko'rinishi) darhol ochadigan tugma."""
+    return send(chat, matn, {"inline_keyboard": [[{"text": "📚 Kitoblarni ochish",
+                                                    "web_app": {"url": app_havola(mijoz_data(chat, db))}}]]})
 
 
 def profil(u):
@@ -1286,7 +1302,11 @@ def handle(msg, db):
         u.pop("vaqtincha", None)
         tugma = ("\n\n👇 Pastki chap burchakdagi <b>«%s»</b> tugmasini bosing." % MENYU_MATN
                  if APP_URL else "")
-        if text.startswith("/start") and royxatda(db, chat):
+        if text.startswith("/start") and royxatda(db, chat) and APP_URL:
+            send(chat, "Assalomu alaykum, %s! <b>Kitoblar olamiga xush kelibsiz</b> 📚"
+                 % escape(u.get("ism", "")), menyu(chat, db))
+            ilova_tugmasi(chat, db, "Juma aksiyasi, band qilish va qiziqishlaringiz — ilovada 👇")
+        elif text.startswith("/start") and royxatda(db, chat):
             send(chat, "Assalomu alaykum, %s! <b>Kitoblar olamiga xush kelibsiz</b> 📚\n\n"
                        "Juma aksiyasini bir hafta oldin shu yerga yozamiz.%s"
                  % (escape(u.get("ism", "")), tugma), menyu(chat, db))
