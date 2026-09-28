@@ -67,6 +67,7 @@ STORE = os.environ.get("STATE_FILE") or os.path.join(
 ESLATMA_SOAT = int(os.environ.get("ESLATMA_SOAT") or 10)
 TOLOV_KARTA = os.environ.get("TOLOV_KARTA", "").strip()
 APP_URL = os.environ.get("APP_URL", "").strip()
+APP_URL_ASL = APP_URL        # sahifa hali ochilmasa ham, keyinroq qayta tekshiramiz
 BOT_USERNAME = ""           # getMe dan olinadi — Mini App bot chatiga havola yasaydi
 MENYU_MATN = "📚 Kitoblar"  # pastki chap burchakdagi Mini App tugmasi
 API = "https://api.telegram.org/bot%s/" % TOKEN
@@ -318,14 +319,17 @@ def menyularni_yangila(db):
 def app_tekshir():
     """Mini App sahifasi ochiladimi (GitHub Pages yoqilganmi)? Yo'q bo'lsa, tugma chiqmaydi."""
     global APP_URL
-    if not APP_URL:
+    if not APP_URL_ASL:
         return
     try:
-        with urlopen(Request(APP_URL, method="HEAD"), timeout=15) as r:
+        with urlopen(Request(APP_URL_ASL, method="HEAD"), timeout=15) as r:
             if r.status == 200:
+                if not APP_URL:
+                    print("Mini App ochildi:", APP_URL_ASL)
+                APP_URL = APP_URL_ASL
                 return
     except (HTTPError, URLError, OSError) as e:
-        print("Mini App ochilmadi (%s) — tugma o'chirildi: %s" % (e, APP_URL), file=sys.stderr)
+        print("Mini App ochilmadi (%s) — tugma o'chirildi: %s" % (e, APP_URL_ASL), file=sys.stderr)
     APP_URL = ""
 
 
@@ -1504,9 +1508,11 @@ def main(argv):
             elif not r.get("ok"):
                 time.sleep(5)                    # tarmoq xatosi — biroz kutamiz
             eslatmalar(db)
-            if time.time() >= keyingi_yangilash:         # har 10 daqiqada tugmalar
+            if time.time() >= keyingi_yangilash:         # har 5 daqiqada tugmalar
+                if not APP_URL:
+                    app_tekshir()                        # Pages endi yoqildimi?
                 menyularni_yangila(db)
-                keyingi_yangilash = time.time() + 600
+                keyingi_yangilash = time.time() + 300
             save(db)
         if offset is not None:
             call("getUpdates", offset=offset, timeout=0)   # «shulargacha ko'rdim»
