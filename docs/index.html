@@ -107,6 +107,15 @@ const kunQoldi = iso => Math.round((new Date(iso + "T00:00:00") - new Date(new D
 const yarmi = jami => Math.min(jami, Math.ceil(Math.floor(jami / 2) / 1000) * 1000);
 const raqam = s => parseInt(String(s).replace(/\D/g, ""), 10) || 0;
 
+// Menyu tugmasidan («📚 Kitoblar») ochilganda sendData ishlamaydi — o'rniga
+// bot chatiga t.me/<bot>?start=... havolasi bilan o'tamiz.
+const KLAVIATURADAN = !!(tg && tg.initData && !(tg.initDataUnsafe && tg.initDataUnsafe.query_id));
+function botga(param) {
+  const url = `https://t.me/${(D && D.u) || "My_books_07bot"}?start=${param}`;
+  if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); setTimeout(() => tg.close(), 300); }
+  else location.href = url;
+}
+
 function yubor(obj) {
   if (!tg || !tg.sendData) { alert("Bu sahifa faqat Telegram ichida ishlaydi."); return; }
   tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
@@ -184,12 +193,19 @@ function mijozView() {
     };
     $("#kam").onclick = () => { n = Math.max(1, n - 1); yangila(); };
     $("#kop").onclick = () => { n = Math.min(maks, n + 1); yangila(); };
-    $("#bron").onclick = () => yubor({t: "bron", p: p[0], n});
+    $("#bron").onclick = () => KLAVIATURADAN ? yubor({t: "bron", p: p[0], n}) : botga(`b_${p[0]}_${n}`);
     yangila();
   }
 
-  if (D.r) $("#tahrir").onclick = () => { $("#royxat").classList.remove("hidden"); $("#royxat").scrollIntoView({behavior: "smooth"}); };
-  {
+  if (!KLAVIATURADAN) {
+    // Menyu tugmasi: ro'yxat bot chatida (ism → familiya → telefon → yosh → janr).
+    $("#royxat").innerHTML = `<b>📝 ${D.r ? "Ma'lumotni o'zgartirish" : "Ro'yxatdan o'tish"}</b>
+      <p class="muted">Bot 5 ta savol beradi — 1 daqiqa. Juma aksiyasini birinchilardan bo'lib bilasiz.</p>
+      <button id="saqla">📝 ${D.r ? "O'zgartirish" : "Ro'yxatdan o'tish"}</button>`;
+    $("#saqla").onclick = () => botga("royxat");
+    if (D.r) $("#tahrir").onclick = () => botga("royxat");
+  } else {
+    if (D.r) $("#tahrir").onclick = () => { $("#royxat").classList.remove("hidden"); $("#royxat").scrollIntoView({behavior: "smooth"}); };
     let janr = "";
     document.querySelectorAll("#janrlar .chip").forEach(b => b.onclick = () => {
       document.querySelectorAll("#janrlar .chip").forEach(x => x.classList.remove("on"));

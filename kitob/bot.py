@@ -67,6 +67,8 @@ STORE = os.environ.get("STATE_FILE") or os.path.join(
 ESLATMA_SOAT = int(os.environ.get("ESLATMA_SOAT") or 10)
 TOLOV_KARTA = os.environ.get("TOLOV_KARTA", "").strip()
 APP_URL = os.environ.get("APP_URL", "").strip()
+BOT_USERNAME = ""           # getMe dan olinadi — Mini App bot chatiga havola yasaydi
+MENYU_MATN = "📚 Kitoblar"  # pastki chap burchakdagi Mini App tugmasi
 API = "https://api.telegram.org/bot%s/" % TOKEN
 TOSHKENT = timezone(timedelta(hours=5))
 
@@ -183,13 +185,14 @@ def kb(rows):
 
 def menyu(chat, db):
     if APP_URL:
-        # Mini App bor: mijoz pastda faqat bitta tugmani ko'radi, qolgan hammasi
-        # ilova ichida. Do'kon egasiga — alohida admin va marketing panellari.
-        rows = [[{"text": BTN_ILOVA, "web_app": {"url": app_havola(mijoz_data(chat, db))}}]]
+        # Mini App bor: mijoz uchun hammasi pastki chap burchakdagi «📚 Kitoblar»
+        # menyu tugmasida (menyu_tugma), boshqa tugma yo'q. Do'kon egasiga —
+        # admin va marketing panellari (klaviatura tugmalari: ular botga
+        # ma'lumot yubora oladi, menyu tugmasi esa yubora olmaydi).
         if chat in ADMINS:
-            rows.append([{"text": BTN_PANEL, "web_app": {"url": app_havola(panel_data(db))}},
-                         {"text": BTN_MARKETING_APP, "web_app": {"url": app_havola(admin_data(db))}}])
-        return kb(rows)
+            return kb([[{"text": BTN_PANEL, "web_app": {"url": app_havola(panel_data(db))}},
+                        {"text": BTN_MARKETING_APP, "web_app": {"url": app_havola(admin_data(db))}}]])
+        return {"remove_keyboard": True}
     if not royxatda(db, chat):
         rows = [[BTN_ROYXAT], [BTN_AKSIYA]]
     else:
@@ -222,7 +225,7 @@ def mijoz_data(chat, db):
     bronlar = [[o["promo"], o["soni"], o["holat"][0]] for o in db["orders"]
                if o["chat"] == chat and o["holat"] != "rad"][-3:]
     return {"v": 1, "r": 1 if u.get("royxat") else 0, "n": (u.get("ism") or "")[:30],
-            "q": (u.get("qiziqish") or "")[:40],
+            "q": (u.get("qiziqish") or "")[:40], "u": BOT_USERNAME,
             "p": promo_qisqa(db, yaqin[0]) if yaqin else None, "b": bronlar,
             "k": 1 if TOLOV_KARTA else 0}
 
@@ -281,6 +284,37 @@ def panel_data(db):
     }
 
 
+def menyu_tugma(chat, db, majburiy=False):
+    """Mijozning pastki chap «📚 Kitoblar» tugmasini uning holati bilan yangilaydi.
+    Havola o'zgarmagan bo'lsa, Telegram'ga qayta so'rov yuborilmaydi."""
+    if not APP_URL:
+        return
+    u = db["users"].get(chat)
+    if u is None or u.get("bloklagan"):
+        return
+    url = app_havola(mijoz_data(chat, db))
+    if url == u.get("mb") and not majburiy:
+        return
+    r = call("setChatMenuButton", chat_id=chat,
+             menu_button={"type": "web_app", "text": MENYU_MATN, "web_app": {"url": url}})
+    if r.get("ok"):
+        u["mb"] = url
+
+
+def menyularni_yangila(db):
+    """Aksiya qo'shilsa yoki kitob qoldig'i o'zgarsa — hammaning tugmasi yangilanadi."""
+    if not APP_URL:
+        return
+    url = app_havola(mijoz_data("", db))           # yangi kelganlar uchun umumiy tugma
+    if url != db.get("mb_umumiy"):
+        r = call("setChatMenuButton", menu_button={"type": "web_app", "text": MENYU_MATN,
+                                                    "web_app": {"url": url}})
+        if r.get("ok"):
+            db["mb_umumiy"] = url
+    for chat in list(db["users"]):
+        menyu_tugma(chat, db)
+
+
 def app_tekshir():
     """Mini App sahifasi ochiladimi (GitHub Pages yoqilganmi)? Yo'q bo'lsa, tugma chiqmaydi."""
     global APP_URL
@@ -293,6 +327,11 @@ def app_tekshir():
     except (HTTPError, URLError, OSError) as e:
         print("Mini App ochilmadi (%s) — tugma o'chirildi: %s" % (e, APP_URL), file=sys.stderr)
     APP_URL = ""
+
+
+def bot_nomi():
+    global BOT_USERNAME
+    BOT_USERNAME = call("getMe").get("result", {}).get("username", "") or BOT_USERNAME
 
 
 def ustunlar(items, n=2):
@@ -1175,15 +1214,32 @@ def handle(msg, db):
     u["username"] = user.get("username", "")
     u.pop("bloklagan", None)               # yozdi — demak botni o'chirmagan
 
+    # Mini App menyu tugmasidan: t.me/<bot>?start=royxat | start=b_<aksiya>_<soni>
+    m = re.match(r"^/start (royxat|b_(\d+)_(\d+))$", text)
+    if m:
+        u.pop("qadam", None)
+        u.pop("vaqtincha", None)
+        if m.group(1) == "royxat":
+            u["qadam"] = "ism"
+            u["vaqtincha"] = {}
+            send(chat, "📝 Ro'yxatdan o'tamiz. Ismingizni yozing:", kb([[BTN_BEKOR]]))
+        else:
+            buyurtma_boshla(chat, u, int(m.group(2)), db)
+            if u.get("qadam") == "b_soni":
+                buyurtma_qadam(chat, u, {}, m.group(3), db)
+        return
+
     if text == BTN_BEKOR or text.startswith("/start") or text == "/bekor":
         u.pop("qadam", None)
         u.pop("vaqtincha", None)
+        tugma = ("\n\n👇 Pastki chap burchakdagi <b>«%s»</b> tugmasini bosing." % MENYU_MATN
+                 if APP_URL else "")
         if text.startswith("/start") and royxatda(db, chat):
             send(chat, "Assalomu alaykum, %s! <b>Kitoblar olamiga xush kelibsiz</b> 📚\n\n"
-                       "Juma aksiyasini bir hafta oldin shu yerga yozamiz."
-                 % escape(u.get("ism", "")), menyu(chat, db))
+                       "Juma aksiyasini bir hafta oldin shu yerga yozamiz.%s"
+                 % (escape(u.get("ism", "")), tugma), menyu(chat, db))
         elif text.startswith("/start"):
-            send(chat, SALOM, menyu(chat, db))
+            send(chat, SALOM + tugma, menyu(chat, db))
         else:
             send(chat, "Bekor qilindi.", menyu(chat, db))
         return
@@ -1303,7 +1359,8 @@ def handle(msg, db):
                 db, lambda c, u: send(c, body, menyu(c, db))))
             return
 
-    send(chat, "Pastdagi tugmalardan foydalaning 👇", menyu(chat, db))
+    send(chat, ("Pastki chap burchakdagi «%s» tugmasini bosing 👇" % MENYU_MATN) if APP_URL
+         else "Pastdagi tugmalardan foydalaning 👇", menyu(chat, db))
 
 
 def ilova_xabari(chat, u, msg, db):
@@ -1378,6 +1435,8 @@ def process(updates, db):
         try:                                            # bitta xato botni to'xtatmasin
             if msg:
                 handle(msg, db)
+                if msg["chat"].get("type") == "private":
+                    menyu_tugma(str(msg["chat"]["id"]), db)
             elif upd.get("callback_query"):
                 callback(upd["callback_query"], db)
         except Exception as e:
@@ -1396,7 +1455,14 @@ def setup():
     ])
     r2 = call("setMyDescription", description=TAVSIF)
     r3 = call("setMyShortDescription", short_description="Har juma bitta kitob aksiya narxida 📚")
-    r4 = call("setChatMenuButton", menu_button={"type": "commands"})
+    app_tekshir()
+    bot_nomi()
+    if APP_URL:
+        r4 = call("setChatMenuButton", menu_button={"type": "web_app", "text": MENYU_MATN,
+                  "web_app": {"url": app_havola(mijoz_data("", {"users": {}, "promos": [],
+                                                               "orders": []}))}})
+    else:
+        r4 = call("setChatMenuButton", menu_button={"type": "commands"})
     me = call("getMe").get("result", {})
     print("bot: @%s" % me.get("username", "?"))
     print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"),
@@ -1420,8 +1486,10 @@ def main(argv):
         i = argv.index("--uzluksiz")
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
         app_tekshir()
+        bot_nomi()
         tugash = time.time() + daqiqa * 60
         offset, soni = None, 0
+        keyingi_yangilash = 0
         while True:
             qoldi = int(tugash - time.time())
             if qoldi <= 0:
@@ -1436,6 +1504,9 @@ def main(argv):
             elif not r.get("ok"):
                 time.sleep(5)                    # tarmoq xatosi — biroz kutamiz
             eslatmalar(db)
+            if time.time() >= keyingi_yangilash:         # har 10 daqiqada tugmalar
+                menyularni_yangila(db)
+                keyingi_yangilash = time.time() + 600
             save(db)
         if offset is not None:
             call("getUpdates", offset=offset, timeout=0)   # «shulargacha ko'rdim»
