@@ -82,6 +82,9 @@ MAXFIYLIK = ("🔒 <b>Maxfiylik siyosati</b>\n\n"
              "📄 To'liq matn: %s" % MAXFIYLIK_URL)
 SALOM_RASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "tavsif.png")
 _DB = None                 # main() da o'rnatiladi — rasm file_id keshi uchun
+# Uydagi kompyuterda ishlayotgan nusxa (ishga_tushir.bat) doim ustun: GitHub
+# nusxasi bilan to'qnashsa, u chiqib ketmaydi — GitHub nusxasi chiqadi.
+UYDA = os.environ.get("UYDA") == "1"
 YANGI_NUSXA = 90           # shundan keyin «Conflict» kelsa — yangi nusxa bor, eskisi chiqadi
 OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
 
@@ -1156,7 +1159,7 @@ def setup():
     bot_nomi()
     # Bot rasmi (Botpic). Yangi Bot API'da bor; eski serverda bo'lmasa — shunchaki o'tamiz.
     r4 = {"ok": False}
-    if os.path.exists(BOTPIC):
+    if os.path.exists(BOTPIC) and not UYDA:        # rasm allaqachon qo'yilgan
         r4 = upload("setMyProfilePhoto", {"photo": {"type": "static", "photo": "attach://rasm"}},
                     {"rasm": BOTPIC})
     print("bot: @%s" % (BOT_USERNAME or "?"))
@@ -1170,6 +1173,12 @@ def main(argv):
         sys.exit("BOT_TOKEN o'zgaruvchisini kiriting.")
     if yt_dlp is None:
         sys.exit("yt-dlp o'rnatilmagan: pip install -U 'yt-dlp[default]'")
+    if not shutil.which("ffmpeg"):
+        try:                                         # Windows: ffmpeg ni o'zi yuklab oladi
+            import static_ffmpeg
+            static_ffmpeg.add_paths()
+        except Exception:
+            pass
     if not shutil.which("ffmpeg"):
         print("ogohlantirish: ffmpeg topilmadi — MP3 ga aylantirib bo'lmaydi.", file=sys.stderr)
     global _DB
@@ -1212,7 +1221,7 @@ def main(argv):
             if last is not None:
                 offset = last + 1
                 soni += len(natija)
-            elif r.get("error_code") == 409 and time.time() - boshlandi > YANGI_NUSXA:
+            elif r.get("error_code") == 409 and not UYDA and time.time() - boshlandi > YANGI_NUSXA:
                 # Yangi nusxa ishga tushdi va xabarlarni o'zi olyapti — biz chiqamiz.
                 # Shunday qilib almashish uzilishsiz bo'ladi.
                 print("yangi nusxa ishga tushdi — bu nusxa to'xtaydi")
