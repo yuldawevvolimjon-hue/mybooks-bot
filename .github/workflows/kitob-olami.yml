@@ -11,6 +11,7 @@
 #   secret   KITOB_OLAMI_BOT_TOKEN   — BotFather bergan token (AI kursi botidan boshqa bot)
 #   variable KITOB_OLAMI_ADMIN_IDS   — do'kon egasining Telegram ID si (botga /men deb yozing)
 #   variable KITOB_OLAMI_TOLOV_KARTA — to'lov kartasi (ixtiyoriy, chek so'rash uchun)
+#   Mini App uchun: Settings → Pages → Deploy from a branch → main, /docs
 #
 # Eslatma: GitHub jadval bo'yicha ishga tushirishni faqat asosiy (main)
 # shoxchadagi workflow uchun qiladi va 60 kun harakat bo'lmasa o'chiradi.
@@ -43,6 +44,7 @@ jobs:
       BOT_TOKEN: ${{ secrets.KITOB_OLAMI_BOT_TOKEN }}
       ADMIN_IDS: ${{ vars.KITOB_OLAMI_ADMIN_IDS }}
       TOLOV_KARTA: ${{ vars.KITOB_OLAMI_TOLOV_KARTA }}
+      APP_URL: ${{ vars.KITOB_OLAMI_APP_URL }}
       STATE_FILE: ${{ github.workspace }}/state/kitob.json
       REJIM: ${{ github.event.inputs.rejim || 'xabarlar' }}
     steps:
@@ -58,6 +60,10 @@ jobs:
       - name: Bot
         run: |
           mkdir -p state
+          # Mini App: GitHub Pages manzili (Settings → Pages → main /docs).
+          # Sahifa ochilmasa, bot tugmani o'zi yashiradi.
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          export APP_URL="${APP_URL:-https://${owner}.github.io/${GITHUB_REPOSITORY#*/}/}"
           case "$REJIM" in
             sozlash) python3 kitob/bot.py --setup ;;
             *)       python3 kitob/bot.py --uzluksiz 50 ;;

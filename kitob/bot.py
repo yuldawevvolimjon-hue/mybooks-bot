@@ -42,10 +42,13 @@ Muhit o'zgaruvchilari:
     ADMIN_IDS      do'kon egasining Telegram ID lari, vergul bilan
     STATE_FILE     kitob.json manzili (ixtiyoriy)
     ESLATMA_SOAT   eslatmalar yuboriladigan soat, Toshkent vaqti (standart 10)
+    APP_URL        Mini App manzili (GitHub Pages), masalan
+                   https://<foydalanuvchi>.github.io/mybooks-bot/ — bo'lmasa, tugma chiqmaydi
     TOLOV_KARTA    oldindan to'lov kartasi. Bo'lsa, mijoz yarim pulni shu kartaga
                    o'tkazib chek yuboradi; bo'lmasa, yarim pulni do'konga kelib to'laydi.
 """
 
+import base64
 import json
 import os
 import re
@@ -63,6 +66,7 @@ STORE = os.environ.get("STATE_FILE") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "kitob.json")
 ESLATMA_SOAT = int(os.environ.get("ESLATMA_SOAT") or 10)
 TOLOV_KARTA = os.environ.get("TOLOV_KARTA", "").strip()
+APP_URL = os.environ.get("APP_URL", "").strip()
 API = "https://api.telegram.org/bot%s/" % TOKEN
 TOSHKENT = timezone(timedelta(hours=5))
 
@@ -91,6 +95,8 @@ BTN_TASDIQ = "✅ Band qilishni tasdiqlash"
 HOLAT = {"kutilmoqda": "⏳ to'lov tekshirilmoqda", "tasdiqlandi": "✅ band qilindi",
          "rad": "❌ rad etildi"}
 BTN_YOQ = "❌ Yo'q"
+BTN_ILOVA = "📱 Kitob olami ilovasi"
+BTN_PANEL = "📊 Admin panel"
 HAMMA = "📚 Hamma uchun"
 
 JANRLAR = [
@@ -179,10 +185,95 @@ def menyu(chat, db):
         rows = [[BTN_ROYXAT], [BTN_AKSIYA]]
     else:
         rows = [[BTN_AKSIYA], [BTN_BUYURTMALARIM, BTN_MEN], [BTN_QAYTA]]
+    if APP_URL:
+        rows.insert(0, [{"text": BTN_ILOVA, "web_app": {"url": app_havola(mijoz_data(chat, db))}}])
     if chat in ADMINS:
+        if APP_URL:
+            rows.append([{"text": BTN_PANEL, "web_app": {"url": app_havola(admin_data(db))}}])
         rows += [[BTN_QOSH, BTN_ROYXAT_AKSIYA], [BTN_BUYURTMALAR, BTN_MIJOZLAR],
                  [BTN_MARKETING]]
     return kb(rows)
+
+
+# ---------------------------------------------------------------- Mini App
+# Ma'lumot bazasi GitHub Actions keshida, Mini App esa oddiy statik sahifa.
+# Shuning uchun bot kerakli ko'rsatkichlarni tugma havolasining «#» qismiga
+# joylaydi — u serverga yuborilmaydi, faqat foydalanuvchining Telegram'ida
+# ochiladi. Telefon raqamlari va ismlar ro'yxati bu yerga kirmaydi.
+def app_havola(data):
+    xom = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return APP_URL + "#d=" + base64.urlsafe_b64encode(xom).decode().rstrip("=")
+
+
+def promo_qisqa(db, p):
+    q = qolgan(db, p)
+    return [p["id"], p["sana"], p["kitob"][:40], p["narx"], p.get("odatiy") or 0,
+            q if q is not None else -1, p.get("soni") or 0]
+
+
+def mijoz_data(chat, db):
+    u = db["users"].get(chat, {})
+    yaqin = [p for p in kelgusi(db) if korinadi(p)]
+    bronlar = [[o["promo"], o["soni"], o["holat"][0]] for o in db["orders"]
+               if o["chat"] == chat and o["holat"] != "rad"][-3:]
+    return {"v": 1, "r": 1 if u.get("royxat") else 0, "n": (u.get("ism") or "")[:30],
+            "p": promo_qisqa(db, yaqin[0]) if yaqin else None, "b": bronlar,
+            "k": 1 if TOLOV_KARTA else 0}
+
+
+def admin_data(db):
+    b = bugun()
+    us = [u for u in db["users"].values() if u.get("royxat")]
+    tas = [o for o in db["orders"] if o["holat"] == "tasdiqlandi"]
+    kut = [o for o in db["orders"] if o["holat"] == "kutilmoqda"]
+    haftada = hafta_boshi(b)
+    haftalar = [haftada - timedelta(weeks=i) for i in range(7, -1, -1)]
+    mij = {h: 0 for h in haftalar}
+    sot = {h: 0 for h in haftalar}
+    for u in us:
+        h = hafta_boshi(datetime.fromtimestamp(u["royxat"], TOSHKENT).date())
+        if h in mij:
+            mij[h] += 1
+    for o in tas:
+        h = hafta_boshi(datetime.fromtimestamp(o["vaqt"], TOSHKENT).date())
+        if h in sot:
+            sot[h] += o["soni"]
+    janr = {}
+    for u in us:
+        janr[u.get("qiziqish", "?")] = janr.get(u.get("qiziqish", "?"), 0) + 1
+    yosh = [0, 0, 0, 0, 0]                   # <18, 18-24, 25-34, 35-44, 45+
+    for u in us:
+        y = u.get("yosh") or 0
+        yosh[0 if y < 18 else 1 if y < 25 else 2 if y < 35 else 3 if y < 45 else 4] += 1
+    olganlar = {o["chat"] for o in tas}
+    return {
+        "v": 1, "a": 1,
+        "s": [len(us), mij[haftada], len(tas), len(kut),
+              sum(o["soni"] for o in tas), sum(o["soni"] * o["narx"] for o in tas),
+              sum(o["soni"] * (o["narx"] - o["tannarx"]) for o in tas),
+              sum(1 for u in us if u.get("bloklagan")), len(olganlar)],
+        "w0": haftalar[0].isoformat(),
+        "w": [[mij[h] for h in haftalar], [sot[h] for h in haftalar]],
+        "g": [[k[:24], v] for k, v in sorted(janr.items(), key=lambda x: -x[1])[:6]],
+        "y": yosh,
+        "p": [promo_qisqa(db, p) + [p["tannarx"]] for p in kelgusi(db)[:4]],
+        "f": [d.isoformat() for d in bosh_jumalar(db)[:6]],
+        "t": b.isoformat(),
+    }
+
+
+def app_tekshir():
+    """Mini App sahifasi ochiladimi (GitHub Pages yoqilganmi)? Yo'q bo'lsa, tugma chiqmaydi."""
+    global APP_URL
+    if not APP_URL:
+        return
+    try:
+        with urlopen(Request(APP_URL, method="HEAD"), timeout=15) as r:
+            if r.status == 200:
+                return
+    except (HTTPError, URLError, OSError) as e:
+        print("Mini App ochilmadi (%s) — tugma o'chirildi: %s" % (e, APP_URL), file=sys.stderr)
+    APP_URL = ""
 
 
 def ustunlar(items, n=2):
@@ -406,23 +497,29 @@ def royxat_qadam(chat, u, msg, text, db):
             send(chat, "Janrni tanlang yoki qisqacha yozing.")
             return
         q["qiziqish"] = text
-        yangi = not u.get("royxat")
-        u.update(q)
-        u["royxat"] = u.get("royxat") or int(time.time())
-        u.pop("vaqtincha", None)
-        u.pop("qadam", None)
-        send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\n"
-                   "Juma aksiyasini bir hafta oldin shu yerga yozamiz. "
-                   "Botni o'chirib qo'ymang 🙂" % profil(u), menyu(chat, db))
-        if yangi:
-            for a in ADMINS:
-                send(a, "🆕 Yangi mijoz (%d-chi):\n%s" % (
-                    sum(1 for x in db["users"].values() if x.get("royxat")), profil(u)))
-        keyin = u.pop("keyin", None)
-        p = next((p for p in db["promos"] if p["id"] == keyin), None)
-        if p and korinadi(p):
-            aksiya_yubor(db, chat, p, u)
+        royxat_tugat(chat, u, q, db)
         return
+
+
+def royxat_tugat(chat, u, q, db):
+    """Ro'yxatdan o'tishni yakunlaydi (bot suhbatidan ham, Mini App'dan ham)."""
+    yangi = not u.get("royxat")
+    u.update(q)
+    u["royxat"] = u.get("royxat") or int(time.time())
+    u.pop("vaqtincha", None)
+    u.pop("qadam", None)
+    send(chat, "✅ <b>Ro'yxatdan o'tdingiz!</b>\n\n%s\n\n"
+               "Juma aksiyasini bir hafta oldin shu yerga yozamiz. "
+               "Botni o'chirib qo'ymang 🙂" % profil(u), menyu(chat, db))
+    if yangi:
+        for a in ADMINS:
+            send(a, "🆕 Yangi mijoz (%d-chi):\n%s" % (
+                sum(1 for x in db["users"].values() if x.get("royxat")), profil(u)))
+    keyin = u.pop("keyin", None)
+    p = next((p for p in db["promos"] if p["id"] == keyin), None)
+    if p and korinadi(p):
+        aksiya_yubor(db, chat, p, u)
+    return
 
 
 def profil(u):
@@ -570,20 +667,50 @@ def aksiya_qadam(chat, u, msg, text, db):
             u.pop("vaqtincha", None)
             send(chat, "Bekor qilindi.", menyu(chat, db))
             return
-        db["seq"] += 1
-        p = dict(q, id=db["seq"], qoshgan=chat, vaqt=int(time.time()))
-        db["promos"].append(p)
         u.pop("vaqtincha", None)
-        qoldi = (date.fromisoformat(p["sana"]) - bugun()).days
-        if qoldi <= EGA_OLDIN:
-            db["sent"]["%d:ega" % p["id"]] = int(time.time())
-        mijoz_kuni = date.fromisoformat(p["sana"]) - timedelta(days=MIJOZ_OLDIN)
-        if qoldi <= MIJOZ_OLDIN:
-            keyin = "Mijozlarga e'lon keyingi tekshiruvda (bir necha daqiqada) yuboriladi."
-        else:
-            keyin = "Mijozlarga %s kuni e'lon qilinadi." % sana_matn(mijoz_kuni)
-        send(chat, "✅ Aksiya #%d saqlandi.\n%s" % (p["id"], keyin), menyu(chat, db))
+        aksiya_saqla(chat, q, db)
         return
+
+
+def aksiya_xato(q, db):
+    """Mini App'dan kelgan aksiyani tekshiradi; xato bo'lsa — matni, bo'lmasa None."""
+    try:
+        d = date.fromisoformat(q.get("sana", ""))
+    except ValueError:
+        return "Sana noto'g'ri."
+    if d.weekday() != 4 or d < bugun():
+        return "Sana kelgusi juma bo'lishi kerak."
+    if any(p["sana"] == d.isoformat() for p in db["promos"]):
+        return "%s ga aksiya allaqachon bor." % sana_matn(d)
+    if not q.get("kitob") or len(q["kitob"]) > 120:
+        return "Kitob nomini yozing."
+    if not (q.get("odatiy") and q.get("tannarx") and q.get("narx")):
+        return "Narxlarni to'liq yozing."
+    if q["tannarx"] >= q["odatiy"]:
+        return "Tannarx odatiy narxdan kam bo'lishi kerak."
+    if q["narx"] < q["tannarx"]:
+        return "Aksiya narxi tannarxdan past — zarar bo'ladi."
+    if q["narx"] >= q["odatiy"]:
+        return "Aksiya narxi odatiy narxdan arzon bo'lishi kerak."
+    return None
+
+
+def aksiya_saqla(chat, q, db):
+    db["seq"] += 1
+    p = dict(q, id=db["seq"], qoshgan=chat, vaqt=int(time.time()))
+    p.setdefault("soni", AKSIYA_SONI)
+    p.setdefault("janr", HAMMA)
+    db["promos"].append(p)
+    qoldi = (date.fromisoformat(p["sana"]) - bugun()).days
+    if qoldi <= EGA_OLDIN:
+        db["sent"]["%d:ega" % p["id"]] = int(time.time())
+    mijoz_kuni = date.fromisoformat(p["sana"]) - timedelta(days=MIJOZ_OLDIN)
+    if qoldi <= MIJOZ_OLDIN:
+        keyin = "Mijozlarga e'lon keyingi tekshiruvda (bir necha daqiqada) yuboriladi."
+    else:
+        keyin = "Mijozlarga %s kuni e'lon qilinadi." % sana_matn(mijoz_kuni)
+    send(chat, "✅ Aksiya #%d saqlandi.\n%s" % (p["id"], keyin), menyu(chat, db))
+    return p
 
 
 def aksiyalar_royxati(chat, db):
@@ -1046,6 +1173,20 @@ def handle(msg, db):
         send(chat, "Sizning Telegram ID: <code>%s</code>" % chat)
         return
 
+    if msg.get("web_app_data"):
+        ilova_xabari(chat, u, msg, db)
+        return
+
+    if u.get("qadam") == "a_rasm_keyin":          # Mini App'dan qo'shilgan aksiyaga muqova
+        pid = (u.get("vaqtincha") or {}).get("pid")
+        u.pop("qadam", None)
+        u.pop("vaqtincha", None)
+        p = next((p for p in db["promos"] if p["id"] == pid), None)
+        if msg.get("photo") and p:
+            p["rasm"] = msg["photo"][-1]["file_id"]
+            send(chat, "🖼 Muqova qo'shildi: «%s»." % escape(p["kitob"]), menyu(chat, db))
+            return
+
     if text == "/ochir_meni":
         u.clear()
         u.update(id=chat, since=int(time.time()), ochirgan=int(time.time()))
@@ -1146,6 +1287,49 @@ def handle(msg, db):
     send(chat, "Pastdagi tugmalardan foydalaning 👇", menyu(chat, db))
 
 
+def ilova_xabari(chat, u, msg, db):
+    """Mini App'dan Telegram.WebApp.sendData orqali kelgan so'rov."""
+    try:
+        d = json.loads(msg["web_app_data"].get("data") or "{}")
+    except ValueError:
+        return
+    t = d.get("t")
+    matn = lambda k, n: str(d.get(k) or "").strip()[:n]
+
+    if t == "royxat":
+        q = {"ism": matn("ism", 50), "familiya": matn("familiya", 50),
+             "telefon": telefon_tozala(matn("telefon", 30)),
+             "yosh": son(matn("yosh", 3)), "qiziqish": matn("qiziqish", 60)}
+        if not (q["ism"] and q["familiya"] and q["telefon"] and q["qiziqish"]
+                and q["yosh"] and 5 <= q["yosh"] <= 100):
+            send(chat, "Ma'lumot to'liq emas — qaytadan urinib ko'ring.", menyu(chat, db))
+            return
+        royxat_tugat(chat, u, q, db)
+        return
+
+    if t == "bron":
+        buyurtma_boshla(chat, u, son(str(d.get("p"))), db)
+        if u.get("qadam") == "b_soni":
+            buyurtma_qadam(chat, u, {}, str(son(str(d.get("n"))) or 1), db)
+        return
+
+    if t == "aksiya" and chat in ADMINS:
+        q = {"sana": matn("sana", 10), "kitob": matn("kitob", 120),
+             "janr": matn("janr", 60) or HAMMA, "odatiy": son(str(d.get("odatiy"))),
+             "tannarx": son(str(d.get("tannarx"))), "narx": son(str(d.get("narx"))),
+             "soni": AKSIYA_SONI}
+        xato = aksiya_xato(q, db)
+        if xato:
+            send(chat, "❌ Aksiya saqlanmadi: " + xato, menyu(chat, db))
+            return
+        p = aksiya_saqla(chat, q, db)
+        u["qadam"] = "a_rasm_keyin"
+        u["vaqtincha"] = {"pid": p["id"]}
+        send(chat, "🖼 Kitob muqovasining rasmini yuborsangiz, e'londa chiqadi "
+                   "(ixtiyoriy — kerak bo'lmasa, boshqa tugmani bosing).")
+        return
+
+
 def process(updates, db):
     last = None
     for upd in updates:
@@ -1195,6 +1379,7 @@ def main(argv):
         # darhol javob beradi. Jadval navbatdagi ishga tushishni tayyorlab qo'yadi.
         i = argv.index("--uzluksiz")
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
+        app_tekshir()
         tugash = time.time() + daqiqa * 60
         offset, soni = None, 0
         while True:
@@ -1219,6 +1404,7 @@ def main(argv):
         return
 
     if "--once" in argv:
+        app_tekshir()
         r = call("getUpdates", timeout=0, allowed_updates=["message", "callback_query"])
         last = process(r.get("result", []), db)
         if last is not None:
