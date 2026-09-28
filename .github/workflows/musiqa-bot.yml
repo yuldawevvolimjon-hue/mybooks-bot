@@ -1,0 +1,90 @@
+# Musiqa va video yuklovchi Telegram bot — GitHub Actions'da ishlaydi (server kerak emas).
+#
+# Har ishga tushish 50 daqiqa uzluksiz ishlaydi. Jadval har 10 daqiqada
+# navbatdagi ishga tushishni tayyorlab qo'yadi: oldingisi tugashi bilan
+# keyingisi boshlanadi. Navbatda kutib qolgan eski ishga tushishlar
+# «cancelled» bo'ladi — bu normal holat.
+# "Run workflow" → rejim "sozlash": buyruqlar va tavsifni bir marta o'rnatadi.
+#
+# Kerak: Settings → Secrets and variables → Actions →
+#   secret   MUSIQA_BOT_TOKEN    — BotFather bergan token (kitob botidan boshqa bot)
+#   secret   MUSIQA_COOKIES      — ixtiyoriy: cookies.txt matni (Netscape formatida).
+#                                  YouTube «Sign in to confirm you're not a bot» desa
+#                                  yoki Instagram yuklamasa, qo'shing.
+#
+# Eslatma: GitHub jadval bo'yicha ishga tushirishni faqat asosiy (main)
+# shoxchadagi workflow uchun qiladi va 60 kun harakat bo'lmasa o'chiradi.
+
+name: Musiqa bot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      rejim:
+        description: "Nima qilsin"
+        type: choice
+        options: [xabarlar, sozlash]
+        default: xabarlar
+
+concurrency:
+  group: musiqa-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BOT_TOKEN: ${{ secrets.MUSIQA_BOT_TOKEN }}
+      COOKIES: ${{ secrets.MUSIQA_COOKIES }}
+      STATE_FILE: ${{ github.workspace }}/state/musiqa.json
+      REJIM: ${{ github.event.inputs.rejim || 'xabarlar' }}
+      PYTHONUNBUFFERED: "1"   # jurnal darhol yozilsin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # YouTube uchun yt-dlp'ga JavaScript muhiti (deno) kerak.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: yt-dlp va ffmpeg
+        run: |
+          # yt-dlp har doim eng yangisi — saytlar tez-tez o'zgaradi.
+          pip install -U "yt-dlp[default]"
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+
+      - name: Keshni tiklash
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: musiqa-state-${{ github.run_id }}
+          restore-keys: musiqa-state-
+
+      - name: Bot
+        run: |
+          mkdir -p state
+          if [ -n "$COOKIES" ]; then
+            printf '%s\n' "$COOKIES" > "$RUNNER_TEMP/cookies.txt"
+            export COOKIES_FILE="$RUNNER_TEMP/cookies.txt"
+          fi
+          case "$REJIM" in
+            sozlash) python3 musiqa/bot.py --setup ;;
+            *)       python3 musiqa/bot.py --uzluksiz 50 ;;
+          esac
+
+      - name: Keshni saqlash
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: musiqa-state-${{ github.run_id }}
