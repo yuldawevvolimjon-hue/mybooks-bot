@@ -28,9 +28,10 @@ Muhit o'zgaruvchilari:
     API_URL        o'z Bot API serveringiz bo'lsa (masalan http://localhost:8081),
                    fayl chegarasi 50 MB o'rniga 2000 MB bo'ladi
     MAX_MB         yuboriladigan faylning eng katta hajmi (standart 50)
-    ISHCHILAR      bir vaqtda nechta yuklash (standart 3)
+    ISHCHILAR      bir vaqtda nechta yuklash (standart 6)
 """
 
+import copy
 import json
 import mimetypes
 import os
@@ -62,7 +63,7 @@ API_URL = (os.environ.get("API_URL") or "https://api.telegram.org").rstrip("/")
 API = "%s/bot%s/" % (API_URL, TOKEN)
 MAX_MB = int(os.environ.get("MAX_MB") or (2000 if "api.telegram.org" not in API_URL else 50))
 MAX_BAYT = MAX_MB * 1024 * 1024
-ISHCHILAR = int(os.environ.get("ISHCHILAR") or 3)
+ISHCHILAR = int(os.environ.get("ISHCHILAR") or 6)
 
 NATIJA_SONI = 10           # qidiruvda nechta qo'shiq ko'rsatiladi
 ENG_UZUN = 20 * 60         # qidiruvda 20 daqiqadan uzun videolar (mikslar) chiqmasin
@@ -109,6 +110,8 @@ RAQAM = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️
 URL_RE = re.compile(r"https?://[^\s<>\"']+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/[^\s<>\"']*",
                     re.I)
 YT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YT_URL_RE = re.compile(r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)"
+                       r"([A-Za-z0-9_-]{11})")
 RASM = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 AUDIO = {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"}
 KERAKSIZ = {".part", ".ytdl", ".json", ".vtt", ".srt", ".description"}
@@ -249,17 +252,17 @@ def kalit_saqla(qiymat):
     return k
 
 
-def band_qil(chat):
+def band_qil(kalit):
     with _band_lock:
-        if chat in _band:
+        if kalit in _band:
             return False
-        _band.add(chat)
+        _band.add(kalit)
         return True
 
 
-def boshat(chat):
+def boshat(kalit):
     with _band_lock:
-        _band.discard(chat)
+        _band.discard(kalit)
 
 
 def ydl_sozlama(papka, **qoshimcha):
@@ -269,6 +272,8 @@ def ydl_sozlama(papka, **qoshimcha):
         "noprogress": True,
         "socket_timeout": 30,
         "retries": 3,
+        "concurrent_fragment_downloads": 8,     # HLS/DASH bo'laklarini parallel yuklash
+        "http_chunk_size": 10 * 1024 * 1024,
         "outtmpl": os.path.join(papka, "%(title).80B [%(id)s].%(ext)s"),
         "restrictfilenames": False,
         "windowsfilenames": True,
@@ -299,9 +304,26 @@ def xato_matn(e):
 
 
 # ---------------------------------------------------------------- qidiruv
+_qidiruv_kesh = {}         # so'z → (vaqt, natijalar): bir xil so'rov darhol chiqadi
+QIDIRUV_KESH_VAQT = 6 * 3600
+
+
 def qidir(soz):
-    """YouTube'dan, bo'lmasa SoundCloud'dan qo'shiqlar ro'yxati."""
-    for manba, prefiks in (("youtube", "ytsearch%d:" % (NATIJA_SONI * 2)),
+    """YouTube'dan, bo'lmasa SoundCloud'dan qo'shiqlar ro'yxati (keshlangan)."""
+    k = " ".join(soz.lower().split())
+    eski = _qidiruv_kesh.get(k)
+    if eski and time.time() - eski[0] < QIDIRUV_KESH_VAQT:
+        return eski[1]
+    natija = _qidir(soz)
+    if natija:
+        if len(_qidiruv_kesh) > 5000:
+            _qidiruv_kesh.clear()
+        _qidiruv_kesh[k] = (time.time(), natija)
+    return natija
+
+
+def _qidir(soz):
+    for manba, prefiks in (("youtube", "ytsearch%d:" % (NATIJA_SONI + 5)),
                            ("soundcloud", "scsearch%d:" % NATIJA_SONI)):
         try:
             with yt_dlp.YoutubeDL(ydl_sozlama(tempfile.gettempdir(), extract_flat=True,
@@ -375,6 +397,10 @@ def fayllar(papka):
 def audio_yukla(chat, url, db, reply_to=None):
     """Havoladagi (YouTube, SoundCloud, TikTok...) ovozni MP3 qilib yuboradi."""
     call("sendChatAction", chat_id=chat, action="upload_voice")
+    # YouTube qo'shig'i avval yuklangan bo'lsa — hech narsa yuklamasdan, darhol.
+    m = YT_URL_RE.search(url)
+    if m and kesh_audio(chat, db, "audio:Youtube:" + m.group(1), reply_to):
+        return None
     papka = tempfile.mkdtemp(prefix="musiqa-")
     try:
         with yt_dlp.YoutubeDL(ydl_sozlama(papka, skip_download=True)) as y:
@@ -384,17 +410,19 @@ def audio_yukla(chat, url, db, reply_to=None):
             if not info:
                 return send(chat, "Bu havolada audio topilmadi.", reply_to=reply_to)
         kalit = "audio:%s:%s" % (info.get("extractor_key", "?"), info.get("id"))
-        eski = kesh_ol(db, kalit)
-        if eski:
-            r = call("sendAudio", chat_id=chat, audio=eski, reply_to_message_id=reply_to,
-                     allow_sending_without_reply="true", caption=imzo(), parse_mode="HTML")
-            if r.get("ok"):
-                return r
-        sozlama = ydl_sozlama(papka, format="bestaudio/best", postprocessors=[
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}])
+        if kesh_audio(chat, db, kalit, reply_to):
+            return None
+        # M4A ni Telegram o'zi ijro etadi — qayta kodlamaymiz (tezroq).
+        # Boshqa format (webm/opus) bo'lsa, MP3 ga aylantiramiz.
+        sozlama = ydl_sozlama(papka, format="bestaudio[ext=m4a]/bestaudio/best", postprocessors=[
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
+             "nopostoverwrites": False}])
+        if any(f.get("ext") == "m4a" and f.get("vcodec") == "none"
+               for f in info.get("formats") or []):
+            sozlama["postprocessors"] = []
         with yt_dlp.YoutubeDL(sozlama) as y:
-            info = y.extract_info(info.get("webpage_url") or url, download=True)
-        mp3 = [f for f in fayllar(papka) if f.lower().endswith(".mp3")]
+            info = y.process_ie_result(info, download=True)   # qayta ochmaymiz
+        mp3 = [f for f in fayllar(papka) if f.lower().endswith((".mp3", ".m4a"))]
         if not mp3:
             return send(chat, "Audioni ajratib bo'lmadi 😔", reply_to=reply_to)
         if os.path.getsize(mp3[0]) > MAX_BAYT:
@@ -421,13 +449,22 @@ def audio_yukla(chat, url, db, reply_to=None):
         shutil.rmtree(papka, ignore_errors=True)
 
 
+def kesh_audio(chat, db, kalit, reply_to):
+    eski = kesh_ol(db, kalit)
+    if not eski:
+        return False
+    r = call("sendAudio", chat_id=chat, audio=eski, reply_to_message_id=reply_to,
+             allow_sending_without_reply="true", caption=imzo(), parse_mode="HTML")
+    return bool(r.get("ok"))
+
+
 def muqova(info, papka):
     """Audio uchun kichik muqova (Telegram: JPEG, 320 px gacha, 200 KB gacha)."""
     url = info.get("thumbnail")
     if not url:
         return None
     try:
-        with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
+        with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=5) as r:
             data = r.read(2_000_000)
     except Exception:
         return None
@@ -489,9 +526,10 @@ def havola_yukla(chat, url, db, reply_to=None):
         # Instagram karusel kabi bir nechta fayl: hammasini (ALBOM tagacha) yuklaymiz.
         sozlama = ydl_sozlama(papka, format=VIDEO_FORMAT, merge_output_format="mp4",
                               playlist_items="1-%d" % ALBOM)
+        asl = copy.deepcopy(info)                # kichik sifatda qayta urinish uchun
         try:
             with yt_dlp.YoutubeDL(sozlama) as y:
-                info = y.extract_info(info.get("webpage_url") or url, download=True)
+                info = y.process_ie_result(info, download=True)   # qayta ochmaymiz
         except Exception as e:
             if "larger than max-filesize" not in str(e) and "File is larger" not in str(e):
                 raise
@@ -502,7 +540,7 @@ def havola_yukla(chat, url, db, reply_to=None):
             sozlama["format"] = VIDEO_FORMAT_KICHIK
             try:
                 with yt_dlp.YoutubeDL(sozlama) as y:
-                    info = y.extract_info(info.get("webpage_url") or url, download=True)
+                    info = y.process_ie_result(asl, download=True)
             except Exception as e:
                 print("kichik sifat xatosi:", repr(e)[:300], file=sys.stderr)
             topildi = [f for f in fayllar(papka) if os.path.getsize(f) <= MAX_BAYT]
@@ -569,7 +607,7 @@ def tg_fayl(msg):
 
 
 # ---------------------------------------------------------------- ishlov
-def ish(chat, fn, *args):
+def ish(band, chat, fn, *args):
     """Yuklashni alohida oqimda bajaradi; bitta foydalanuvchi — bitta yuklash."""
     try:
         fn(chat, *args)
@@ -578,14 +616,17 @@ def ish(chat, fn, *args):
         reply = args[2] if len(args) > 2 else None
         send(chat, xato_matn(e), reply_to=reply)
     finally:
-        boshat(chat)
+        boshat(band)
 
 
 def navbatga(pool, chat, fn, *args):
-    if not band_qil(chat):
+    # Qidiruv va yuklash alohida: fayl yuklanayotganda ham qo'shiq qidirsa bo'ladi.
+    qidiruv = fn is qidiruv_ish
+    band = (chat, "q" if qidiruv else "d")
+    if not band_qil(band):
         send(chat, "⏳ Oldingi so'rovingiz hali tayyorlanmoqda, biroz kuting...")
         return False
-    pool.submit(ish, chat, fn, *args)
+    (pool["q"] if qidiruv else pool["d"]).submit(ish, band, chat, fn, *args)
     return True
 
 
@@ -722,7 +763,8 @@ def main(argv):
     if not db.get("buyruqlar_v2"):                   # bir marta: buyruqlar va tavsif
         db["buyruqlar_v2"] = setup()
     print("Musiqa boti ishga tushdi: @%s" % BOT_USERNAME)
-    pool = ThreadPoolExecutor(max_workers=ISHCHILAR)
+    # Qidiruv tez — alohida ishchilar, uzoq yuklashlar ularni to'sib qo'ymasin.
+    pool = {"q": ThreadPoolExecutor(max_workers=8), "d": ThreadPoolExecutor(max_workers=ISHCHILAR)}
     offset, soni, keyingi_saqlash = None, 0, 0
     try:
         while True:
@@ -745,7 +787,8 @@ def main(argv):
                 save(db)
                 keyingi_saqlash = time.time() + 60
     finally:
-        pool.shutdown(wait=True)                     # boshlangan yuklashlar tugasin
+        for p in pool.values():
+            p.shutdown(wait=True)                    # boshlangan yuklashlar tugasin
         if offset is not None:
             call("getUpdates", offset=offset, timeout=0)   # «shulargacha ko'rdim»
         save(db)

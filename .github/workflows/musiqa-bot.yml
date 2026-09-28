@@ -1,6 +1,6 @@
 # Musiqa va video yuklovchi Telegram bot — GitHub Actions'da ishlaydi (server kerak emas).
 #
-# Har ishga tushish 50 daqiqa uzluksiz ishlaydi. Jadval har 10 daqiqada
+# Har ishga tushish 55 daqiqa uzluksiz ishlaydi. Jadval har 10 daqiqada
 # navbatdagi ishga tushishni tayyorlab qo'yadi: oldingisi tugashi bilan
 # keyingisi boshlanadi. Navbatda kutib qolgan eski ishga tushishlar
 # «cancelled» bo'ladi — bu normal holat.
@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip                              # yt-dlp har safar qaytadan yuklanmasin
+          cache-dependency-path: musiqa/requirements.txt
 
       # YouTube uchun yt-dlp'ga JavaScript muhiti (deno) kerak.
       - uses: denoland/setup-deno@v2
@@ -83,7 +85,7 @@ jobs:
           fi
           case "$REJIM" in
             sozlash) python3 musiqa/bot.py --setup ;;
-            *)       python3 musiqa/bot.py --uzluksiz 50 ;;
+            *)       python3 musiqa/bot.py --uzluksiz 55 ;;
           esac
 
       - name: Keshni saqlash
