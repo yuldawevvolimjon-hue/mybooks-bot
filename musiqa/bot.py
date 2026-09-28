@@ -310,7 +310,8 @@ def ydl_sozlama(papka, **qoshimcha):
 def xato_matn(e):
     s = str(e)
     if "Sign in to confirm" in s or "not a bot" in s:
-        return "😔 YouTube vaqtincha yuklashga ruxsat bermadi. Birozdan keyin urinib ko'ring."
+        return ("😔 Bu qo'shiqni YouTube hozir bermayapti, boshqa manbalarda ham topilmadi.\n"
+                "💡 Ro'yxatdan boshqa variantini tanlang yoki nomini boshqacha yozing.")
     if "login" in s.lower() or "private" in s.lower() or "cookies" in s.lower():
         return "🔒 Bu post yopiq (private) yoki kirishni talab qiladi — yuklab bo'lmadi."
     if "Unsupported URL" in s:
@@ -458,6 +459,7 @@ def qidiruv_xabar(chat, soz, reply_to):
             (" <i>· %s</i>" % vaqt(r["vaqt"])) if r["vaqt"] else ""))
         if r["manba"] == "youtube" and r["id"] and YT_ID_RE.match(r["id"]):
             data = "y:" + r["id"]                 # qayta ishga tushsa ham ishlaydi
+            _nomlar[r["id"]] = (r["nom"], r["vaqt"])
         else:
             data = "u:" + kalit_saqla(r["url"])
         tugmalar.append((str(i), data))
@@ -477,16 +479,103 @@ def fayllar(papka):
     return out
 
 
+# YouTube server (GitHub) manzillaridan kelgan so'rovlarni ba'zan «bot» deb to'sadi.
+# Unda boshqa «ilova» nomidan kirib ko'ramiz; ishlagani eslab qolinadi.
+YT_MIJOZLAR = [None, ["tv_simply"], ["web_embedded"], ["android_vr"], ["mweb"], ["tv"]]
+_yaxshi_mijoz = [None]
+_nomlar = {}               # YouTube ID → (nomi, davomiyligi) — qidiruv natijalaridan
+
+
+def yt_tosildi(e):
+    s = str(e)
+    return any(x in s for x in ("Sign in to confirm", "not a bot", "HTTP Error 403",
+                                "Requested format is not available", "po_token",
+                                "This content isn't available", "Precondition check failed"))
+
+
+def mijoz_sozlama(mijoz):
+    return {"extractor_args": {"youtube": {"player_client": mijoz}}} if mijoz else {}
+
+
+def yt_bilan(url, ish):
+    """ish(qoshimcha_sozlama) ni avval ishlagan, keyin boshqa YouTube mijozlari bilan sinaydi."""
+    if not YT_URL_RE.search(url):
+        return ish({})
+    tartib = _yaxshi_mijoz[:1] + [m for m in YT_MIJOZLAR if m != _yaxshi_mijoz[0]]
+    oxirgi = None
+    for mijoz in tartib:
+        try:
+            natija = ish(mijoz_sozlama(mijoz))
+            _yaxshi_mijoz[0] = mijoz
+            return natija
+        except Exception as e:
+            if not yt_tosildi(e):
+                raise
+            print("youtube to'sdi (%s): %s" % (mijoz or "odatiy", str(e)[:150]), file=sys.stderr)
+            oxirgi = e
+    raise oxirgi
+
+
+def yt_nomi(url):
+    """YouTube videosi nomi: qidiruvdan eslab qolingan yoki oEmbed orqali (to'silmaydi)."""
+    m = YT_URL_RE.search(url)
+    if m and m.group(1) in _nomlar:
+        return _nomlar[m.group(1)]
+    try:
+        with urlopen("https://www.youtube.com/oembed?format=json&url=" +
+                     "https://www.youtube.com/watch?v=%s" % (m.group(1) if m else ""),
+                     timeout=10) as f:
+            return (json.load(f).get("title"), 0)
+    except Exception:
+        return (None, 0)
+
+
+def zaxira_top(nom, dur):
+    """YouTube bermasa — shu qo'shiqni SoundCloud'dan qidiramiz."""
+    toza = re.sub(r"[\(\[][^\)\]]*(official|video|clip|klip|audio|lyric|music|hd|4k|"
+                  r"premyera|premiere)[^\)\]]*[\)\]]", "", nom, flags=re.I)
+    toza = re.sub(r"\s+", " ", toza.replace("|", " ")).strip() or nom
+    try:
+        with yt_dlp.YoutubeDL(ydl_sozlama(tempfile.gettempdir(), extract_flat=True,
+                                          skip_download=True)) as y:
+            info = y.extract_info("scsearch5:" + toza, download=False)
+    except Exception as e:
+        print("soundcloud zaxira xatosi:", repr(e)[:200], file=sys.stderr)
+        return None
+    natija = [e for e in info.get("entries") or [] if e and (e.get("url") or e.get("webpage_url"))]
+    if dur:                                        # davomiyligi yaqinini afzal ko'ramiz
+        yaqin = [e for e in natija if e.get("duration") and abs(e["duration"] - dur) <= 20]
+        natija = yaqin or natija
+    return (natija[0].get("webpage_url") or natija[0].get("url")) if natija else None
+
+
 def audio_yukla(chat, url, db, reply_to=None):
-    """Havoladagi (YouTube, SoundCloud, TikTok...) ovozni MP3 qilib yuboradi."""
+    """Havoladagi (YouTube, SoundCloud, TikTok...) ovozni MP3 qilib yuboradi.
+
+    YouTube to'sib qo'ysa — boshqa mijoz bilan, u ham bo'lmasa SoundCloud'dan.
+    """
     call("sendChatAction", chat_id=chat, action="upload_voice")
     # YouTube qo'shig'i avval yuklangan bo'lsa — hech narsa yuklamasdan, darhol.
     m = YT_URL_RE.search(url)
     if m and kesh_audio(chat, db, "audio:Youtube:" + m.group(1), reply_to):
         return None
+    try:
+        return yt_bilan(url, lambda q: _audio(chat, url, db, reply_to, q))
+    except Exception as e:
+        if not (m and yt_tosildi(e)):
+            raise
+        nom, dur = yt_nomi(url)
+        zaxira = zaxira_top(nom, dur) if nom else None
+        if not zaxira:
+            raise
+        print("zaxira: SoundCloud dan olinmoqda:", nom, file=sys.stderr)
+        return _audio(chat, zaxira, db, reply_to, {}, "audio:Youtube:" + m.group(1))
+
+
+def _audio(chat, url, db, reply_to, qosh, yt_kalit=None):
     papka = tempfile.mkdtemp(prefix="musiqa-")
     try:
-        with yt_dlp.YoutubeDL(ydl_sozlama(papka, skip_download=True)) as y:
+        with yt_dlp.YoutubeDL(ydl_sozlama(papka, skip_download=True, **qosh)) as y:
             info = y.extract_info(url, download=False)
         if info.get("_type") == "playlist":
             info = next((e for e in info.get("entries") or [] if e), None)
@@ -499,7 +588,7 @@ def audio_yukla(chat, url, db, reply_to=None):
         # Boshqa format (webm/opus) bo'lsa, MP3 ga aylantiramiz.
         sozlama = ydl_sozlama(papka, format="bestaudio[ext=m4a]/bestaudio/best", postprocessors=[
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
-             "nopostoverwrites": False}])
+             "nopostoverwrites": False}], **qosh)
         if any(f.get("ext") == "m4a" and f.get("vcodec") == "none"
                for f in info.get("formats") or []):
             sozlama["postprocessors"] = []
@@ -525,6 +614,8 @@ def audio_yukla(chat, url, db, reply_to=None):
         fid = (r.get("result") or {}).get("audio", {}).get("file_id")
         if fid:
             kesh_yoz(db, kalit, fid)
+            if yt_kalit:                           # keyingi safar YouTube tugmasidan ham darhol
+                kesh_yoz(db, yt_kalit, fid)
         elif not r.get("ok"):
             send(chat, "Telegram'ga yuborib bo'lmadi 😔", reply_to=reply_to)
         return r
@@ -590,8 +681,11 @@ def havola_yukla(chat, url, db, reply_to=None):
     papka = tempfile.mkdtemp(prefix="video-")
     try:
         kalit = None
-        with yt_dlp.YoutubeDL(ydl_sozlama(papka, skip_download=True, noplaylist=True)) as y:
-            info = y.extract_info(url, download=False)
+
+        def ochish(q):
+            with yt_dlp.YoutubeDL(ydl_sozlama(papka, skip_download=True, noplaylist=True, **q)) as y:
+                return y.extract_info(url, download=False), q
+        info, qosh = yt_bilan(url, ochish)
         yagona = info.get("_type") != "playlist"
         if yagona:
             kalit = "video:%s:%s" % (info.get("extractor_key", "?"), info.get("id"))
@@ -608,7 +702,7 @@ def havola_yukla(chat, url, db, reply_to=None):
 
         # Instagram karusel kabi bir nechta fayl: hammasini (ALBOM tagacha) yuklaymiz.
         sozlama = ydl_sozlama(papka, format=VIDEO_FORMAT, merge_output_format="mp4",
-                              playlist_items="1-%d" % ALBOM)
+                              playlist_items="1-%d" % ALBOM, **qosh)
         asl = copy.deepcopy(info)                # kichik sifatda qayta urinish uchun
         try:
             with yt_dlp.YoutubeDL(sozlama) as y:
