@@ -70,7 +70,7 @@ ISHCHILAR = int(os.environ.get("ISHCHILAR") or 6)
 # ko'rsatmaydi: ular uchun tugma chiqadi, «Obuna bo'ldim» bosilgach ishonamiz.
 KANALLAR = [x.strip() for x in (os.environ.get("KANALLAR")
             or "@AI_VIDEOLA_VARASIMLA,@music_uz0007").split(",") if x.strip()]
-TIKTOK = os.environ.get("TIKTOK", "https://www.tiktok.com/@yuldawev.olimjon0007").strip()
+TIKTOK = os.environ.get("TIKTOK", "").strip()     # obuna ro'yxatida TikTok yo'q
 INSTAGRAM = os.environ.get("INSTAGRAM", "https://www.instagram.com/____0007y.o").strip()
 BOTPIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "botpic.png")
 MAXFIYLIK_URL = os.environ.get("MAXFIYLIK_URL") or \
