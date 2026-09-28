@@ -20,6 +20,15 @@
 4. **Actions → Musiqa bot → Run workflow → sozlash** — buyruqlar va tavsifni o'rnatadi.
    Keyin bot har 10 daqiqalik jadval bilan o'zi ishlab turadi.
 
+## Windows kompyuterda (tavsiya etiladi)
+
+YouTube va Instagram GitHub serverlariga yuklashni bermaydi, uy internetiga esa beradi.
+
+1. https://www.python.org/downloads/ dan Python o'rnating — **«Add python.exe to PATH»** belgisini qo'ying.
+2. GitHub'da **Code → Download ZIP**, arxivni oching.
+3. `musiqa` papkasidagi **`ishga_tushir.bat`** ni ikki marta bosing, tokenni kiriting.
+4. Qora oyna ochiq tursa — bot ishlaydi. Kompyuter o'chsa, bot ham to'xtaydi.
+
 ## O'z serveringizda
 
 ```bash
