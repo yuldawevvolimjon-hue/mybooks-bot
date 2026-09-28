@@ -373,13 +373,13 @@ if (!D) {
   if (D.A) {
     admin($('div[data-v="admin"]'));
     marketing($('div[data-v="marketing"]'));
-    let ochiq = null; try { ochiq = sessionStorage.getItem("v"); } catch (e) {}
     $$("#bosh button").forEach(b => b.onclick = () => {
       $$("#bosh button").forEach(x => x.classList.toggle("on", x === b));
       $$("div[data-v]").forEach(d => d.classList.toggle("hidden", d.dataset.v !== b.dataset.v));
-      try { sessionStorage.setItem("v", b.dataset.v); } catch (e) {}
     });
-    if (ochiq) { const b = $(`#bosh button[data-v="${ochiq}"]`); b && b.click(); }
+    // /admin, /marketing, /mijoz buyrug'i tanlagan bo'limda ochiladi.
+    const b0 = $(`#bosh button[data-v="${D.v0 || "dokon"}"]`);
+    if (b0) b0.click();
   }
 }
 </script>

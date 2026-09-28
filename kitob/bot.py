@@ -303,7 +303,8 @@ def ega_data(chat, db, n):
     mk = admin_data(db)
     mk.pop("p", None)                    # aksiyalar — panel_data'da bor, takrorlamaymiz
     mk.pop("f", None)
-    d.update({"A": 1, "pn": panel_data(db), "mk": mk, "c": mijozlar_royxati(db, n),
+    d.update({"A": 1, "v0": db["users"].get(chat, {}).get("kor", "dokon"),
+              "pn": panel_data(db), "mk": mk, "c": mijozlar_royxati(db, n),
               "st": [len(us), len(royxat), len(us) - len(royxat),
                      sum(1 for u in royxat if kun(u) == b), sum(1 for u in royxat if kun(u) >= hafta)]})
     return d
@@ -1285,6 +1286,10 @@ def handle(msg, db):
         send(chat, "Sizning Telegram ID: <code>%s</code>" % chat)
         return
 
+    if text in BOLIMLAR and APP_URL:
+        bolim_och(chat, u, text, db)
+        return
+
     if msg.get("web_app_data"):
         ilova_xabari(chat, u, msg, db)
         return
@@ -1421,6 +1426,44 @@ def handle(msg, db):
 
     send(chat, ("Pastki chap burchakdagi «%s» tugmasini bosing 👇" % MENYU_MATN) if APP_URL
          else "Pastdagi tugmalardan foydalaning 👇", menyu(chat, db))
+
+
+# ---------------------------------------------------------------- /admin, /marketing, /mijoz
+BOLIMLAR = {"/admin": ("admin", "🛠 Admin panel"), "/marketing": ("marketing", "📊 Marketing"),
+            "/mijoz": ("dokon", "🛍 Do'kon (mijoz ko'rinishi)")}
+
+
+def bolim_och(chat, u, text, db):
+    """Mini App'ni kerakli bo'limda ochadi: shu xabardagi tugma darhol, pastki
+    «📚 Kitoblar» tugmasi esa keyingi safar ham o'sha bo'limda ochiladi."""
+    kor, nom = BOLIMLAR[text]
+    if kor != "dokon" and chat not in ADMINS:
+        send(chat, "Bu bo'lim faqat do'kon egasi uchun.", menyu(chat, db))
+        return
+    u["kor"] = kor
+    url = app_havola(ega_data(chat, db, 30) if chat in ADMINS else mijoz_data(chat, db))
+    r = send(chat, "%s ochiladi 👇" % nom,
+             {"inline_keyboard": [[{"text": nom + " — ochish", "web_app": {"url": url}}]]})
+    if not r.get("ok") and chat in ADMINS:             # havola uzun bo'lsa — qisqaroq
+        url = app_havola(ega_data(chat, db, 0))
+        send(chat, "%s ochiladi 👇" % nom,
+             {"inline_keyboard": [[{"text": nom + " — ochish", "web_app": {"url": url}}]]})
+
+
+def ega_buyruqlari():
+    """/admin va /marketing — buyruqlar menyusida faqat do'kon egasiga ko'rinadi."""
+    umumiy = [{"command": "start", "description": "Boshlash"},
+              {"command": "mijoz", "description": "Do'kon (ilova)"},
+              {"command": "aksiya", "description": "Juma aksiyasi"},
+              {"command": "buyurtmalarim", "description": "Mening bronlarim"},
+              {"command": "ochir_meni", "description": "Ma'lumotlarimni o'chirish"}]
+    ega = [{"command": "admin", "description": "🛠 Admin panel"},
+           {"command": "marketing", "description": "📊 Marketing paneli"}] + umumiy + [
+          {"command": "buyurtmalar", "description": "Tekshirilmagan bronlar"},
+          {"command": "mijozlar", "description": "Mijozlar ro'yxati (chatda)"}]
+    for a in ADMINS:
+        call("setMyCommands", commands=ega, scope={"type": "chat", "chat_id": a})
+    return umumiy
 
 
 # ---------------------------------------------------------------- Mini App → bot
@@ -1582,14 +1625,7 @@ def process(updates, db):
 
 
 def setup():
-    r1 = call("setMyCommands", commands=[
-        {"command": "start", "description": "Boshlash"},
-        {"command": "royxat", "description": "Ro'yxatdan o'tish"},
-        {"command": "aksiya", "description": "Juma aksiyasi"},
-        {"command": "buyurtmalarim", "description": "Mening buyurtmalarim"},
-        {"command": "men", "description": "Mening Telegram ID im"},
-        {"command": "ochir_meni", "description": "Ma'lumotlarimni o'chirish"},
-    ])
+    r1 = call("setMyCommands", commands=ega_buyruqlari())
     r2 = call("setMyDescription", description=TAVSIF)
     r3 = call("setMyShortDescription", short_description="Har juma bitta kitob aksiya narxida 📚")
     app_tekshir()
@@ -1624,6 +1660,8 @@ def main(argv):
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
         app_tekshir()
         bot_nomi()
+        if not db.get("buyruqlar_v2"):             # bir marta: /admin, /marketing, /mijoz
+            db["buyruqlar_v2"] = bool(call("setMyCommands", commands=ega_buyruqlari()).get("ok"))
         tugash = time.time() + daqiqa * 60
         offset, soni = None, 0
         keyingi_yangilash = 0
