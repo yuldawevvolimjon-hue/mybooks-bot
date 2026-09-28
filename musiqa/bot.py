@@ -65,6 +65,15 @@ MAX_MB = int(os.environ.get("MAX_MB") or (2000 if "api.telegram.org" not in API_
 MAX_BAYT = MAX_MB * 1024 * 1024
 ISHCHILAR = int(os.environ.get("ISHCHILAR") or 6)
 
+# Majburiy obuna. Telegram kanallarni bot o'zi tekshiradi — buning uchun bot
+# har bir kanalda ADMIN bo'lishi kerak. TikTok va Instagram obunani hech kimga
+# ko'rsatmaydi: ular uchun tugma chiqadi, «Obuna bo'ldim» bosilgach ishonamiz.
+KANALLAR = [x.strip() for x in (os.environ.get("KANALLAR")
+            or "@AI_VIDEOLA_VARASIMLA,@music_uz0007").split(",") if x.strip()]
+TIKTOK = os.environ.get("TIKTOK", "https://www.tiktok.com/@yuldawev.olimjon0007").strip()
+INSTAGRAM = os.environ.get("INSTAGRAM", "https://www.instagram.com/____0007y.o").strip()
+OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
+
 NATIJA_SONI = 10           # qidiruvda nechta qo'shiq ko'rsatiladi
 ENG_UZUN = 20 * 60         # qidiruvda 20 daqiqadan uzun videolar (mikslar) chiqmasin
 ALBOM = 10                 # bitta havoladan ko'pi bilan nechta fayl (Instagram karusel)
@@ -638,6 +647,9 @@ def handle(msg, db, pool):
         u = db["users"].setdefault(chat, {"birinchi": int(time.time()), "soni": 0})
         u["ism"] = frm.get("first_name", "")
         u["soni"] = u.get("soni", 0) + 1
+    if msg["chat"].get("type") == "private" and not obunachi(db, chat):
+        kutilgan = msg if text and not text.startswith("/") else None
+        return obuna_sora(chat, frm, kutilgan)
     if not text:
         return send(chat, "✍️ Qo'shiq nomini yoki havolani <b>matn</b> qilib yuboring 🙂")
     if text.startswith("/"):
@@ -663,6 +675,118 @@ def handle(msg, db, pool):
     return navbatga(pool, chat, qidiruv_ish, text, db, msg["message_id"])
 
 
+# ---------------------------------------------------------------- majburiy obuna
+_kanal_nomi = {}           # "@kanal" → kanal sarlavhasi (getChat)
+_obuna_ok = {}             # user_id → oxirgi muvaffaqiyatli tekshiruv vaqti
+_kutayotgan = {}           # user_id → obunadan oldin yozgan so'rovi (keyin bajariladi)
+_ogohlantirildi = set()
+
+
+def kanal_nomlari():
+    for k in KANALLAR:
+        r = call("getChat", chat_id=k)
+        _kanal_nomi[k] = (r.get("result") or {}).get("title") or k.lstrip("@")
+
+
+def kanal_havola(k):
+    return "https://t.me/" + k.lstrip("@") if k.startswith("@") else k
+
+
+def obuna_emas(user_id):
+    """Foydalanuvchi obuna bo'lmagan Telegram kanallar ro'yxati."""
+    if time.time() - _obuna_ok.get(user_id, 0) < OBUNA_KESH:
+        return []
+    yoq = []
+    for k in KANALLAR:
+        r = call("getChatMember", chat_id=k, user_id=user_id)
+        if not r.get("ok"):
+            # Bot kanalda admin emas — tekshira olmaymiz, foydalanuvchini to'smaymiz.
+            if k not in _ogohlantirildi:
+                _ogohlantirildi.add(k)
+                print("ogohlantirish: %s kanalini tekshirib bo'lmadi (%s) — botni kanalga "
+                      "admin qiling." % (k, r.get("description")), file=sys.stderr)
+            continue
+        m = r["result"]
+        if m.get("status") in ("left", "kicked") or (
+                m.get("status") == "restricted" and not m.get("is_member")):
+            yoq.append(k)
+    if not yoq:
+        _obuna_ok[user_id] = time.time()
+    return yoq
+
+
+def obunachi(db, user_id):
+    with _db_lock:
+        tasdiq = (db["users"].get(user_id) or {}).get("obuna")
+    return bool(tasdiq) and not obuna_emas(user_id)
+
+
+def obuna_matn(ism, yoq=None):
+    qator = ["🔒 <b>%s, botdan foydalanish uchun quyidagilarga obuna bo'ling:</b>\n" % ism]
+    for i, k in enumerate(KANALLAR, 1):
+        belgi = "❌" if yoq and k in yoq else ("✅" if yoq is not None else "📢")
+        qator.append("%s <b>%d-kanal:</b> %s" % (belgi, i, escape(_kanal_nomi.get(k, k))))
+    if TIKTOK:
+        qator.append("🎵 <b>TikTok</b> sahifamiz")
+    if INSTAGRAM:
+        qator.append("📸 <b>Instagram</b> sahifamiz")
+    if yoq:
+        qator.append("\n⚠️ <b>Siz hali %s ga obuna bo'lmadingiz!</b>\nObuna bo'lib, "
+                     "qaytadan tekshiring 👇" % ", ".join(
+                         "«%s»" % escape(_kanal_nomi.get(k, k)) for k in yoq))
+    else:
+        qator.append("\n✅ Hammasiga obuna bo'lgach, <b>«Obuna bo'ldim»</b> tugmasini bosing 👇")
+    return "\n".join(qator)
+
+
+def obuna_tugmalar(yoq=None):
+    rows = []
+    for i, k in enumerate(KANALLAR, 1):
+        belgi = "❌ " if yoq and k in yoq else ("✅ " if yoq is not None else "📢 ")
+        rows.append([(belgi + _kanal_nomi.get(k, "%d-kanal" % i), kanal_havola(k))])
+    ijtimoiy = []
+    if TIKTOK:
+        ijtimoiy.append(("🎵 TikTok", TIKTOK))
+    if INSTAGRAM:
+        ijtimoiy.append(("📸 Instagram", INSTAGRAM))
+    if ijtimoiy:
+        rows.append(ijtimoiy)
+    rows.append([("✅ Obuna bo'ldim — tekshirish", "t")])
+    return inline(rows)
+
+
+def obuna_sora(chat, frm, kutilgan=None):
+    if kutilgan:
+        _kutayotgan[chat] = kutilgan
+    ism = escape(frm.get("first_name") or "Do'stim")
+    return send(chat, obuna_matn(ism), obuna_tugmalar())
+
+
+def obuna_tekshir(cq, db, pool):
+    chat = str(cq["from"]["id"])
+    msg = cq.get("message") or {}
+    ism = escape(cq["from"].get("first_name") or "Do'stim")
+    _obuna_ok.pop(chat, None)
+    yoq = obuna_emas(chat)
+    if yoq:
+        call("answerCallbackQuery", callback_query_id=cq["id"], show_alert="true",
+             text="❌ Siz hali %s ga obuna bo'lmadingiz!\n\nObuna bo'lib, qaytadan bosing."
+                  % ", ".join("«%s»" % _kanal_nomi.get(k, k) for k in yoq))
+        if msg:
+            edit(chat, msg["message_id"], obuna_matn(ism, yoq), obuna_tugmalar(yoq))
+        return None
+    with _db_lock:
+        db["users"].setdefault(chat, {"birinchi": int(time.time()), "soni": 0})["obuna"] = True
+    call("answerCallbackQuery", callback_query_id=cq["id"], text="✅ Rahmat! Obuna tasdiqlandi")
+    if msg:
+        call("deleteMessage", chat_id=chat, message_id=msg["message_id"])
+    kutilgan = _kutayotgan.pop(chat, None)
+    if kutilgan:                                  # obunadan oldin so'ragan narsasini bajaramiz
+        send(chat, "✅ <b>Rahmat, obuna tasdiqlandi!</b> So'rovingizni bajaryapman...")
+        return handle(kutilgan, db, pool)
+    return salom(chat, cq["from"])
+
+
 def salom(chat, frm):
     ism = escape(frm.get("first_name") or "do'stim")
     tugmalar = [[("📖 Qanday ishlaydi?", "h")]]
@@ -680,6 +804,12 @@ def callback(cq, db, pool):
     data = cq.get("data") or ""
     chat = str(cq["message"]["chat"]["id"]) if cq.get("message") else str(cq["from"]["id"])
     tur, _, qiymat = data.partition(":")
+    if tur == "t":                                  # ✅ Obuna bo'ldim — tekshirish
+        return obuna_tekshir(cq, db, pool)
+    xabar_chat = (cq.get("message") or {}).get("chat", {})
+    if xabar_chat.get("type", "private") == "private" and not obunachi(db, str(cq["from"]["id"])):
+        call("answerCallbackQuery", callback_query_id=cq["id"])
+        return obuna_sora(str(cq["from"]["id"]), cq["from"])
     if tur == "x":                                  # ❌ Yopish
         call("answerCallbackQuery", callback_query_id=cq["id"])
         return call("deleteMessage", chat_id=chat, message_id=cq["message"]["message_id"])
@@ -760,6 +890,7 @@ def main(argv):
         tugash = time.time() + daqiqa * 60
 
     bot_nomi()
+    kanal_nomlari()
     if not db.get("buyruqlar_v2"):                   # bir marta: buyruqlar va tavsif
         db["buyruqlar_v2"] = setup()
     print("Musiqa boti ishga tushdi: @%s" % BOT_USERNAME)
