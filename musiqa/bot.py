@@ -223,7 +223,7 @@ def load():
             db = json.load(f)
     except (OSError, ValueError):
         db = {}
-    db.setdefault("kesh", {})       # "audio:youtube:ID" → Telegram file_id
+    db.setdefault("kesh", {})       # "mp3:Youtube:ID" → Telegram file_id
     db.setdefault("users", {})      # chat_id → {"ism", "birinchi", "soni"}
     return db
 
@@ -585,7 +585,7 @@ def audio_yukla(chat, url, db, reply_to=None):
     call("sendChatAction", chat_id=chat, action="upload_voice")
     # YouTube qo'shig'i avval yuklangan bo'lsa — hech narsa yuklamasdan, darhol.
     m = YT_URL_RE.search(url)
-    if m and kesh_audio(chat, db, "audio:Youtube:" + m.group(1), reply_to):
+    if m and kesh_audio(chat, db, "mp3:Youtube:" + m.group(1), reply_to):
         return None
     holat = send(chat, "🎵 <b>MP3 tayyorlanmoqda...</b>\n⏳ Bir necha soniya", reply_to=reply_to)
     hid = holat.get("result", {}).get("message_id")
@@ -607,7 +607,7 @@ def _audio_manba(chat, url, db, reply_to, m):
         if not zaxira:
             raise
         print("zaxira: SoundCloud dan olinmoqda:", nom, file=sys.stderr)
-        return _audio(chat, zaxira, db, reply_to, {}, "audio:Youtube:" + m.group(1))
+        return _audio(chat, zaxira, db, reply_to, {}, "mp3:Youtube:" + m.group(1))
 
 
 def _audio(chat, url, db, reply_to, qosh, yt_kalit=None):
@@ -619,26 +619,25 @@ def _audio(chat, url, db, reply_to, qosh, yt_kalit=None):
             info = next((e for e in info.get("entries") or [] if e), None)
             if not info:
                 return send(chat, "Bu havolada audio topilmadi.", reply_to=reply_to)
-        kalit = "audio:%s:%s" % (info.get("extractor_key", "?"), info.get("id"))
+        kalit = "mp3:%s:%s" % (info.get("extractor_key", "?"), info.get("id"))
         if kesh_audio(chat, db, kalit, reply_to):
             return None
-        # M4A ni Telegram o'zi ijro etadi — qayta kodlamaymiz (tezroq).
-        # Boshqa format (webm/opus) bo'lsa, MP3 ga aylantiramiz.
-        sozlama = ydl_sozlama(papka, format="bestaudio[ext=m4a]/bestaudio/best", postprocessors=[
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
-             "nopostoverwrites": False}], **qosh)
-        if any(f.get("ext") == "m4a" and f.get("vcodec") == "none"
-               for f in info.get("formats") or []):
-            sozlama["postprocessors"] = []
+        # Har doim haqiqiy MP3: Telegram uni ▶️ pleyerli audio qilib ko'rsatadi.
+        sozlama = ydl_sozlama(papka, format="bestaudio/best", postprocessors=[
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+            **qosh)
         with yt_dlp.YoutubeDL(sozlama) as y:
             info = y.process_ie_result(info, download=True)   # qayta ochmaymiz
-        mp3 = [f for f in fayllar(papka) if f.lower().endswith((".mp3", ".m4a"))]
+        mp3 = [f for f in fayllar(papka) if f.lower().endswith(".mp3")]
         if not mp3:
             return send(chat, "Audioni ajratib bo'lmadi 😔", reply_to=reply_to)
         if os.path.getsize(mp3[0]) > MAX_BAYT:
             return send(chat, "Fayl juda katta (%d MB dan ortiq)." % MAX_MB, reply_to=reply_to)
-        nom = info.get("track") or info.get("title") or "audio"
-        ijrochi = info.get("artist") or info.get("creator") or info.get("uploader") or ""
+        ijrochi, nom = toza_nom(info)
+        chiroyli = os.path.join(papka, re.sub(r'[\\/:*?"<>|]', "", "%s - %s" % (ijrochi, nom)
+                                               if ijrochi else nom)[:120] + ".mp3")
+        os.replace(mp3[0], chiroyli)              # yuklab olinganda ham nomi chiroyli
+        mp3[0] = chiroyli
         fields = {"chat_id": chat, "title": nom[:64], "performer": ijrochi[:64],
                   "duration": int(info.get("duration") or 0) or None,
                   "caption": imzo(), "parse_mode": "HTML",
@@ -659,6 +658,34 @@ def _audio(chat, url, db, reply_to, qosh, yt_kalit=None):
         return r
     finally:
         shutil.rmtree(papka, ignore_errors=True)
+
+
+_KERAKSIZ_QAVS = re.compile(
+    r"\s*[\(\[【][^\)\]】]*(?:video|klip|clip|official|lyric|audio|premyera|premiere|"
+    r"\bhd\b|4k|music|mood|visuali[sz]er|mv\b|тизер|клип|премьера|official)[^\)\]】]*[\)\]】]",
+    re.I)
+_KANAL_QOSHIMCHA = re.compile(r"\s*(?:-\s*topic|vevo|official|music|tv|channel)\s*$", re.I)
+
+
+def toza_nom(info):
+    """YouTube nomidan chiroyli (ijrochi, qo'shiq nomi): qavsdagi «Official Video»
+    kabi qo'shimchalarsiz, ijrochi takrorlanmasdan."""
+    nom = info.get("track") or info.get("title") or "audio"
+    ijrochi = info.get("artist") or info.get("creator") or ""
+    nom = _KERAKSIZ_QAVS.sub("", nom)
+    nom = re.sub(r"\s*#\S+", "", nom)            # #heshteglar
+    nom = re.sub(r"(?:\s+(?:4k|hd|official(?: music)? video|official audio|lyrics?|"
+                 r"mood video|klip|clip))+\s*$", "", nom, flags=re.I)
+    qism = re.split(r"\s+[-–—|]\s+", nom, maxsplit=1)
+    if len(qism) == 2 and not info.get("track"):
+        ijrochi, nom = ijrochi or qism[0], qism[1]
+    if not ijrochi:
+        ijrochi = _KANAL_QOSHIMCHA.sub("", info.get("uploader") or info.get("channel") or "")
+    ijrochi = ijrochi.split(",")[0].strip() if len(ijrochi) > 40 else ijrochi.strip()
+    if ijrochi and nom.lower().startswith(ijrochi.lower()):
+        nom = re.sub(r"^\s*[-–—|:]\s*", "", nom[len(ijrochi):])
+    nom = re.sub(r"\s{2,}", " ", nom).strip(" -–—|") or (info.get("title") or "audio")
+    return ijrochi[:64], nom[:64]
 
 
 def kesh_audio(chat, db, kalit, reply_to):
