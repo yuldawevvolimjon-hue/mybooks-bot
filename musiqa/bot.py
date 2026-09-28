@@ -82,6 +82,7 @@ MAXFIYLIK = ("🔒 <b>Maxfiylik siyosati</b>\n\n"
              "📄 To'liq matn: %s" % MAXFIYLIK_URL)
 SALOM_RASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "tavsif.png")
 _DB = None                 # main() da o'rnatiladi — rasm file_id keshi uchun
+YANGI_NUSXA = 90           # shundan keyin «Conflict» kelsa — yangi nusxa bor, eskisi chiqadi
 OBUNA_KESH = 10 * 60       # kanalga obuna tekshiruvi natijasi shuncha soniya eslab qolinadi
 
 NATIJA_SONI = 10           # qidiruvda nechta qo'shiq ko'rsatiladi
@@ -1123,6 +1124,7 @@ def main(argv):
         sys.exit(0 if setup() else 1)
 
     tugash = None
+    boshlandi = time.time()
     if "--uzluksiz" in argv:
         # GitHub Actions: belgilangan daqiqa davomida ishlaydi, keyin navbatdagi
         # ishga tushish davom ettiradi.
@@ -1155,8 +1157,13 @@ def main(argv):
             if last is not None:
                 offset = last + 1
                 soni += len(natija)
+            elif r.get("error_code") == 409 and time.time() - boshlandi > YANGI_NUSXA:
+                # Yangi nusxa ishga tushdi va xabarlarni o'zi olyapti — biz chiqamiz.
+                # Shunday qilib almashish uzilishsiz bo'ladi.
+                print("yangi nusxa ishga tushdi — bu nusxa to'xtaydi")
+                break
             elif not r.get("ok"):
-                time.sleep(5)                        # tarmoq xatosi — biroz kutamiz
+                time.sleep(1 if r.get("error_code") == 409 else 5)
             if time.time() >= keyingi_saqlash:
                 save(db)
                 keyingi_saqlash = time.time() + 60

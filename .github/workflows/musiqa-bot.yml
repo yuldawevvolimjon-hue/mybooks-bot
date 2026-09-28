@@ -1,9 +1,10 @@
 # Musiqa va video yuklovchi Telegram bot — GitHub Actions'da ishlaydi (server kerak emas).
 #
-# Har ishga tushish 55 daqiqa uzluksiz ishlaydi. Jadval har 10 daqiqada
-# navbatdagi ishga tushishni tayyorlab qo'yadi: oldingisi tugashi bilan
-# keyingisi boshlanadi. Navbatda kutib qolgan eski ishga tushishlar
-# «cancelled» bo'ladi — bu normal holat.
+# Jadval har 10 daqiqada yangi nusxani ishga tushiradi. Yangisi eski ishlab
+# turganda tayyorlanadi (o'rnatish ~40 s), keyin xabarlarni o'zi ola boshlaydi;
+# eski nusxa buni sezib (Telegram «Conflict») boshlagan yuklashlarini tugatadi
+# va chiqadi. Shunday qilib almashish uzilishsiz bo'ladi. Jadval kechiksa ham
+# bitta nusxa 55 daqiqagacha ishlaydi.
 # "Run workflow" → rejim "sozlash": buyruqlar va tavsifni bir marta o'rnatadi.
 #
 # Kerak: Settings → Secrets and variables → Actions →
@@ -27,11 +28,6 @@ on:
         type: choice
         options: [xabarlar, sozlash]
         default: xabarlar
-
-concurrency:
-  # «sozlash» bot ishlab turganda ham alohida, darhol bajariladi.
-  group: musiqa-bot-${{ github.event.inputs.rejim || 'xabarlar' }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -60,11 +56,24 @@ jobs:
         with:
           deno-version: v2.x
 
+      # ffmpeg: apt orqali har safar ~1,5 daqiqa ketardi — tayyor faylni keshlaymiz.
+      - name: ffmpeg keshi
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg
+          key: ffmpeg-static-v1
+
       - name: yt-dlp va ffmpeg
         run: |
           # yt-dlp har doim eng yangisi — saytlar tez-tez o'zgaradi.
           pip install -U "yt-dlp[default]"
-          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          if [ ! -x "$HOME/ffmpeg/bin/ffmpeg" ]; then
+            mkdir -p "$HOME/ffmpeg"
+            curl -sSL https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz \
+              | tar -xJ -C "$HOME/ffmpeg" --strip-components=1
+          fi
+          echo "$HOME/ffmpeg/bin" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg/bin/ffmpeg" -version | head -1
 
       - name: Keshni tiklash
         uses: actions/cache/restore@v4
