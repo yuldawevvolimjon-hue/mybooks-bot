@@ -304,17 +304,10 @@ function dokon(el) {
     html += `<div class="sarlavha">📝 Ro'yxatdan o'tish</div>
       <div class="card" id="royxat"><b>30 soniya — va juma aksiyasini birinchi bo'lib bilasiz</b>${royxatForma(true)}</div>`;
   } else {
-    const j = JANRLAR.indexOf(D.q);
-    html += `<div class="sarlavha">📚 Qiziqishlarim</div>
-      <div class="card">
-      <p class="muted" style="margin:0 0 10px">Qaysi kitoblarni yoqtirasiz? Shu janrdagi aksiyalarni alohida belgilab yuboramiz.</p>
-      <div class="chips" id="janrlar">${JANRLAR.map((x, i) => `<button class="chip ${i === j ? "on" : ""}" data-i="${i}">${esc(x)}</button>`).join("")}</div>
-      <label for="yosh">Yoshingiz</label><input id="yosh" type="number" min="5" max="100" inputmode="numeric" value="${D.y || ""}" placeholder="Masalan: 24">
-      <div class="err" id="q_xato"></div>
-      <button id="q_saqla">✅ Saqlash</button></div>
-      <div class="sarlavha">👤 Ma'lumotlarim</div>
+    // Ro'yxatdan o'tgan: faqat qisqa ma'lumot; forma — «✏️ O'zgartirish» bosilganda.
+    html += `<div class="sarlavha">👤 Ma'lumotlarim</div>
       <div class="card"><div class="row"><div class="grow"><b>${esc(D.n)} ${esc(D.f || "")}</b>
-        <div class="muted">${D.t ? "📱 " + esc(tel(D.t)) : ""}</div></div>
+        <div class="muted">${[D.t ? "📱 " + esc(tel(D.t)) : "", D.y ? "🎂 " + D.y + " yosh" : "", D.q ? esc(D.q) : ""].filter(Boolean).join(" · ")}</div></div>
         <button class="ghost" id="tahrir" style="width:auto;padding:9px 14px">✏️ O'zgartirish</button></div>
         <div id="royxat" class="hidden" style="margin-top:6px">${royxatForma(false)}</div></div>`;
   }
@@ -340,18 +333,10 @@ function dokon(el) {
     asosiyTugma("✅ Ro'yxatdan o'tish", royxatYubor) && $("#r_saqla", el).classList.add("hidden");
     return;
   }
-  $("#tahrir", el).onclick = () => { $("#royxat", el).classList.toggle("hidden"); $("#r_ism", el).focus(); };
-
-  let janr = JANRLAR.indexOf(D.q);
-  $$("#janrlar .chip", el).forEach(b => b.onclick = () => {
-    $$("#janrlar .chip", el).forEach(x => x.classList.toggle("on", x === b)); janr = +b.dataset.i;
-    tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
-  });
-  $("#q_saqla", el).onclick = () => {
-    const yosh = raqam($("#yosh", el).value);
-    const xato = janr < 0 ? "Janrni tanlang." : (yosh < 5 || yosh > 100) ? "Yoshingizni yozing." : "";
-    $("#q_xato", el).textContent = xato;
-    if (!xato) botga(`q_${janr}_${yosh}`);
+  $("#tahrir", el).onclick = () => {
+    const f = $("#royxat", el), ochildi = f.classList.toggle("hidden") === false;
+    $("#tahrir", el).textContent = ochildi ? "✖ Yopish" : "✏️ O'zgartirish";
+    if (ochildi) f.scrollIntoView({behavior: "smooth", block: "start"});
   };
 }
 
