@@ -47,6 +47,7 @@ jobs:
       APP_URL: ${{ vars.KITOB_OLAMI_APP_URL }}
       STATE_FILE: ${{ github.workspace }}/state/kitob.json
       REJIM: ${{ github.event.inputs.rejim || 'xabarlar' }}
+      PYTHONUNBUFFERED: "1"   # jurnal darhol yozilsin (to'xtatilganda ham yo'qolmasin)
     steps:
       - uses: actions/checkout@v4
 
