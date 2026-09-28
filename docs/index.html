@@ -154,11 +154,14 @@ function mijozView() {
   }
 
   if (D.r) {
-    html += `<p class="muted ok">✅ Siz ro'yxatdan o'tgansiz — aksiyalarni bir hafta oldin botga yozamiz.</p>`;
-  } else {
+    html += `<div class="card"><div class="row"><span class="grow ok">✅ Ro'yxatdan o'tgansiz</span>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="tahrir">✏️ O'zgartirish</button></div>
+      <p class="muted" style="margin:6px 0 0">${D.q ? "Sevimli janr: " + esc(D.q) + ". " : ""}Aksiyalarni bir hafta oldin botga yozamiz.</p></div>`;
+  }
+  {
     html += `
-      <div class="card" id="royxat">
-        <b>📝 Ro'yxatdan o'tish</b>
+      <div class="card ${D.r ? "hidden" : ""}" id="royxat">
+        <b>📝 ${D.r ? "Ma'lumotni o'zgartirish" : "Ro'yxatdan o'tish"}</b>
         <p class="muted" style="margin:4px 0 0">Juma aksiyasini birinchilardan bo'lib biling.</p>
         <label>Ism</label><input id="ism" autocomplete="given-name" maxlength="50">
         <label>Familiya</label><input id="familiya" autocomplete="family-name" maxlength="50">
@@ -167,7 +170,7 @@ function mijozView() {
         <label>Qaysi kitoblarni yoqtirasiz?</label>
         <div class="chips" id="janrlar">${JANRLAR.map(j => `<button class="chip" data-j="${esc(j)}">${esc(j)}</button>`).join("")}</div>
         <div class="err" id="xato"></div>
-        <button id="saqla">✅ Ro'yxatdan o'tish</button>
+        <button id="saqla">✅ ${D.r ? "Saqlash" : "Ro'yxatdan o'tish"}</button>
       </div>`;
   }
   $("#app").innerHTML = html;
@@ -185,7 +188,8 @@ function mijozView() {
     yangila();
   }
 
-  if (!D.r) {
+  if (D.r) $("#tahrir").onclick = () => { $("#royxat").classList.remove("hidden"); $("#royxat").scrollIntoView({behavior: "smooth"}); };
+  {
     let janr = "";
     document.querySelectorAll("#janrlar .chip").forEach(b => b.onclick = () => {
       document.querySelectorAll("#janrlar .chip").forEach(x => x.classList.remove("on"));
@@ -204,48 +208,58 @@ function mijozView() {
   }
 }
 
-// ================================================================ admin
-function adminView() {
+// ================================================================ marketing paneli
+function marketingView() {
   const [mij, yangi, bronlar, kutil, sotildi, tushum, foyda, bloklagan, olganlar] = D.s;
   const konv = mij ? Math.round(100 * olganlar / mij) : 0;
   $("#app").innerHTML = `
-    <div class="brand">KITOB OLAMI · ADMIN</div>
-    <h1>📊 Admin <em>panel</em></h1>
+    <div class="brand">KITOB OLAMI · MARKETING</div>
+    <h1>📊 Marketing <em>paneli</em></h1>
     <p class="muted">Holat: ${sana(D.t)}. Yangilash uchun botga /start yozing.</p>
-    <div class="tabs"><button class="on" data-tab="korsat">Ko'rsatkichlar</button><button data-tab="qosh">➕ Aksiya qo'shish</button></div>
+    <div class="tiles">
+      <div class="tile gold"><b>${mij}</b><span>👥 Mijozlar (bu hafta +${yangi})</span></div>
+      <div class="tile"><b>${sotildi}</b><span>📚 Sotilgan (band) kitob</span></div>
+      <div class="tile"><b>${som(tushum).replace(" so'm", "")}</b><span>💰 Tushum, so'm</span></div>
+      <div class="tile"><b>${som(foyda).replace(" so'm", "")}</b><span>📈 Foyda, so'm</span></div>
+      <div class="tile"><b>${konv}%</b><span>🎯 Xarid qilganlar (${olganlar} kishi)</span></div>
+      <div class="tile"><b>${bloklagan}</b><span>🚫 Botni o'chirganlar</span></div>
+    </div>
 
-    <section id="korsat">
-      <div class="tiles">
-        <div class="tile gold"><b>${mij}</b><span>👥 Mijozlar (bu hafta +${yangi})</span></div>
-        <div class="tile"><b>${sotildi}</b><span>📚 Band qilingan kitob</span></div>
-        <div class="tile"><b>${som(tushum).replace(" so'm", "")}</b><span>💰 Tushum, so'm</span></div>
-        <div class="tile"><b>${som(foyda).replace(" so'm", "")}</b><span>📈 Foyda, so'm</span></div>
-        <div class="tile"><b>${konv}%</b><span>🎯 Xarid qilganlar (${olganlar} kishi)</span></div>
-        <div class="tile ${kutil ? "gold" : ""}"><b>${kutil}</b><span>⏳ To'lovi tekshirilmagan bron</span></div>
-      </div>
-      ${bloklagan ? `<p class="muted">Botni o'chirib qo'yganlar: ${bloklagan}</p>` : ""}
+    <h2>📈 Auditoriya o'sishi (8 hafta)</h2>
+    <div class="card">${grafik(D.w, D.w0)}
+      <div class="legend"><span><i style="background:var(--gold)"></i>Yangi mijozlar</span><span><i style="background:var(--green)"></i>Sotilgan kitoblar</span></div></div>
 
-      <h2>📈 Auditoriya o'sishi (8 hafta)</h2>
-      <div class="card">${grafik(D.w, D.w0)}
-        <div class="legend"><span><i style="background:var(--gold)"></i>Yangi mijozlar</span><span><i style="background:var(--green)"></i>Sotilgan kitoblar</span></div></div>
+    <h2>📚 Mijozlar nimani yoqtiradi</h2>
+    <div class="card">${gorizontal(D.g.map(([k, v]) => [k, v]))}</div>
 
-      <h2>📚 Mijozlar nimani yoqtiradi</h2>
-      <div class="card">${gorizontal(D.g.map(([k, v]) => [k, v]))}</div>
+    <h2>🎂 Yosh bo'yicha</h2>
+    <div class="card">${gorizontal(["18 gacha", "18–24", "25–34", "35–44", "45+"].map((k, i) => [k, D.y[i]]))}</div>
 
-      <h2>🎂 Yosh bo'yicha</h2>
-      <div class="card">${gorizontal(["18 gacha", "18–24", "25–34", "35–44", "45+"].map((k, i) => [k, D.y[i]]))}</div>
+    <h2>📅 Aksiyalar natijasi</h2>
+    <div class="card">${D.p.length ? D.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx]) => {
+      const band = soni - Math.max(qoldi, 0);
+      return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)}</span></div>
+        <div class="muted" style="margin:4px 0 8px">band: ${band} ta · foyda ${som(band * (narx - tannarx))}</div>
+        <div class="row"><div class="bar grow"><i style="width:${soni ? Math.max(2, 100 * band / soni) : 0}%"></i></div><span class="muted">${band}/${soni}</span></div></div>`;
+    }).join("") : `<p class="muted">Rejada aksiya yo'q.</p>`}</div>`;
+}
 
-      <h2>📅 Rejadagi aksiyalar</h2>
-      <div class="card">${D.p.length ? D.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx]) => {
-        const band = soni - Math.max(qoldi, 0), k = kunQoldi(sn);
-        return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)} · ${k} kun</span></div>
-          <div class="muted" style="margin:4px 0 8px">${som(odatiy)} → <b style="color:var(--text)">${som(narx)}</b> · foyda ${som(narx - tannarx)}/dona</div>
-          <div class="row"><div class="bar grow"><i style="width:${soni ? Math.max(2, 100 * band / soni) : 0}%"></i></div><span class="muted">${band}/${soni}</span></div></div>`;
-      }).join("") : `<p class="muted">Rejada aksiya yo'q — «➕ Aksiya qo'shish» ni bosing.</p>`}</div>
-    </section>
+// ================================================================ admin paneli
+function panelView() {
+  $("#app").innerHTML = `
+    <div class="brand">KITOB OLAMI · ADMIN</div>
+    <h1>🛠 Admin <em>panel</em></h1>
+    <p class="muted">Holat: ${sana(D.t)}. Yangilash uchun botga /start yozing.</p>
+    <div class="tiles">
+      <div class="tile gold"><b>${D.m}</b><span>👥 Mijozlar</span></div>
+      <div class="tile ${D.k ? "gold" : ""}"><b>${D.k}</b><span>⏳ To'lovi tekshirilmagan bron${D.k ? " — botda /buyurtmalar" : ""}</span></div>
+    </div>
+    <div class="tabs"><button class="on" data-tab="qosh">➕ Qo'shish</button><button data-tab="royxat">📅 Aksiyalar ${D.p.length}</button><button data-tab="xabar">✉️ Xabar</button></div>
 
-    <section id="qosh" class="hidden">
+    <section id="qosh">
       <div class="card">
+        <b>📚 Juma aksiyasiga kitob qo'shish</b>
+        ${D.f.length ? `
         <label>Qaysi juma?</label>
         <select id="a_sana">${D.f.map(f => `<option value="${f}">${sana(f)}, juma (${kunQoldi(f)} kun)</option>`).join("")}</select>
         <label>Kitob nomi</label><input id="a_kitob" maxlength="120" placeholder="Muqaddima">
@@ -257,15 +271,46 @@ function adminView() {
         <p class="muted" id="a_hisob"></p>
         <div class="err" id="a_xato"></div>
         <button id="a_saqla">✅ Aksiyani saqlash</button>
-        <p class="muted">Har aksiyada 100 ta kitob. Saqlangach, bot muqova rasmini so'raydi.</p>
+        <p class="muted">Har aksiyada 100 ta kitob. Saqlangach, bot muqova rasmini so'raydi — rasmni chatga yuborasiz.</p>`
+        : `<p class="muted">Kelgusi 8 jumaning hammasiga aksiya qo'yilgan.</p>`}
+      </div>
+    </section>
+
+    <section id="royxat" class="hidden">
+      <div class="card">${D.p.length ? D.p.map(([id, sn, kitob, narx, odatiy, qoldi, soni, tannarx, rasm]) => {
+        const band = soni - Math.max(qoldi, 0), k = kunQoldi(sn);
+        return `<div class="promo"><div class="row"><b class="grow">📖 ${esc(kitob)}</b><span class="muted">${sana(sn)} · ${k} kun</span></div>
+          <div class="muted" style="margin:4px 0 8px">${som(odatiy)} → <b style="color:var(--text)">${som(narx)}</b> · foyda ${som(narx - tannarx)}/dona${rasm ? " · 🖼" : ""}
+            · ${k <= 7 ? "mijozlar biladi" : "e'lon " + (k - 7) + " kundan keyin"}</div>
+          <div class="row"><div class="bar grow"><i style="width:${soni ? Math.max(2, 100 * band / soni) : 0}%"></i></div><span class="muted">${band}/${soni}</span></div>
+          ${band ? "" : `<button class="ghost" style="margin-top:10px" data-ochir="${id}" data-nom="${esc(kitob)}">🗑 O'chirish</button>`}</div>`;
+      }).join("") : `<p class="muted">Rejada aksiya yo'q — «➕ Aksiya qo'shish» ni bosing.</p>`}</div>
+    </section>
+
+    <section id="xabar" class="hidden">
+      <div class="card">
+        <b>✉️ Hamma mijozga xabar</b>
+        <p class="muted">Masalan: «Yangi kitoblar keldi! Do'konimizga keling 📚»</p>
+        <textarea id="x_matn" rows="5" maxlength="3000" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit"></textarea>
+        <div class="err" id="x_xato"></div>
+        <button id="x_yubor">📨 ${D.m} ta mijozga yuborish</button>
       </div>
     </section>`;
 
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-    $("#korsat").classList.toggle("hidden", b.dataset.tab !== "korsat");
-    $("#qosh").classList.toggle("hidden", b.dataset.tab !== "qosh");
+    ["qosh", "royxat", "xabar"].forEach(t => $("#" + t).classList.toggle("hidden", b.dataset.tab !== t));
   });
+
+  const tasdiq = (matn, ish) => tg && tg.showConfirm ? tg.showConfirm(matn, ok => ok && ish()) : (confirm(matn) && ish());
+  document.querySelectorAll("[data-ochir]").forEach(b => b.onclick = () =>
+    tasdiq(`«${b.dataset.nom}» aksiyasini o'chiramizmi?`, () => yubor({t: "ochir", id: +b.dataset.ochir})));
+  $("#x_yubor").onclick = () => {
+    const m = $("#x_matn").value.trim();
+    $("#x_xato").textContent = m ? "" : "Xabar matnini yozing.";
+    if (m) tasdiq(`Xabar ${D.m} ta mijozga yuboriladi. Yuboramizmi?`, () => yubor({t: "xabar", matn: m}));
+  };
+  if (!D.f.length) return;
 
   const v = id => raqam($("#" + id).value);
   let narxQolda = false;
@@ -277,7 +322,6 @@ function adminView() {
   });
   function xato() {
     const od = v("a_odatiy"), tn = v("a_tannarx"), nx = v("a_narx");
-    if (!D.f.length) return "Bo'sh juma yo'q.";
     if (!$("#a_kitob").value.trim()) return "Kitob nomini yozing.";
     if (!od || !tn || !nx) return "Narxlarni to'liq yozing.";
     if (tn >= od) return "Tannarx odatiy narxdan kam bo'lishi kerak.";
@@ -325,8 +369,9 @@ function gorizontal(qator) {
 
 if (!D) {
   $("#app").innerHTML = `<div class="brand">KITOB OLAMI</div><h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
-    <p class="muted">Bu ilova Telegram botimiz ichida ochiladi: <a href="https://t.me/My_books_07bot" style="color:var(--link)">@My_books_07bot</a> → «📱 Kitob olami ilovasi».</p>`;
-} else if (D.a) adminView();
+    <p class="muted">Bu ilova Telegram botimiz ichida ochiladi: <a href="https://t.me/My_books_07bot" style="color:var(--link)">@My_books_07bot</a> → pastdagi «📚 Kitob olami» tugmasi.</p>`;
+} else if (D.a === "p") panelView();
+else if (D.a === "m") marketingView();
 else mijozView();
 </script>
 </body>

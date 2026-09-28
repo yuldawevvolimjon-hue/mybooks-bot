@@ -95,8 +95,9 @@ BTN_TASDIQ = "✅ Band qilishni tasdiqlash"
 HOLAT = {"kutilmoqda": "⏳ to'lov tekshirilmoqda", "tasdiqlandi": "✅ band qilindi",
          "rad": "❌ rad etildi"}
 BTN_YOQ = "❌ Yo'q"
-BTN_ILOVA = "📱 Kitob olami ilovasi"
-BTN_PANEL = "📊 Admin panel"
+BTN_ILOVA = "📚 Kitob olami"
+BTN_PANEL = "🛠 Admin panel"
+BTN_MARKETING_APP = "📊 Marketing"
 HAMMA = "📚 Hamma uchun"
 
 JANRLAR = [
@@ -181,15 +182,19 @@ def kb(rows):
 
 
 def menyu(chat, db):
+    if APP_URL:
+        # Mini App bor: mijoz pastda faqat bitta tugmani ko'radi, qolgan hammasi
+        # ilova ichida. Do'kon egasiga — alohida admin va marketing panellari.
+        rows = [[{"text": BTN_ILOVA, "web_app": {"url": app_havola(mijoz_data(chat, db))}}]]
+        if chat in ADMINS:
+            rows.append([{"text": BTN_PANEL, "web_app": {"url": app_havola(panel_data(db))}},
+                         {"text": BTN_MARKETING_APP, "web_app": {"url": app_havola(admin_data(db))}}])
+        return kb(rows)
     if not royxatda(db, chat):
         rows = [[BTN_ROYXAT], [BTN_AKSIYA]]
     else:
         rows = [[BTN_AKSIYA], [BTN_BUYURTMALARIM, BTN_MEN], [BTN_QAYTA]]
-    if APP_URL:
-        rows.insert(0, [{"text": BTN_ILOVA, "web_app": {"url": app_havola(mijoz_data(chat, db))}}])
     if chat in ADMINS:
-        if APP_URL:
-            rows.append([{"text": BTN_PANEL, "web_app": {"url": app_havola(admin_data(db))}}])
         rows += [[BTN_QOSH, BTN_ROYXAT_AKSIYA], [BTN_BUYURTMALAR, BTN_MIJOZLAR],
                  [BTN_MARKETING]]
     return kb(rows)
@@ -217,6 +222,7 @@ def mijoz_data(chat, db):
     bronlar = [[o["promo"], o["soni"], o["holat"][0]] for o in db["orders"]
                if o["chat"] == chat and o["holat"] != "rad"][-3:]
     return {"v": 1, "r": 1 if u.get("royxat") else 0, "n": (u.get("ism") or "")[:30],
+            "q": (u.get("qiziqish") or "")[:40],
             "p": promo_qisqa(db, yaqin[0]) if yaqin else None, "b": bronlar,
             "k": 1 if TOLOV_KARTA else 0}
 
@@ -247,7 +253,7 @@ def admin_data(db):
         yosh[0 if y < 18 else 1 if y < 25 else 2 if y < 35 else 3 if y < 45 else 4] += 1
     olganlar = {o["chat"] for o in tas}
     return {
-        "v": 1, "a": 1,
+        "v": 1, "a": "m",
         "s": [len(us), mij[haftada], len(tas), len(kut),
               sum(o["soni"] for o in tas), sum(o["soni"] * o["narx"] for o in tas),
               sum(o["soni"] * (o["narx"] - o["tannarx"]) for o in tas),
@@ -259,6 +265,19 @@ def admin_data(db):
         "p": [promo_qisqa(db, p) + [p["tannarx"]] for p in kelgusi(db)[:4]],
         "f": [d.isoformat() for d in bosh_jumalar(db)[:6]],
         "t": b.isoformat(),
+    }
+
+
+def panel_data(db):
+    """Admin panel: aksiyalar ro'yxati, bo'sh jumalar, tekshirilmagan bronlar."""
+    return {
+        "v": 1, "a": "p",
+        "m": sum(1 for u in db["users"].values() if u.get("royxat")),
+        "k": sum(1 for o in db["orders"] if o["holat"] == "kutilmoqda"),
+        "p": [promo_qisqa(db, p) + [p["tannarx"], 1 if p.get("rasm") else 0]
+              for p in kelgusi(db)[:6]],
+        "f": [d.isoformat() for d in bosh_jumalar(db)[:8]],
+        "t": bugun().isoformat(),
     }
 
 
@@ -1327,6 +1346,27 @@ def ilova_xabari(chat, u, msg, db):
         u["vaqtincha"] = {"pid": p["id"]}
         send(chat, "🖼 Kitob muqovasining rasmini yuborsangiz, e'londa chiqadi "
                    "(ixtiyoriy — kerak bo'lmasa, boshqa tugmani bosing).")
+        return
+
+    if t == "ochir" and chat in ADMINS:
+        p = next((p for p in db["promos"] if p["id"] == son(str(d.get("id")))), None)
+        if not p:
+            send(chat, "Aksiya topilmadi.", menyu(chat, db))
+        elif band_soni(db, p):
+            send(chat, "«%s» ga %d ta kitob band qilingan — o'chirib bo'lmaydi. Avval "
+                       "bronlarni rad eting (/buyurtmalar)." % (escape(p["kitob"]), band_soni(db, p)),
+                 menyu(chat, db))
+        else:
+            db["promos"].remove(p)
+            send(chat, "🗑 «%s» aksiyasi o'chirildi." % escape(p["kitob"]), menyu(chat, db))
+        return
+
+    if t == "xabar" and chat in ADMINS:
+        body = escape(matn("matn", 3000))
+        if not body:
+            return
+        n = hammaga(db, lambda c, u: send(c, body, menyu(c, db)))
+        send(chat, "✉️ Xabar %d ta mijozga yuborildi." % n, menyu(chat, db))
         return
 
 
