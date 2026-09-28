@@ -60,8 +60,8 @@
   .chip { width: auto; padding: 8px 12px; border-radius: 18px; font-weight: 500; font-size: 14px;
           background: var(--bg); color: var(--text); border: 1px solid var(--line); }
   .chip.on { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
-  .tabs { display: flex; gap: 6px; background: var(--bg2); padding: 4px; border-radius: 12px; margin: 14px 0; }
-  .tabs button { background: transparent; color: var(--hint); padding: 9px 4px; font-size: 14px; white-space: nowrap; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; background: var(--bg2); padding: 4px; border-radius: 12px; margin: 14px 0; }
+  .tabs button { background: transparent; color: var(--hint); padding: 9px 6px; font-size: 14px; white-space: nowrap; flex: 1 1 28%; width: auto; }
   .tabs button.on { background: var(--bg); color: var(--text); }
   .err { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 8px; }
   .ok { color: var(--green); }
@@ -236,7 +236,7 @@ function admin(el) {
     </div>
     ${P.k ? `<button style="margin-top:10px" id="bronlar">⏳ ${P.k} ta bronning to'lovini tekshirish</button>` : ""}
 
-    <div class="tabs"><button class="on" data-t="mijoz">👥 Mijozlar</button><button data-t="qosh">➕ Aksiya</button><button data-t="royxat">📅 ${P.p.length}</button><button data-t="xabar">✉️</button></div>
+    <div class="tabs"><button class="on" data-t="mijoz">👥 Mijozlar</button><button data-t="qosh">➕ Aksiya</button><button data-t="royxat">📅 Aksiyalar ${P.p.length}</button><button data-t="marketing">📊 Marketing</button><button data-t="xabar">✉️ Xabar</button></div>
 
     <section data-s="mijoz">
       <input id="izla" placeholder="🔎 Ism yoki telefon bo'yicha qidirish">
@@ -270,6 +270,8 @@ function admin(el) {
         ${band ? "" : `<button class="ghost" style="margin-top:10px" data-ochir="${id}" data-nom="${esc(kitob)}">🗑 O'chirish</button>`}</div>`;
     }).join("") : `<p class="muted">Rejada aksiya yo'q — «➕ Aksiya» ni bosing.</p>`}</div></section>
 
+    <section data-s="marketing" class="hidden"></section>
+
     <section data-s="xabar" class="hidden"><div class="card">
       <b>✉️ Hamma mijozga xabar</b>
       <p class="muted">Masalan: «Yangi kitoblar keldi! Do'konimizga keling 📚». Tugmani bosing — bot chatda matnni so'raydi.</p>
@@ -280,6 +282,7 @@ function admin(el) {
     $$(".tabs button", el).forEach(x => x.classList.toggle("on", x === b));
     $$("section[data-s]", el).forEach(s => s.classList.toggle("hidden", s.dataset.s !== b.dataset.t));
   });
+  marketing($('section[data-s="marketing"]', el));
 
   // --- mijozlar ro'yxati (ism, telefon, yosh, janr, sana)
   const chiz = (f = "") => {
@@ -364,23 +367,14 @@ const app = $("#app");
 if (!D) {
   app.innerHTML = `<div class="brand">KITOB OLAMI</div><h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
     <p class="muted">Bu ilova Telegram botimiz ichida ochiladi: <a href="https://t.me/My_books_07bot" style="color:var(--link)">@My_books_07bot</a> → pastki chap burchakdagi «📚 Kitoblar» tugmasi.</p>`;
+} else if (D.A) {
+  // /admin — faqat do'kon egasi uchun: admin ishlari va marketing.
+  app.innerHTML = `<div class="brand">KITOB OLAMI · DO'KON EGASI</div><h1>🛠 Admin <em>panel</em></h1><div id="admin"></div>`;
+  admin($("#admin"));
 } else {
-  app.innerHTML = `<div class="brand">KITOB OLAMI${D.A ? " · DO'KON EGASI" : ""}</div>
-    <h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1>
-    ${D.A ? `<div class="tabs" id="bosh"><button class="on" data-v="dokon">🛍 Do'kon</button><button data-v="admin">🛠 Admin</button><button data-v="marketing">📊 Marketing</button></div>` : ""}
-    <div data-v="dokon"></div>${D.A ? `<div data-v="admin" class="hidden"></div><div data-v="marketing" class="hidden"></div>` : ""}`;
-  dokon($('div[data-v="dokon"]'));
-  if (D.A) {
-    admin($('div[data-v="admin"]'));
-    marketing($('div[data-v="marketing"]'));
-    $$("#bosh button").forEach(b => b.onclick = () => {
-      $$("#bosh button").forEach(x => x.classList.toggle("on", x === b));
-      $$("div[data-v]").forEach(d => d.classList.toggle("hidden", d.dataset.v !== b.dataset.v));
-    });
-    // /admin, /marketing, /mijoz buyrug'i tanlagan bo'limda ochiladi.
-    const b0 = $(`#bosh button[data-v="${D.v0 || "dokon"}"]`);
-    if (b0) b0.click();
-  }
+  // Mijoz ko'rinishi (do'kon egasi /mijoz yozganda ham xuddi shunday).
+  app.innerHTML = `<div class="brand">KITOB OLAMI</div><h1>Kitoblar <em>olamiga</em> xush kelibsiz</h1><div id="dokon"></div>`;
+  dokon($("#dokon"));
 }
 </script>
 </body>

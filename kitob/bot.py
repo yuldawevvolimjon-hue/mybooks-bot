@@ -306,8 +306,7 @@ def ega_data(chat, db, n):
     mk = admin_data(db)
     mk.pop("p", None)                    # aksiyalar — panel_data'da bor, takrorlamaymiz
     mk.pop("f", None)
-    d.update({"A": 1, "v0": db["users"].get(chat, {}).get("kor", "dokon"),
-              "pn": panel_data(db), "mk": mk, "c": mijozlar_royxati(db, n),
+    d.update({"A": 1, "pn": panel_data(db), "mk": mk, "c": mijozlar_royxati(db, n),
               "st": [len(us), len(royxat), len(us) - len(royxat),
                      sum(1 for u in royxat if kun(u) == b), sum(1 for u in royxat if kun(u) >= hafta)]})
     return d
@@ -321,8 +320,10 @@ def menyu_tugma(chat, db, majburiy=False):
     u = db["users"].get(chat)
     if u is None or u.get("bloklagan"):
         return
-    # Do'kon egasi — mijozlar ro'yxati bilan; havola juda uzun bo'lsa, qisqartiramiz.
-    for n in ((30, 12, 0) if chat in ADMINS else (None,)):
+    # Do'kon egasi /admin rejimida — mijozlar ro'yxati bilan (havola juda uzun
+    # bo'lsa, qisqartiramiz). /mijoz rejimida — oddiy mijoz ko'rinishi.
+    admin_rejim = chat in ADMINS and u.get("kor") == "admin"
+    for n in ((30, 12, 0) if admin_rejim else (None,)):
         url = app_havola(ega_data(chat, db, n) if n is not None else mijoz_data(chat, db))
         if url == u.get("mb") and not majburiy:
             return
@@ -1263,8 +1264,8 @@ def handle(msg, db):
         db["adminlar"].append(chat)
         ega_buyruqlari()                    # /admin va /marketing — endi unga ham
         send(chat, "🔑 Siz do'kon egasi sifatida qo'shildingiz. Pastki chap burchakdagi "
-                   "«%s» tugmasida endi 🛠 Admin va 📊 Marketing bo'limlari bor "
-                   "(/admin, /marketing)." % MENYU_MATN)
+                   "«%s» tugmasi orqali admin panelga kirasiz: /admin yozing "
+                   "(marketing ham shu yerda). Mijoz ko'rinishi — /mijoz." % MENYU_MATN)
     u.pop("bloklagan", None)               # yozdi — demak botni o'chirmagan
 
     # Mini App menyu tugmasidan: t.me/<bot>?start=royxat | start=b_<aksiya>_<soni>
@@ -1441,7 +1442,8 @@ def handle(msg, db):
 
 
 # ---------------------------------------------------------------- /admin, /marketing, /mijoz
-BOLIMLAR = {"/admin": ("admin", "🛠 Admin panel"), "/marketing": ("marketing", "📊 Marketing"),
+BOLIMLAR = {"/admin": ("admin", "🛠 Admin panel"),
+            "/marketing": ("admin", "🛠 Admin panel"),     # eski buyruq — endi admin ichida
             "/mijoz": ("dokon", "🛍 Do'kon (mijoz ko'rinishi)")}
 
 
@@ -1453,24 +1455,24 @@ def bolim_och(chat, u, text, db):
         send(chat, "Bu bo'lim faqat do'kon egasi uchun.", menyu(chat, db))
         return
     u["kor"] = kor
-    url = app_havola(ega_data(chat, db, 30) if chat in ADMINS else mijoz_data(chat, db))
+    admin_rejim = kor == "admin"
+    url = app_havola(ega_data(chat, db, 30) if admin_rejim else mijoz_data(chat, db))
     r = send(chat, "%s ochiladi 👇" % nom,
              {"inline_keyboard": [[{"text": nom + " — ochish", "web_app": {"url": url}}]]})
-    if not r.get("ok") and chat in ADMINS:             # havola uzun bo'lsa — qisqaroq
+    if not r.get("ok") and admin_rejim:                # havola uzun bo'lsa — qisqaroq
         url = app_havola(ega_data(chat, db, 0))
         send(chat, "%s ochiladi 👇" % nom,
              {"inline_keyboard": [[{"text": nom + " — ochish", "web_app": {"url": url}}]]})
 
 
 def ega_buyruqlari():
-    """/admin va /marketing — buyruqlar menyusida faqat do'kon egasiga ko'rinadi."""
+    """/admin — buyruqlar menyusida faqat do'kon egasiga ko'rinadi."""
     umumiy = [{"command": "start", "description": "Boshlash"},
               {"command": "mijoz", "description": "Do'kon (ilova)"},
               {"command": "aksiya", "description": "Juma aksiyasi"},
               {"command": "buyurtmalarim", "description": "Mening bronlarim"},
               {"command": "ochir_meni", "description": "Ma'lumotlarimni o'chirish"}]
-    ega = [{"command": "admin", "description": "🛠 Admin panel"},
-           {"command": "marketing", "description": "📊 Marketing paneli"}] + umumiy + [
+    ega = [{"command": "admin", "description": "🛠 Admin panel (marketing bilan)"}] + umumiy + [
           {"command": "buyurtmalar", "description": "Tekshirilmagan bronlar"},
           {"command": "mijozlar", "description": "Mijozlar ro'yxati (chatda)"}]
     for a in ADMINS:
@@ -1672,8 +1674,8 @@ def main(argv):
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
         app_tekshir()
         bot_nomi()
-        if not db.get("buyruqlar_v2"):             # bir marta: /admin, /marketing, /mijoz
-            db["buyruqlar_v2"] = bool(call("setMyCommands", commands=ega_buyruqlari()).get("ok"))
+        if not db.get("buyruqlar_v3"):             # bir marta: /admin, /mijoz (marketing — admin ichida)
+            db["buyruqlar_v3"] = bool(call("setMyCommands", commands=ega_buyruqlari()).get("ok"))
         tugash = time.time() + daqiqa * 60
         offset, soni = None, 0
         keyingi_yangilash = 0
