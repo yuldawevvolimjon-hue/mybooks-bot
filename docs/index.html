@@ -195,6 +195,59 @@ function asosiyTugma(matn, ish) {
   return true;
 }
 
+// Ro'yxat havolasi: r_<telefon>_<janr>_<yosh>_<base64url("ism|familiya")>, 64 belgigacha.
+function b64url(str) {
+  const bytes = new TextEncoder().encode(str);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function royxatHavola(ism, fam, tel, janr, yosh) {
+  const bosh = `r_${tel}_${janr}_${yosh}_`;
+  let nom = `${ism}|${fam}`;
+  while (bosh.length + b64url(nom).length > 64 && nom.length > 3) nom = nom.slice(0, -1);
+  return bosh + b64url(nom);
+}
+const telRaqam = t => { let d = String(t).replace(/\D/g, ""); if (d.length === 9) d = "998" + d; return d; };
+
+function royxatForma(yangi) {
+  const j = JANRLAR.indexOf(D.q);
+  return `
+    <label for="r_ism">Ism</label><input id="r_ism" autocomplete="given-name" maxlength="30" value="${esc(D.n || "")}" placeholder="Masalan: Aziz">
+    <label for="r_fam">Familiya</label><input id="r_fam" autocomplete="family-name" maxlength="30" value="${esc(D.f || "")}" placeholder="Masalan: Karimov">
+    <label for="r_tel">Telefon</label>
+    <div class="row"><input id="r_tel" class="grow" type="tel" inputmode="tel" autocomplete="tel" value="${D.t ? "+" + esc(D.t) : ""}" placeholder="+998 90 123 45 67">
+      ${tg && tg.requestContact ? `<button class="ghost" id="r_kontakt" style="width:auto;padding:12px">📱</button>` : ""}</div>
+    ${tg && tg.requestContact ? `<p class="muted" style="margin:4px 0 0">📱 — Telegram'dagi raqamingizni bir bosishda olish</p>` : ""}
+    <label for="r_yosh">Yoshingiz</label><input id="r_yosh" type="number" min="5" max="100" inputmode="numeric" value="${D.y || ""}" placeholder="Masalan: 24">
+    <label>Qaysi kitoblarga qiziqasiz?</label>
+    <div class="chips" id="r_janr">${JANRLAR.map((x, i) => `<button class="chip ${i === j ? "on" : ""}" data-i="${i}">${esc(x)}</button>`).join("")}</div>
+    <div class="err" id="r_xato"></div>
+    <button id="r_saqla">${yangi ? "✅ Ro'yxatdan o'tish" : "✅ Saqlash"}</button>`;
+}
+
+function royxatUlash(el, yangi) {
+  let janr = JANRLAR.indexOf(D.q);
+  $$("#r_janr .chip", el).forEach(b => b.onclick = () => {
+    $$("#r_janr .chip", el).forEach(x => x.classList.toggle("on", x === b)); janr = +b.dataset.i;
+    tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+  });
+  if ($("#r_kontakt", el)) $("#r_kontakt", el).onclick = () => tg.requestContact((ok, javob) => {
+    const t = ok && javob && javob.responseUnsafe && javob.responseUnsafe.contact && javob.responseUnsafe.contact.phone_number;
+    if (t) $("#r_tel", el).value = "+" + telRaqam(t);
+  });
+  const yubor = () => {
+    const v = id => $("#" + id, el).value.trim();
+    const tel = telRaqam(v("r_tel")), yosh = raqam(v("r_yosh"));
+    const xato = !v("r_ism") ? "Ismingizni yozing." : !v("r_fam") ? "Familiyangizni yozing."
+      : (tel.length < 11 || tel.length > 15) ? "Telefon raqamini to'liq yozing." : (yosh < 5 || yosh > 100) ? "Yoshingizni yozing."
+      : janr < 0 ? "Qiziqqan kitoblaringizni tanlang." : "";
+    $("#r_xato", el).textContent = xato;
+    if (xato) { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("error"); return; }
+    botga(royxatHavola(v("r_ism"), v("r_fam"), tel, janr, yosh));
+  };
+  $("#r_saqla", el).onclick = yubor;
+  return yubor;
+}
+
 function dokon(el) {
   const p = D.p;                           // [id, sana, kitob, narx, odatiy, qoldi, soni]
   let html = `<div class="hero" role="img" aria-label="Kitoblar olamiga xush kelibsiz"></div>
@@ -226,7 +279,8 @@ function dokon(el) {
         ${tugadi ? `<p>😔 Kitob qolmadi — keyingi juma aksiyasida olasiz!</p>` : `
           <div class="stepper"><button id="kam" aria-label="Kamaytirish">−</button><b id="soni">1</b><button id="kop" aria-label="Ko'paytirish">+</button>
             <span class="muted grow" id="hisob"></span></div>
-          <button id="bron">📌 Band qilish — yarim pulini to'lab</button>`}
+          <button id="bron" ${D.r ? "" : "disabled"}>📌 Band qilish — yarim pulini to'lab</button>
+          ${D.r ? "" : `<p class="muted" style="margin:8px 0 0;text-align:center">Band qilish uchun pastda ro'yxatdan o'ting 👇</p>`}`}
       </div>`;
   } else {
     html += `<div class="card row"><span style="font-size:32px">📅</span><div class="grow"><b>Aksiya tez orada</b>
@@ -248,9 +302,7 @@ function dokon(el) {
 
   if (!D.r) {
     html += `<div class="sarlavha">📝 Ro'yxatdan o'tish</div>
-      <div class="card"><b>30 soniya — ism, familiya va telefon</b>
-      <p class="muted" style="margin:4px 0 12px">Ro'yxatdan o'tganlar juma aksiyasini birinchi bo'lib biladi va kitobni band qila oladi.</p>
-      <button id="royxat">📝 Ro'yxatdan o'tish</button></div>`;
+      <div class="card" id="royxat"><b>30 soniya — va juma aksiyasini birinchi bo'lib bilasiz</b>${royxatForma(true)}</div>`;
   } else {
     const j = JANRLAR.indexOf(D.q);
     html += `<div class="sarlavha">📚 Qiziqishlarim</div>
@@ -259,8 +311,12 @@ function dokon(el) {
       <div class="chips" id="janrlar">${JANRLAR.map((x, i) => `<button class="chip ${i === j ? "on" : ""}" data-i="${i}">${esc(x)}</button>`).join("")}</div>
       <label for="yosh">Yoshingiz</label><input id="yosh" type="number" min="5" max="100" inputmode="numeric" value="${D.y || ""}" placeholder="Masalan: 24">
       <div class="err" id="q_xato"></div>
-      <button id="q_saqla">✅ Saqlash</button>
-      <p class="muted" style="margin:12px 0 0;text-align:center">Ism yoki telefonni o'zgartirish — <a href="#" id="tahrir" style="color:var(--link)">qayta ro'yxatdan o'tish</a></p></div>`;
+      <button id="q_saqla">✅ Saqlash</button></div>
+      <div class="sarlavha">👤 Ma'lumotlarim</div>
+      <div class="card"><div class="row"><div class="grow"><b>${esc(D.n)} ${esc(D.f || "")}</b>
+        <div class="muted">${D.t ? "📱 " + esc(tel(D.t)) : ""}</div></div>
+        <button class="ghost" id="tahrir" style="width:auto;padding:9px 14px">✏️ O'zgartirish</button></div>
+        <div id="royxat" class="hidden" style="margin-top:6px">${royxatForma(false)}</div></div>`;
   }
   html += `<div class="pastki">📚 Kitob olami · @${esc(D.u || "My_books_07bot")}</div>`;
   el.innerHTML = html;
@@ -272,23 +328,25 @@ function dokon(el) {
     const yangila = () => {
       $("#soni", el).textContent = n;
       $("#hisob", el).textContent = `Jami ${som(n * narx)} · oldindan ${som(yarmi(n * narx))}`;
-      if (asosiyTugma(`📌 ${n} ta kitobni band qilish`, bron)) $("#bron", el).classList.add("hidden");
+      if (D.r && asosiyTugma(`📌 ${n} ta kitobni band qilish`, bron)) $("#bron", el).classList.add("hidden");
     };
     $("#kam", el).onclick = () => { n = Math.max(1, n - 1); yangila(); tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); };
     $("#kop", el).onclick = () => { n = Math.min(maks, n + 1); yangila(); tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); };
     $("#bron", el).onclick = bron;
     yangila();
-  } else if (!D.r) {
-    asosiyTugma("📝 Ro'yxatdan o'tish", () => botga("royxat"));
   }
-  if (!D.r) { $("#royxat", el).onclick = () => botga("royxat"); return; }
+  const royxatYubor = royxatUlash(el, !D.r);
+  if (!D.r) {                                   // yangi odam: asosiy tugma — ro'yxat
+    asosiyTugma("✅ Ro'yxatdan o'tish", royxatYubor) && $("#r_saqla", el).classList.add("hidden");
+    return;
+  }
+  $("#tahrir", el).onclick = () => { $("#royxat", el).classList.toggle("hidden"); $("#r_ism", el).focus(); };
 
   let janr = JANRLAR.indexOf(D.q);
   $$("#janrlar .chip", el).forEach(b => b.onclick = () => {
     $$("#janrlar .chip", el).forEach(x => x.classList.toggle("on", x === b)); janr = +b.dataset.i;
     tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
   });
-  $("#tahrir", el).onclick = e => { e.preventDefault(); botga("royxat"); };
   $("#q_saqla", el).onclick = () => {
     const yosh = raqam($("#yosh", el).value);
     const xato = janr < 0 ? "Janrni tanlang." : (yosh < 5 || yosh > 100) ? "Yoshingizni yozing." : "";

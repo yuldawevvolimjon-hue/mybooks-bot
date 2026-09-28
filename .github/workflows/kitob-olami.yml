@@ -44,7 +44,7 @@ jobs:
       BOT_TOKEN: ${{ secrets.KITOB_OLAMI_BOT_TOKEN }}
       ADMIN_IDS: ${{ vars.KITOB_OLAMI_ADMIN_IDS }}
       # Do'kon egasining Telegram username'lari (vergul bilan) — ular ham admin.
-      ADMIN_USERNAMES: ${{ vars.KITOB_OLAMI_ADMIN_USERNAMES || 'YULDASHEEVO,Yuldawev0007' }}
+      ADMIN_USERNAMES: ${{ vars.KITOB_OLAMI_ADMIN_USERNAMES || 'sp_business_agency,YULDASHEEVO,Yuldawev0007' }}
       TOLOV_KARTA: ${{ vars.KITOB_OLAMI_TOLOV_KARTA }}
       APP_URL: ${{ vars.KITOB_OLAMI_APP_URL }}
       STATE_FILE: ${{ github.workspace }}/state/kitob.json

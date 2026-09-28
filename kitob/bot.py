@@ -232,6 +232,8 @@ def mijoz_data(chat, db):
                if o["chat"] == chat and o["holat"] != "rad"][-3:]
     return {"v": 1, "r": 1 if u.get("royxat") else 0, "n": (u.get("ism") or "")[:30],
             "q": (u.get("qiziqish") or "")[:40], "u": BOT_USERNAME, "y": u.get("yosh") or 0,
+            "f": (u.get("familiya") or "")[:30],
+            "t": re.sub(r"\D", "", u.get("telefon") or u.get("telefon_tg") or ""),
             "p": promo_qisqa(db, yaqin[0]) if yaqin else None, "b": bronlar,
             "k": 1 if TOLOV_KARTA else 0}
 
@@ -630,11 +632,10 @@ def royxat_tugat(chat, u, q, db):
 
 KEYINGI_QADAMLAR = (
     "👇 <b>Endi nima qilasiz:</b>\n\n"
-    "1️⃣ Pastdagi <b>«📚 Kitoblarni ochish»</b> tugmasini bosing "
-    "(yoki pastki chap burchakdagi <b>«📚 Kitoblar»</b>)\n"
-    "2️⃣ Qaysi kitoblarga qiziqishingizni tanlang va <b>Saqlash</b> ni bosing\n"
-    "3️⃣ Juma aksiyasi chiqqanda — sonini tanlab, <b>📌 Band qiling</b>\n"
-    "4️⃣ Kitob pulining yarmini to'laysiz, qolganini juma kuni kitobni olganda\n\n"
+    "1️⃣ <b>«📚 Kitoblarni ochish»</b> ni bosing (yoki pastki chap burchakdagi "
+    "<b>«📚 Kitoblar»</b>)\n"
+    "2️⃣ Juma aksiyasidagi kitobni ko'ring — sonini tanlab, <b>📌 Band qiling</b>\n"
+    "3️⃣ Kitob pulining yarmini to'laysiz, qolganini juma kuni kitobni olganda\n\n"
     "Aksiyani bir hafta oldin shu yerga ham yozamiz 🔔")
 
 
@@ -1046,8 +1047,10 @@ def buyurtma_adminga(a, o, db):
 def buyurtmalarim(chat, db):
     os_ = [o for o in db["orders"] if o["chat"] == chat][-10:]
     if not os_:
-        send(chat, "Sizda hali bron yo'q. «%s» tugmasini bosing." % BTN_AKSIYA,
-             menyu(chat, db))
+        if APP_URL:
+            ilova_tugmasi(chat, db, "Sizda hali bron yo'q. Juma aksiyasidagi kitobni ilovada band qilasiz 👇")
+        else:
+            send(chat, "Sizda hali bron yo'q. «%s» tugmasini bosing." % BTN_AKSIYA, menyu(chat, db))
         return
     send_long(chat, [buyurtma_matn(o, db) + "\n" for o in reversed(os_)], menyu(chat, db))
 
@@ -1288,13 +1291,25 @@ def handle(msg, db):
                    "(marketing ham shu yerda). Mijoz ko'rinishi — /mijoz." % MENYU_MATN)
     u.pop("bloklagan", None)               # yozdi — demak botni o'chirmagan
 
-    # Mini App menyu tugmasidan: t.me/<bot>?start=royxat | start=b_<aksiya>_<soni>
-    m = re.match(r"^/start ([a-z]+)((?:_[0-9a-z]+)*)$", text)
+    # Mini App'dan: t.me/<bot>?start=<buyruq>_<a>_<b>… (64 belgigacha, A-Za-z0-9_-)
+    m = re.match(r"^/start ([a-z]+)((?:_[A-Za-z0-9-]*)*)$", text)
     if m and m.group(1) in ILOVA_BUYRUQLARI:
         call("deleteMessage", chat_id=chat, message_id=msg.get("message_id"))  # «/start …» ni yashiramiz
         u.pop("qadam", None)
         u.pop("vaqtincha", None)
         ILOVA_BUYRUQLARI[m.group(1)](chat, u, m.group(2).split("_")[1:], db)
+        return
+
+    if text.startswith("/") and u.get("qadam") and u["qadam"] not in ("a_rasm_keyin",):
+        u.pop("qadam", None)                 # buyruq yozildi — chala qolgan qadam bekor
+        u.pop("vaqtincha", None)
+
+    if msg.get("contact") and not u.get("qadam"):
+        # Mini App'dagi «📱 Raqamimni olish» — raqam chatga ham keladi; jim saqlaymiz.
+        c = msg["contact"]
+        if str(c.get("user_id")) == chat and telefon_tozala(c.get("phone_number")):
+            u["telefon_tg"] = telefon_tozala(c["phone_number"])
+        call("deleteMessage", chat_id=chat, message_id=msg.get("message_id"))
         return
 
     if text == BTN_BEKOR or text.startswith("/start") or text == "/bekor":
@@ -1312,7 +1327,10 @@ def handle(msg, db):
                  % (escape(u.get("ism", "")), tugma), menyu(chat, db))
         elif text.startswith("/start") and APP_URL:
             send(chat, SALOM.split("\n\nRo'yxatdan")[0], menyu(chat, db))
-            ilova_royxat(chat, u, [], db)
+            ilova_tugmasi(chat, db, "👇 <b>«📚 Kitoblarni ochish»</b> tugmasini bosing — ro'yxatdan "
+                                    "o'tish, qiziqqan kitoblaringiz va juma aksiyasi hammasi o'sha yerda.\n\n"
+                                    "Keyinchalik pastki chap burchakdagi <b>«%s»</b> tugmasidan "
+                                    "ochasiz." % MENYU_MATN)
         elif text.startswith("/start"):
             send(chat, SALOM + tugma, menyu(chat, db))
         else:
@@ -1388,6 +1406,10 @@ def handle(msg, db):
         royxat_qadam(chat, u, msg, text, db)
         return
 
+    if (text in (BTN_ROYXAT, BTN_QAYTA) or text == "/royxat") and APP_URL:
+        ilova_tugmasi(chat, db, "📝 Ro'yxatdan o'tish ilovada — 30 soniya 👇")
+        return
+
     if text in (BTN_ROYXAT, BTN_QAYTA) or text == "/royxat":
         u["qadam"] = "ism"
         u["vaqtincha"] = {}
@@ -1409,6 +1431,9 @@ def handle(msg, db):
         yaqin = [p for p in kelgusi(db) if korinadi(p)]
         if yaqin:
             aksiya_yubor(db, chat, yaqin[0], u)
+        elif APP_URL:
+            ilova_tugmasi(chat, db, "📅 Keyingi juma aksiyasi haqida bir hafta oldin xabar beramiz."
+                          + ("" if royxatda(db, chat) else "\n\nBuning uchun ilovada ro'yxatdan o'ting 👇"))
         else:
             send(chat, "Keyingi juma aksiyasi haqida bir hafta oldin xabar beramiz."
                        + ("" if royxatda(db, chat) else " Buning uchun ro'yxatdan o'ting 👇"),
@@ -1480,6 +1505,9 @@ def bolim_och(chat, u, text, db):
         return
     u.pop("kor", None)
     admin_rejim = kor == "admin"
+    if not admin_rejim and chat not in ADMINS:
+        ilova_tugmasi(chat, db, "📚 Kitoblar olami — juma aksiyasi, band qilish va qiziqishlaringiz 👇")
+        return
     url = app_havola(ega_data(chat, db, 30) if admin_rejim else mijoz_data(chat, db))
     r = send(chat, "%s ochiladi 👇" % nom,
              {"inline_keyboard": [[{"text": nom + " — ochish", "web_app": {"url": url}}]]})
@@ -1576,7 +1604,28 @@ def ilova_mijozlar(chat, u, args, db):
         mijozlar(chat, db)
 
 
-ILOVA_BUYRUQLARI = {"royxat": ilova_royxat, "b": ilova_bron, "q": ilova_qiziqish,
+def ilova_royxat_ilovadan(chat, u, args, db):
+    """r_<telefon>_<janr>_<yosh>_<base64url("ism|familiya")> — ilovadagi forma."""
+    if len(args) < 4:
+        return
+    xom = "_".join(args[3:])
+    try:
+        ism, _, familiya = base64.urlsafe_b64decode(xom + "=" * (-len(xom) % 4)).decode(
+            "utf-8", "ignore").partition("|")
+    except ValueError:
+        return
+    q = {"ism": ism.strip()[:50], "familiya": familiya.strip()[:50], "telefon": telefon_tozala(args[0])}
+    if args[1].isdigit() and int(args[1]) < len(JANRLAR):
+        q["qiziqish"] = JANRLAR[int(args[1])]
+    if args[2].isdigit() and 5 <= int(args[2]) <= 100:
+        q["yosh"] = int(args[2])
+    if not (q["ism"] and q["familiya"] and q["telefon"]):
+        ilova_tugmasi(chat, db, "Ma'lumot to'liq kelmadi — ilovada qaytadan urinib ko'ring 👇")
+        return
+    royxat_tugat(chat, u, q, db)
+
+
+ILOVA_BUYRUQLARI = {"royxat": ilova_royxat, "r": ilova_royxat_ilovadan, "b": ilova_bron, "q": ilova_qiziqish,
                     "a": ilova_aksiya, "o": ilova_ochir, "xabar": ilova_xabar,
                     "bronlar": ilova_bronlar, "mijozlar": ilova_mijozlar}
 
