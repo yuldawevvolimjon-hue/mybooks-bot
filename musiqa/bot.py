@@ -69,16 +69,42 @@ ENG_UZUN = 20 * 60         # qidiruvda 20 daqiqadan uzun videolar (mikslar) chiq
 ALBOM = 10                 # bitta havoladan ko'pi bilan nechta fayl (Instagram karusel)
 
 SALOM = (
-    "Assalomu alaykum! 🎧\n\n"
-    "🎵 <b>Qo'shiq nomini yozing</b> — o'zbekcha, ruscha, inglizcha, "
-    "istalgan tilda. Masalan: <i>Shahzoda Yuragim</i> yoki <i>Макс Корж Мотылёк</i>.\n\n"
-    "🔗 <b>Havola yuboring</b> — Instagram, TikTok, YouTube, Facebook, "
-    "X (Twitter), Pinterest, VK, Likee, SoundCloud va boshqalar. "
-    "Videoni yuklab beraman, xohlasangiz musiqasini ham."
+    "👋 Assalomu alaykum, <b>%s</b>!\n\n"
+    "Men — <b>%s</b> 🎧\n"
+    "Istalgan qo'shiqni topaman va ijtimoiy tarmoqlardan video yuklab beraman.\n\n"
+    "━━━━━━━━━━━━━━━━━━\n"
+    "🎵 <b>Qo'shiq topish</b>\n"
+    "Qo'shiq yoki ijrochi nomini yozing — o'zbekcha, ruscha, inglizcha...\n"
+    "<i>Masalan:</i> <code>Shahzoda Yuragim</code>\n"
+    "<i>Masalan:</i> <code>Макс Корж Мотылёк</code>\n\n"
+    "📥 <b>Video yuklash</b>\n"
+    "Havolani yuboring — videoni yuklab beraman, xohlasangiz musiqasini ham.\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "✨ Qani, boshladik — qo'shiq nomini yozing 👇"
 )
-TAVSIF = ("🎵 Istalgan qo'shiqni nomi bo'yicha topib beraman — o'zbek, rus, "
-          "ingliz va boshqa tillarda.\n\n🔗 Instagram, TikTok, YouTube, Facebook "
-          "va boshqa tarmoqlardan havola yuborsangiz, videoni yuklab beraman.")
+YORDAM = (
+    "📖 <b>Qanday foydalaniladi?</b>\n\n"
+    "<b>1️⃣ Qo'shiq topish</b>\n"
+    "Qo'shiq nomini yozing → ro'yxatdan raqamni bosing → 🎧 MP3 keladi.\n"
+    "💡 <i>Ijrochi + qo'shiq nomi yozilsa, aniqroq topiladi.</i>\n\n"
+    "<b>2️⃣ Video yuklash</b>\n"
+    "Havolani nusxalab, shu yerga yuboring → 🎬 video keladi.\n"
+    "Video ostidagi <b>«🎵 Musiqasini yuklash»</b> tugmasi uning ovozini MP3 qiladi.\n\n"
+    "<b>🌐 Qo'llab-quvvatlanadigan tarmoqlar:</b>\n"
+    "📸 Instagram  •  🎵 TikTok  •  ▶️ YouTube\n"
+    "📘 Facebook  •  ✖️ X (Twitter)  •  📌 Pinterest\n"
+    "💬 VK  •  🧵 Threads  •  ☁️ SoundCloud  •  va boshqalar\n\n"
+    "<b>👥 Guruhda ham ishlaydi</b> — meni guruhga qo'shing, "
+    "havola tashlansa, videoni o'zim yuklab beraman."
+)
+TAVSIF = ("🎧 Istalgan qo'shiqni bir zumda topaman!\n\n"
+          "🎵 Qo'shiq nomini yozing — o'zbek, rus, ingliz va boshqa tillarda "
+          "MP3 qilib yuboraman.\n\n"
+          "📥 Instagram, TikTok, YouTube, Facebook va boshqa tarmoqlardan "
+          "havola yuboring — videoni yuklab beraman.\n\n"
+          "👇 START tugmasini bosing")
+QISQA_TAVSIF = "🎧 Qo'shiq topish va Instagram, TikTok, YouTube'dan video yuklash"
+RAQAM = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/[^\s<>\"']*",
                     re.I)
@@ -159,7 +185,9 @@ def edit(chat_id, message_id, text, keyboard=None):
 
 
 def inline(rows):
-    return {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row]
+    """Tugmalar: (matn, callback_data) yoki (matn, "https://...") — havola tugmasi."""
+    return {"inline_keyboard": [[{"text": t, "url": d} if d.startswith("https://")
+                                 else {"text": t, "callback_data": d} for t, d in row]
                                 for row in rows]}
 
 
@@ -308,25 +336,28 @@ def qidir(soz):
 
 
 def qidiruv_xabar(chat, soz, reply_to):
-    xabar = send(chat, "🔎 <b>%s</b> qidirilmoqda..." % escape(soz), reply_to=reply_to)
+    xabar = send(chat, "🔎 Qidiryapman: <b>%s</b>\n⏳ Bir soniya..." % escape(soz),
+                 reply_to=reply_to)
     mid = xabar.get("result", {}).get("message_id")
     natija = qidir(soz)
     if not natija:
-        matn = ("😔 <b>%s</b> bo'yicha hech narsa topilmadi.\n"
-                "Nomini boshqacha yozib ko'ring (ijrochi + qo'shiq nomi)." % escape(soz))
+        matn = ("😔 <b>%s</b> bo'yicha hech narsa topilmadi.\n\n"
+                "💡 Nomini boshqacha yozib ko'ring — masalan, ijrochi va qo'shiq nomini "
+                "birga yozing." % escape(soz))
         return edit(chat, mid, matn) if mid else send(chat, matn)
-    qatorlar = ["🎵 <b>%s</b>\n" % escape(soz)]
+    qatorlar = ["🔎 <b>%s</b>\n🎶 Topildi: %d ta qo'shiq\n" % (escape(soz), len(natija))]
     tugmalar = []
     for i, r in enumerate(natija, 1):
-        qatorlar.append("<b>%d.</b> %s%s" % (
-            i, escape(r["nom"][:90]), (" <i>(%s)</i>" % vaqt(r["vaqt"])) if r["vaqt"] else ""))
+        qatorlar.append("%s %s%s" % (
+            RAQAM[i - 1], escape(r["nom"][:80]),
+            (" <i>· %s</i>" % vaqt(r["vaqt"])) if r["vaqt"] else ""))
         if r["manba"] == "youtube" and r["id"] and YT_ID_RE.match(r["id"]):
             data = "y:" + r["id"]                 # qayta ishga tushsa ham ishlaydi
         else:
             data = "u:" + kalit_saqla(r["url"])
         tugmalar.append((str(i), data))
-    qatorlar.append("\n👇 Raqamni bosing — MP3 qilib yuboraman")
-    kb = inline([tugmalar[:5], tugmalar[5:10]] if len(tugmalar) > 5 else [tugmalar])
+    qatorlar.append("\n👇 <b>Kerakli raqamni bosing</b> — MP3 qilib yuboraman")
+    kb = inline([q for q in (tugmalar[:5], tugmalar[5:10]) if q] + [[("❌ Yopish", "x")]])
     matn = "\n".join(qatorlar)
     return edit(chat, mid, matn, kb) if mid else send(chat, matn, kb)
 
@@ -356,7 +387,7 @@ def audio_yukla(chat, url, db, reply_to=None):
         eski = kesh_ol(db, kalit)
         if eski:
             r = call("sendAudio", chat_id=chat, audio=eski, reply_to_message_id=reply_to,
-                     allow_sending_without_reply="true", caption=imzo())
+                     allow_sending_without_reply="true", caption=imzo(), parse_mode="HTML")
             if r.get("ok"):
                 return r
         sozlama = ydl_sozlama(papka, format="bestaudio/best", postprocessors=[
@@ -414,8 +445,14 @@ def muqova(info, papka):
     return None
 
 
-def imzo():
-    return "@%s" % BOT_USERNAME if BOT_USERNAME else None
+def imzo(sarlavha=None, belgi="🎧"):
+    """Fayl ostidagi chiroyli yozuv: nomi va bot havolasi."""
+    qator = []
+    if sarlavha:
+        qator.append("%s <b>%s</b>" % (belgi, escape(sarlavha[:200])))
+    if BOT_USERNAME:
+        qator.append("📥 @%s orqali yuklandi" % BOT_USERNAME)
+    return "\n\n".join(qator) or None
 
 
 VIDEO_FORMAT = ("bv*[ext=mp4][height<=720][vcodec^=avc]+ba[ext=m4a]/"
@@ -427,7 +464,8 @@ VIDEO_FORMAT_KICHIK = ("bv*[ext=mp4][height<=480]+ba[ext=m4a]/b[height<=480]/"
 def havola_yukla(chat, url, db, reply_to=None):
     """Havoladagi video/rasm(lar)ni yuklab yuboradi."""
     call("sendChatAction", chat_id=chat, action="upload_video")
-    holat = send(chat, "⏳ Yuklanmoqda...", reply_to=reply_to)
+    holat = send(chat, "📥 <b>Yuklab olyapman...</b>\n⏳ Biroz kuting, tez orada tayyor bo'ladi",
+                 reply_to=reply_to)
     hid = holat.get("result", {}).get("message_id")
     papka = tempfile.mkdtemp(prefix="video-")
     try:
@@ -440,7 +478,8 @@ def havola_yukla(chat, url, db, reply_to=None):
             eski = kesh_ol(db, kalit)
             if eski:
                 r = call(eski["usul"], chat_id=chat, **{eski["maydon"]: eski["id"]},
-                         caption=imzo(), reply_markup=audio_tugma(url, eski["maydon"]),
+                         caption=imzo(), parse_mode="HTML",
+                         reply_markup=audio_tugma(url, eski["maydon"]),
                          reply_to_message_id=reply_to, allow_sending_without_reply="true")
                 if r.get("ok"):
                     return r
@@ -489,12 +528,13 @@ def havola_yukla(chat, url, db, reply_to=None):
 def audio_tugma(url, maydon):
     if maydon not in ("video", "animation"):
         return None
-    return inline([[("🎵 Musiqasini yuklash", "a:" + kalit_saqla(url))]])
+    return inline([[("🎵 Musiqasini yuklash (MP3)", "a:" + kalit_saqla(url))]])
 
 
 def fayl_yubor(chat, yol, info, url, reply_to):
     ext = os.path.splitext(yol)[1].lower()
-    fields = {"chat_id": chat, "caption": imzo(), "reply_to_message_id": reply_to,
+    fields = {"chat_id": chat, "caption": imzo(), "parse_mode": "HTML",
+              "reply_to_message_id": reply_to,
               "allow_sending_without_reply": "true"}
     if ext in RASM:
         call("sendChatAction", chat_id=chat, action="upload_photo")
@@ -507,7 +547,7 @@ def fayl_yubor(chat, yol, info, url, reply_to):
                       performer=(info.get("uploader") or "")[:64] or None)
         return upload("sendAudio", fields, {"audio": yol})
     call("sendChatAction", chat_id=chat, action="upload_video")
-    fields.update(supports_streaming="true",
+    fields.update(caption=imzo(info.get("title"), "🎬"), supports_streaming="true",
                   width=info.get("width"), height=info.get("height"),
                   duration=int(info.get("duration") or 0) or None,
                   reply_markup=audio_tugma(url, "video") if url else None)
@@ -558,26 +598,37 @@ def handle(msg, db, pool):
         u["ism"] = frm.get("first_name", "")
         u["soni"] = u.get("soni", 0) + 1
     if not text:
-        return send(chat, "Qo'shiq nomini yoki havolani matn qilib yuboring 🙂")
+        return send(chat, "✍️ Qo'shiq nomini yoki havolani <b>matn</b> qilib yuboring 🙂")
     if text.startswith("/"):
         buyruq = text.split()[0].split("@")[0].lower()
-        if buyruq in ("/start", "/help", "/yordam"):
-            return send(chat, SALOM)
+        if buyruq == "/start":
+            return salom(chat, frm)
+        if buyruq in ("/help", "/yordam"):
+            return send(chat, YORDAM)
         if buyruq == "/stat":
             with _db_lock:
                 return send(chat, "👥 Foydalanuvchilar: %d\n💾 Keshdagi fayllar: %d" % (
                     len(db["users"]), len(db["kesh"])))
         text = text[len(text.split()[0]):].strip()   # /musiqa nom → nom
         if not text:
-            return send(chat, SALOM)
+            return salom(chat, frm)
     url = havola_top(text)
     if url:
         return navbatga(pool, chat, havola_yukla, url, db, msg["message_id"])
     if len(text) > 200:
-        return send(chat, "Juda uzun 🙂 Faqat qo'shiq nomi va ijrochini yozing.")
+        return send(chat, "✂️ Juda uzun 🙂 Faqat qo'shiq nomi va ijrochini yozing.")
     if msg["chat"].get("type") != "private":
         return None                               # guruhda oddiy gaplarga javob bermaymiz
     return navbatga(pool, chat, qidiruv_ish, text, db, msg["message_id"])
+
+
+def salom(chat, frm):
+    ism = escape(frm.get("first_name") or "do'stim")
+    tugmalar = [[("📖 Qanday ishlaydi?", "h")]]
+    if BOT_USERNAME:
+        tugmalar.append([("➕ Guruhga qo'shish",
+                          "https://t.me/%s?startgroup=true" % BOT_USERNAME)])
+    return send(chat, SALOM % (ism, escape(BOT_NOMI or "musiqa boti")), inline(tugmalar))
 
 
 def qidiruv_ish(chat, soz, db, reply_to):
@@ -588,6 +639,12 @@ def callback(cq, db, pool):
     data = cq.get("data") or ""
     chat = str(cq["message"]["chat"]["id"]) if cq.get("message") else str(cq["from"]["id"])
     tur, _, qiymat = data.partition(":")
+    if tur == "x":                                  # ❌ Yopish
+        call("answerCallbackQuery", callback_query_id=cq["id"])
+        return call("deleteMessage", chat_id=chat, message_id=cq["message"]["message_id"])
+    if tur == "h":                                  # 📖 Qanday ishlaydi?
+        call("answerCallbackQuery", callback_query_id=cq["id"])
+        return send(chat, YORDAM)
     url = None
     if tur == "y" and YT_ID_RE.match(qiymat):
         url = "https://www.youtube.com/watch?v=" + qiymat
@@ -618,21 +675,23 @@ def process(updates, db, pool):
 
 
 BOT_USERNAME = ""
+BOT_NOMI = ""
 
 
 def bot_nomi():
-    global BOT_USERNAME
-    BOT_USERNAME = call("getMe").get("result", {}).get("username", "") or BOT_USERNAME
+    global BOT_USERNAME, BOT_NOMI
+    me = call("getMe").get("result", {})
+    BOT_USERNAME = me.get("username", "") or BOT_USERNAME
+    BOT_NOMI = me.get("first_name", "") or BOT_NOMI
 
 
 def setup():
     r1 = call("setMyCommands", commands=[
-        {"command": "start", "description": "Botdan foydalanish"},
-        {"command": "help", "description": "Yordam"},
+        {"command": "start", "description": "🏠 Bosh sahifa"},
+        {"command": "help", "description": "📖 Qanday foydalaniladi"},
     ])
     r2 = call("setMyDescription", description=TAVSIF)
-    r3 = call("setMyShortDescription",
-              short_description="🎵 Qo'shiq qidirish va 🔗 Instagram, TikTok, YouTube'dan yuklash")
+    r3 = call("setMyShortDescription", short_description=QISQA_TAVSIF)
     bot_nomi()
     print("bot: @%s" % (BOT_USERNAME or "?"))
     print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"))
@@ -660,8 +719,8 @@ def main(argv):
         tugash = time.time() + daqiqa * 60
 
     bot_nomi()
-    if not db.get("buyruqlar_v1"):                   # bir marta: buyruqlar va tavsif
-        db["buyruqlar_v1"] = setup()
+    if not db.get("buyruqlar_v2"):                   # bir marta: buyruqlar va tavsif
+        db["buyruqlar_v2"] = setup()
     print("Musiqa boti ishga tushdi: @%s" % BOT_USERNAME)
     pool = ThreadPoolExecutor(max_workers=ISHCHILAR)
     offset, soni, keyingi_saqlash = None, 0, 0

@@ -73,6 +73,10 @@ jobs:
       - name: Bot
         run: |
           mkdir -p state
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::warning::MUSIQA_BOT_TOKEN secret qo'shilmagan — bot ishga tushmadi."
+            exit 0
+          fi
           if [ -n "$COOKIES" ]; then
             printf '%s\n' "$COOKIES" > "$RUNNER_TEMP/cookies.txt"
             export COOKIES_FILE="$RUNNER_TEMP/cookies.txt"
