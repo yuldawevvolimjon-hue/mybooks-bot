@@ -150,7 +150,7 @@
   <div id="fieldWrap">
     <canvas id="field"></canvas>
     <div id="ctrl">
-      <button id="fastBtn">⏩ 2x</button>
+      <button id="fastBtn">⏩ 3x</button>
       <button id="recallBtn">⬇ Qaytar</button>
     </div>
   </div>
@@ -170,6 +170,15 @@
   <p>• G'ishtdagi raqam — uni sindirish uchun kerakli zarbalar soni.</p>
   <p>• <b style="color:#2fb34a">Yashil halqa</b> +1 to'p beradi.</p>
   <p>• O'yin <b>hech qachon tugamaydi</b> — har yurishda LEVEL oshib boradi.</p>
+  <h3>Maxsus narsalar</h3>
+  <ul class="layers">
+    <li>💣 <b>Bomba</b> — atrofidagi 8 ta g'ishtga katta zarba</li>
+    <li>⚡ <b>Chaqmoq</b> — har to'p o'tganda butun qator yoki ustunni uradi</li>
+    <li>🔀 <b>Bo'luvchi</b> — to'pni ikkiga ajratadi</li>
+    <li>❄️ <b>Muzlatgich</b> — keyingi yurishda g'ishtlar pastga tushmaydi</li>
+    <li>👑 <b>Boss</b> — har 10-levelda; yengsangiz +15 S, +3 P, +2 to'p</li>
+    <li>🔥 <b>Kombo</b> — bir otishda har 5 g'isht uchun +1 S</li>
+  </ul>
   <h3>Qatlamlar</h3>
   <ul class="layers">
     <li>🪐 <b>Koinot (+2)</b> — asteroidlar</li>
@@ -210,10 +219,10 @@
   const COLS = 6, ROWS = 9, CELL = 100;
   const W = COLS * CELL, H = ROWS * CELL;
   const R = 12;               // to'p radiusi
-  const SPEED = 15;           // har qadamda piksel
+  const SPEED = 18;           // har qadamda piksel
   const GAP = 3;              // g'isht chetidagi bo'shliq
   const BR = 8;               // g'isht burchagining yumaloqligi (shakli — to'rtburchak)
-  const FIRE_GAP = 4;         // to'plar orasidagi qadamlar
+  const FIRE_GAP = 3;         // to'plar orasidagi qadamlar
   const STEP_MS = 1000 / 60;
   const MIN_ANGLE = 8 * Math.PI / 180;
   const SAVE_KEY = 'tg_oyin_v1';
@@ -270,6 +279,7 @@
   let flying = [];
   let shotsLeft = 0, fireTimer = 0, fireDir = null;
   let firstLandX = null, extraBalls = 0, turnTime = 0, fast = false;
+  let turnKills = 0, combo = null;   // kombo hisobi
   let shiftAnim = 0;
   let zoneAnim = null; // { from, to, t }
   let banner = null;   // { text, sub, life }
@@ -291,7 +301,7 @@
   }
 
   function newGame() {
-    game = { level: 1, balls: 1, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0 };
+    game = { level: 1, balls: 3, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0 };
     spawnRow(0);
     profile.games++;
     phase = 'aim';
@@ -307,19 +317,36 @@
     updateCtrl();
   }
 
-  // Yangi qator 1-qatorga qo'yiladi (0-qator doim bo'sh turadi).
+  // Yangi qator 1-qatorga qo'yiladi (0-qator odatda bo'sh; boss chiqqanda uning yuqori yarmi shu yerda).
   function spawnRow(zone) {
     const Z = ZONES[zone], lv = game.level;
     const row = Array(COLS).fill(null);
-    const cols = shuffle([...Array(COLS).keys()]);
+    const base = Math.max(1, Math.round(lv * Z.hpK));
+    let free = [...Array(COLS).keys()];
+    if (lv >= 10 && lv % 10 === 0) {   // har 10-levelda boss
+      const c = rnd(COLS - 1);
+      const ref = { hp: base * 6, m: base * 6, s: rnd(1000), bid: rnd(1e9) };
+      game.grid[0][c] = { t: 'boss', ref, dx: 0, dy: 0 };
+      game.grid[0][c + 1] = { t: 'boss', ref, dx: 1, dy: 0 };
+      row[c] = { t: 'boss', ref, dx: 0, dy: 1 };
+      row[c + 1] = { t: 'boss', ref, dx: 1, dy: 1 };
+      free = free.filter(k => k !== c && k !== c + 1);
+      showBanner('👑 BOSS!', `${base * 6} jon — yengsangiz katta sovg'a`);
+      beep(110, 0.4, 0.07, 'square');
+    }
+    const cols = shuffle(free);
     let i = 0;
     row[cols[i++]] = { t: 'ring' };
     if (Math.random() < Z.coin) row[cols[i++]] = { t: 'coin' };
-    if (Math.random() < Z.gem) row[cols[i++]] = { t: 'gem' };
-    const maxB = Math.min(COLS - i, lv < 5 ? Math.min(3, Z.maxB) : Z.maxB);
-    const nB = 1 + rnd(maxB);
-    for (let k = 0; k < nB && i < COLS; k++) {
-      const base = Math.max(1, Math.round(lv * Z.hpK));
+    if (Math.random() < Z.gem && i < cols.length) row[cols[i++]] = { t: 'gem' };
+    if (lv >= 3 && Math.random() < 0.38 && i < cols.length) {
+      const p = Math.random();
+      const t = p < 0.28 ? 'bomb' : p < 0.5 ? 'laserH' : p < 0.7 ? 'laserV' : p < 0.88 ? 'split' : 'freeze';
+      row[cols[i++]] = { t };
+    }
+    const maxB = Math.min(cols.length - i, lv < 5 ? Math.min(3, Z.maxB) : Z.maxB);
+    const nB = maxB > 0 ? 1 + rnd(maxB) : 0;
+    for (let k = 0; k < nB && i < cols.length; k++) {
       const hp = lv >= 8 && Math.random() < Z.dbl ? base * 2 : base;
       row[cols[i++]] = { t: 'brick', hp, m: hp, s: rnd(1000) };
     }
@@ -607,31 +634,40 @@
   }
 
   // ---------- Fizika ----------
+  const isSolid = c => c && (c.t === 'brick' || c.t === 'boss');
+  const SPECIALS = ['bomb', 'laserH', 'laserV', 'split', 'freeze'];
+
   function fire(dir) {
     phase = 'fire';
     fireDir = dir;
     shotsLeft = game.balls;
     fireTimer = 0;
     firstLandX = null; extraBalls = 0; turnTime = 0; fast = false;
+    turnKills = 0; combo = null;
     updateCtrl();
+  }
+
+  function newBall(x, y, vx, vy, temp) {
+    flying.push({ x, y, vx, vy, s: 'fly', i: flying.length, hit: new Set(), temp });
   }
 
   function stepPhysics() {
     turnTime++;
     if (shotsLeft > 0) {
       if (fireTimer <= 0) {
-        flying.push({ x: game.launchX, y: H - R, vx: fireDir.x * SPEED, vy: fireDir.y * SPEED, s: 'fly', i: flying.length });
+        newBall(game.launchX, H - R, fireDir.x * SPEED, fireDir.y * SPEED, false);
         shotsLeft--;
         fireTimer = FIRE_GAP;
       }
       fireTimer--;
     }
-    for (const b of flying) {
+    for (let k = 0; k < flying.length; k++) {   // bo'luvchi sikl ichida yangi to'p qo'shishi mumkin
+      const b = flying[k];
       if (b.s === 'fly') moveBall(b);
       else if (b.s === 'slide' || b.s === 'recall') slideBall(b);
     }
-    if (shotsLeft === 0 && flying.every(b => b.s === 'done')) endTurn();
-    if (turnTime === 60 * 2) updateCtrl();
+    if (shotsLeft === 0 && flying.every(b => b.s === 'done' || b.s === 'gone')) endTurn();
+    if (turnTime === 60) updateCtrl();
   }
 
   function moveBall(b) {
@@ -646,14 +682,24 @@
     }
   }
 
+  // Boss qismlari ichki tomonlarida bo'shliqsiz — to'p ular orasidan o'tib ketmaydi.
+  function cellRect(r, c, cell) {
+    let x0 = c * CELL + GAP, y0 = r * CELL + GAP, x1 = (c + 1) * CELL - GAP, y1 = (r + 1) * CELL - GAP;
+    if (cell.t === 'boss') {
+      if (cell.dx === 0) x1 += GAP; else x0 -= GAP;
+      if (cell.dy === 0) y1 += GAP; else y0 -= GAP;
+    }
+    return [x0, y0, x1, y1];
+  }
+
   function collide(b) {
     const c0 = Math.max(0, Math.floor((b.x - R) / CELL)), c1 = Math.min(COLS - 1, Math.floor((b.x + R) / CELL));
     const r0 = Math.max(0, Math.floor((b.y - R) / CELL)), r1 = Math.min(ROWS - 1, Math.floor((b.y + R) / CELL));
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
       const cell = game.grid[r][c];
       if (!cell) continue;
-      if (cell.t === 'brick') {
-        const x0 = c * CELL + GAP, y0 = r * CELL + GAP, x1 = (c + 1) * CELL - GAP, y1 = (r + 1) * CELL - GAP;
+      if (isSolid(cell)) {
+        const [x0, y0, x1, y1] = cellRect(r, c, cell);
         const px = Math.max(x0, Math.min(b.x, x1)), py = Math.max(y0, Math.min(b.y, y1));
         const dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
         if (d >= R) continue;
@@ -672,11 +718,14 @@
         if (dot < 0) {
           b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny;
           fixAngle(b);
-          hitBrick(r, c, cell);
+          hitSound();
+          damage(r, c, 1);
         }
       } else {
         const cx = c * CELL + CELL / 2, cy = r * CELL + CELL / 2;
-        if (Math.hypot(b.x - cx, b.y - cy) < R + 22) collect(r, c, cell);
+        if (Math.hypot(b.x - cx, b.y - cy) >= R + 22) continue;
+        if (SPECIALS.includes(cell.t)) special(b, r, c, cell);
+        else collect(r, c, cell);
       }
     }
   }
@@ -691,14 +740,110 @@
     }
   }
 
-  function hitBrick(r, c, cell) {
-    cell.hp--;
-    cell.wob = 1;
-    hitSound();
-    if (cell.hp <= 0) {
+  // G'isht yoki boss qismiga n zarba. Boss — bitta jon, 4 katakda.
+  function damage(r, c, n) {
+    const cell = game.grid[r][c];
+    if (!isSolid(cell)) return;
+    const ref = cell.t === 'boss' ? cell.ref : cell;
+    ref.hp -= n;
+    ref.wob = 1;
+    if (ref.hp > 0) return;
+    if (cell.t === 'boss') { killBoss(ref, true); return; }
+    game.grid[r][c] = null;
+    profile.bricks++;
+    breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, cell);
+    addKill();
+  }
+
+  function bossCells(ref) {
+    const out = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = game.grid[r][c];
+      if (cell && cell.t === 'boss' && cell.ref === ref) out.push([r, c, cell]);
+    }
+    return out;
+  }
+
+  function killBoss(ref, reward) {
+    const parts = bossCells(ref);
+    for (const [r, c, part] of parts) { game.grid[r][c] = null; breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, ref); }
+    if (!reward) return;
+    const [r, c] = parts[0] || [1, 2];
+    effects.push({ k: 'boom', x: (c + 1) * CELL, y: (r + 1) * CELL, life: 30, big: true });
+    shake = 18;
+    profile.bricks++; profile.bosses = (profile.bosses || 0) + 1;
+    profile.coins += 15; profile.gems += 3; extraBalls += 2; game.climb += 3;
+    addKill(); addKill(); addKill();
+    showBanner("👑 Boss yengildi!", "+15 S · +3 P · +2 to'p · +3 ko'tarilish");
+    beep(523, 0.15, 0.06, 'sine'); setTimeout(() => beep(659, 0.15, 0.06, 'sine'), 120); setTimeout(() => beep(784, 0.3, 0.06, 'sine'), 240);
+    updateHud();
+  }
+
+  // Kombo: bir otishda sindirilgan g'ishtlar soni
+  function addKill() {
+    turnKills++;
+    if (turnKills >= 3) {
+      combo = { n: turnKills, life: 70 };
+      if ([3, 5, 8, 12, 16, 20, 25, 30, 40, 50].includes(turnKills)) {
+        shake = Math.max(shake, Math.min(14, 4 + turnKills / 3));
+        beep(500 + Math.min(turnKills, 40) * 25, 0.12, 0.05, 'triangle');
+      }
+    }
+  }
+
+  function special(b, r, c, cell) {
+    const x = c * CELL + CELL / 2, y = r * CELL + CELL / 2;
+    if (cell.t === 'bomb') {
       game.grid[r][c] = null;
-      profile.bricks++;
-      breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, cell);
+      const dmg = Math.max(3, Math.round(game.level * ZONES[game.zone].hpK * 0.75));
+      const done = new Set();
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) continue;
+        const t = game.grid[rr][cc];
+        if (!isSolid(t)) continue;
+        const key = t.t === 'boss' ? t.ref : t;
+        if (done.has(key)) continue;
+        done.add(key);
+        damage(rr, cc, dmg);
+      }
+      effects.push({ k: 'boom', x, y, life: 24 });
+      shake = Math.max(shake, 12);
+      beep(90, 0.35, 0.08, 'sawtooth');
+      return;
+    }
+    if (cell.t === 'freeze') {
+      game.grid[r][c] = null;
+      game.freeze = (game.freeze || 0) + 1;
+      text(x, y, '❄ Muzlatildi', '#2a9fd6');
+      beep(1600, 0.2, 0.04, 'sine');
+      return;
+    }
+    // Chaqmoq va bo'luvchi: maydonda qoladi, har to'pga bir marta ta'sir qiladi
+    if (b.hit.has(cell)) return;
+    b.hit.add(cell);
+    cell.u = true;
+    if (cell.t === 'laserH' || cell.t === 'laserV') {
+      const horiz = cell.t === 'laserH';
+      const done = new Set();
+      for (let k = 0; k < (horiz ? COLS : ROWS); k++) {
+        const rr = horiz ? r : k, cc = horiz ? k : c;
+        const t = game.grid[rr][cc];
+        if (!isSolid(t)) continue;
+        const key = t.t === 'boss' ? t.ref : t;
+        if (done.has(key)) continue;
+        done.add(key);
+        damage(rr, cc, 1);
+      }
+      effects.push(horiz ? { k: 'beamH', y, life: 14 } : { k: 'beamV', x, life: 14 });
+      beep(1100, 0.06, 0.03, 'sawtooth');
+    } else if (cell.t === 'split' && flying.length < 250) {
+      const a = (Math.random() < 0.5 ? -1 : 1) * 0.45;
+      const vx = b.vx * Math.cos(a) - b.vy * Math.sin(a), vy = b.vx * Math.sin(a) + b.vy * Math.cos(a);
+      newBall(b.x, b.y, vx, vy, true);
+      flying[flying.length - 1].hit = new Set(b.hit);
+      fixAngle(flying[flying.length - 1]);
+      beep(900, 0.06, 0.03, 'sine');
     }
   }
 
@@ -713,6 +858,7 @@
 
   function land(b) {
     b.y = H - R;
+    if (b.temp) { b.s = 'gone'; return; }   // bo'linib chiqqan to'p faqat shu otishda yashaydi
     if (firstLandX === null) {
       firstLandX = Math.max(R, Math.min(W - R, b.x));
       b.x = firstLandX;
@@ -723,7 +869,7 @@
   function slideBall(b) {
     const tx = firstLandX ?? game.launchX, ty = H - R;
     const dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy);
-    const sp = b.s === 'recall' ? 30 : 22;
+    const sp = b.s === 'recall' ? 34 : 26;
     if (d <= sp) { b.x = tx; b.y = ty; b.s = 'done'; }
     else { b.x += dx / d * sp; b.y += dy / d * sp; }
   }
@@ -732,16 +878,36 @@
     if (phase !== 'fire') return;
     shotsLeft = 0;
     if (firstLandX === null) firstLandX = game.launchX;
-    for (const b of flying) if (b.s === 'fly' || b.s === 'slide') b.s = 'recall';
+    for (const b of flying) {
+      if (b.temp && b.s === 'fly') b.s = 'gone';
+      else if (b.s === 'fly' || b.s === 'slide') b.s = 'recall';
+    }
   }
 
   function endTurn() {
     game.launchX = firstLandX ?? game.launchX;
     game.balls += extraBalls;
     flying = [];
+    // Ishlatilgan chaqmoq va bo'luvchilar yo'qoladi
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = game.grid[r][c];
+      if (cell && cell.u) { game.grid[r][c] = null; effects.push({ k: 'c', x: c * CELL + CELL / 2, y: r * CELL + CELL / 2, life: 20, size: 14 }); }
+    }
+    const bonus = Math.floor(turnKills / 5);
+    if (bonus > 0) { profile.coins += bonus; text(W / 2, H * 0.62, `+${bonus} S kombo bonusi`, '#c98a00'); }
+    updateCtrl();
+    if (game.freeze > 0) {   // muzlatilgan: g'ishtlar joyida qoladi
+      game.freeze--;
+      game.level++;
+      text(W / 2, H * 0.55, "❄ G'ishtlar muzlab qoldi", '#2a9fd6');
+      phase = 'aim';
+      resetTurn();
+      persist();
+      updateHud();
+      return;
+    }
     phase = 'shift';
     shiftAnim = 0;
-    updateCtrl();
   }
 
   // Qatorlar pastga surilgach: yiqilish / ko'tarilish hisoblanadi. O'yin hech qachon tugamaydi.
@@ -754,8 +920,8 @@
     for (let c = 0; c < COLS; c++) {
       const cell = last[c];
       if (!cell) continue;
-      if (cell.t === 'brick') fell = true;
-      else {   // pastga yetgan halqa va tangalar avtomatik yig'iladi
+      if (isSolid(cell)) fell = true;
+      else {   // pastga yetgan halqa va tangalar avtomatik yig'iladi, boshqalari yo'qoladi
         if (cell.t === 'ring') game.balls++;
         if (cell.t === 'coin') profile.coins++;
         if (cell.t === 'gem') profile.gems++;
@@ -787,7 +953,7 @@
     } else {
       // Eng pastdagi g'isht qatori
       let lowest = -1;
-      for (let r = 0; r < ROWS; r++) if (g[r].some(c => c && c.t === 'brick')) lowest = r;
+      for (let r = 0; r < ROWS; r++) if (g[r].some(isSolid)) lowest = r;
       if (lowest === -1) game.climb += 2;          // maydon butunlay tozalangan
       else if (lowest <= 5) game.climb += 1;        // g'ishtlar chiziqdan uzoqda
       if (game.climb >= climbNeed(from)) {
@@ -820,7 +986,9 @@
   function clearRows(fromRow) {
     for (let r = fromRow; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const cell = game.grid[r][c];
-      if (cell) { if (cell.t === 'brick') breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, cell); game.grid[r][c] = null; }
+      if (!cell) continue;
+      if (cell.t === 'boss') killBoss(cell.ref, false);
+      else { if (cell.t === 'brick') breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, cell); game.grid[r][c] = null; }
     }
   }
 
@@ -867,16 +1035,17 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
+  let NUMK = 1;   // boss raqami kattaroq chiziladi
   function number(n, x, y, color, shadow = 'rgba(0,0,0,.35)') {
-    const fs = n >= 1000 ? 30 : n >= 100 ? 36 : 42;
+    const fs = (n >= 1000 ? 30 : n >= 100 ? 36 : 42) * NUMK;
     ctx.font = `800 ${fs}px Roboto, Arial, sans-serif`;
     ctx.fillStyle = shadow; ctx.fillText(n, x + 1.5, y + 3.5);
     ctx.fillStyle = color; ctx.fillText(n, x, y + 2);
   }
 
   // Yer usti: shaffof shisha idish ichida chayqalayotgan suyuqlik. Suyuqlik sathi = qolgan zarbalar.
-  function drawLiquid(x, y, cell, t) {
-    const s = CELL - GAP * 2, x0 = x + GAP, y0 = y + GAP, rad = BR;
+  function drawLiquid(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, x0 = x + GAP, y0 = y + GAP, rad = BR;
     const col = liquidRGB(t), wob = cell.wob || 0;
     ctx.save();
     roundRect(x0, y0, s, s, rad);
@@ -913,7 +1082,7 @@
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke();
     roundRect(x0 - 1.5, y0 - 1.5, s + 3, s + 3, rad + 1);
     ctx.strokeStyle = 'rgba(20,60,100,.2)'; ctx.lineWidth = 1; ctx.stroke();
-    number(cell.hp, x + CELL / 2, y + CELL / 2, '#fff', `rgba(${col},.6)`);
+    number(cell.hp, x + sz / 2, y + sz / 2, '#fff', `rgba(${col},.6)`);
   }
 
   function cracks(x0, y0, s, lvl, rand, col) {
@@ -929,8 +1098,8 @@
   }
 
   // Yer osti: tuproq bo'lagi — mayda toshlar, ildizlar; zarba olgan sari yoriladi.
-  function drawSoil(x, y, cell, t) {
-    const s = CELL - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
+  function drawSoil(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
     const x0 = x + GAP + sh, y0 = y + GAP, rand = prng(cell.s + 7);
     const base = tint(t, [168, 120, 76], [116, 76, 44], [84, 52, 34]);
     const gr = ctx.createLinearGradient(0, y0, 0, y0 + s);
@@ -950,12 +1119,12 @@
     cracks(x0, y0, s, cell.hp / cell.m, prng(cell.s + 99), 'rgba(35,18,6,.75)');
     ctx.fillStyle = 'rgba(255,230,190,.18)'; ctx.fillRect(x0, y0, s, 5);
     ctx.restore();
-    number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#fff4e0');
+    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#fff4e0');
   }
 
   // Chuqurlik: to'rtburchak tosh, ichida porlayotgan kristallar.
-  function drawStone(x, y, cell, t) {
-    const s = CELL - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
+  function drawStone(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
     const x0 = x + GAP + sh, y0 = y + GAP, rand = prng(cell.s + 3);
     const base = tint(t, [128, 122, 136], [92, 86, 102], [72, 60, 96]);
     const gr = ctx.createLinearGradient(x0, y0, x0 + s, y0 + s);
@@ -970,12 +1139,12 @@
     cracks(x0, y0, s, cell.hp / cell.m, prng(cell.s + 51), 'rgba(20,16,26,.8)');
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x0, y0, s, 4);
     ctx.restore();
-    number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#ffffff');
+    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#ffffff');
   }
 
   // Osmon: to'rtburchak bulut bo'lagi. Kuchli (ko'p zarbali) bulut — qoramtir yomg'ir buluti.
-  function drawCloud(x, y, cell, t) {
-    const s = CELL - GAP * 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
+  function drawCloud(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
     const k = (cell.wob || 0) * 3;
     const x0 = x + GAP - k / 2, y0 = y + GAP + bob - k / 2, w = s + k;
     const base = tint(t, [255, 255, 255], [214, 222, 234], [150, 160, 182]);
@@ -997,12 +1166,12 @@
         ctx.beginPath(); ctx.moveTo(rx, y0 + w - 18 + dy); ctx.lineTo(rx - 2, y0 + w - 12 + dy); ctx.stroke();
       }
     }
-    number(cell.hp, x + CELL / 2, y + CELL / 2 + bob, t > 1.2 ? '#ffffff' : '#3d5476', 'rgba(255,255,255,.35)');
+    number(cell.hp, x + sz / 2, y + sz / 2 + bob, t > 1.2 ? '#ffffff' : '#3d5476', 'rgba(255,255,255,.35)');
   }
 
   // Koinot: to'rtburchak asteroid bo'lagi — kraterlar bilan.
-  function drawRock(x, y, cell, t) {
-    const s = CELL - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
+  function drawRock(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
     const x0 = x + GAP + sh, y0 = y + GAP, cx = x0 + s / 2, cy = y0 + s / 2, rand = prng(cell.s + 11);
     const base = tint(t, [150, 138, 128], [112, 100, 92], [96, 72, 110]);
     const gr = ctx.createRadialGradient(cx - 18, cy - 20, 6, cx, cy, 66);
@@ -1017,7 +1186,7 @@
     ctx.restore();
     roundRect(x0, y0, s, s, BR);
     ctx.strokeStyle = 'rgba(150,190,255,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
-    number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#ffffff');
+    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#ffffff');
   }
 
   const DRAW = { liquid: drawLiquid, soil: drawSoil, stone: drawStone, cloud: drawCloud, rock: drawRock };
@@ -1028,6 +1197,8 @@
       ctx.strokeStyle = '#5ee87a'; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 20 * pulse, 0, Math.PI * 2); ctx.stroke();
       puff(ctx, x + CELL / 2, y + CELL / 2, 11, '#5ee87a');
+    } else if (SPECIALS.includes(cell.t)) {
+      drawSpecial(x + CELL / 2, y + CELL / 2, cell);
     } else {
       const coin = cell.t === 'coin';
       const sx = Math.abs(Math.cos(tick / 20));
@@ -1039,6 +1210,65 @@
       ctx.font = '900 22px Arial'; ctx.fillText(coin ? 'S' : 'P', 0, 2);
       ctx.restore();
     }
+  }
+
+  // Maxsus narsalar: bomba, chaqmoq (gorizontal/vertikal), bo'luvchi, muzlatgich
+  function drawSpecial(cx, cy, cell) {
+    const p = 1 + Math.sin(tick / 8) * 0.06;
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(p, p);
+    if (cell.u) ctx.globalAlpha = 0.45;
+    if (cell.t === 'bomb') {
+      ctx.fillStyle = '#26262e'; ctx.beginPath(); ctx.arc(0, 4, 17, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(-6, -2, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5a5a66'; ctx.fillRect(-5, -16, 10, 6);
+      ctx.strokeStyle = '#a07850'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -16); ctx.quadraticCurveTo(6, -24, 12, -22); ctx.stroke();
+      const f = tick % 10 < 5;
+      puff(ctx, 13, -23, f ? 6 : 4, '#ffcf3a'); puff(ctx, 13, -23, f ? 3 : 2, '#ff6a1a');
+    } else if (cell.t === 'laserH' || cell.t === 'laserV') {
+      if (cell.t === 'laserV') ctx.rotate(Math.PI / 2);
+      ctx.shadowColor = '#ffd23a'; ctx.shadowBlur = 16;
+      ctx.fillStyle = '#fff3b0'; roundRect(-26, -9, 52, 18, 9); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#e8a000'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-8, -6); ctx.lineTo(-2, 4); ctx.lineTo(8, -5); ctx.lineTo(20, 0); ctx.stroke();
+      ctx.fillStyle = '#e8a000';
+      ctx.beginPath(); ctx.moveTo(-34, 0); ctx.lineTo(-26, -6); ctx.lineTo(-26, 6); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(34, 0); ctx.lineTo(26, -6); ctx.lineTo(26, 6); ctx.fill();
+    } else if (cell.t === 'split') {
+      ctx.fillStyle = '#9b59f5'; ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 11); ctx.lineTo(0, 0); ctx.lineTo(-8, -9); ctx.moveTo(0, 0); ctx.lineTo(8, -9); ctx.stroke();
+      puff(ctx, -9, -10, 3.5, '#fff'); puff(ctx, 9, -10, 3.5, '#fff');
+    } else if (cell.t === 'freeze') {
+      ctx.fillStyle = 'rgba(120,210,255,.35)'; ctx.beginPath(); ctx.arc(0, 0, 21, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#2a9fd6'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let k = 0; k < 3; k++) {
+        ctx.rotate(Math.PI / 3);
+        ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, 16);
+        ctx.moveTo(-5, -11); ctx.lineTo(0, -6); ctx.lineTo(5, -11);
+        ctx.moveTo(-5, 11); ctx.lineTo(0, 6); ctx.lineTo(5, 11); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Boss: 2x2 katak, joriy qatlam uslubida, toj va jon chizig'i bilan
+  function drawBoss(r, c, ref, off, draw1) {
+    const x = c * CELL, y = r * CELL + off, sz = CELL * 2;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,60,60,.8)'; ctx.shadowBlur = 14 + Math.sin(tick / 10) * 8;
+    roundRect(x + GAP, y + GAP, sz - GAP * 2, sz - GAP * 2, BR); ctx.fillStyle = 'rgba(255,80,80,.25)'; ctx.fill();
+    ctx.restore();
+    NUMK = 1.5; draw1(x, y, ref, 1.6, sz); NUMK = 1;
+    // toj
+    const cx = x + sz / 2, cy = y + 34;
+    ctx.fillStyle = '#ffcf3a'; ctx.strokeStyle = '#b07800'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - 22, cy + 10); ctx.lineTo(cx - 22, cy - 6); ctx.lineTo(cx - 11, cy + 2); ctx.lineTo(cx, cy - 12);
+    ctx.lineTo(cx + 11, cy + 2); ctx.lineTo(cx + 22, cy - 6); ctx.lineTo(cx + 22, cy + 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+    // jon chizig'i
+    const bw = sz - 40, bx = x + 20, by = y + sz - 26;
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(bx, by, bw, 10, 5); ctx.fill();
+    ctx.fillStyle = '#ff4155'; roundRect(bx, by, Math.max(4, bw * ref.hp / ref.m), 10, 5); ctx.fill();
   }
 
   function ballColor(i) {
@@ -1066,7 +1296,7 @@
     }
 
     // Xavf: g'isht chiziqqa bir qadam qolganda pastda qizil nur
-    if (phase === 'aim' && game.grid[ROWS - 2].some(c => c && c.t === 'brick')) {
+    if (phase === 'aim' && game.grid[ROWS - 2].some(isSolid)) {
       const a = 0.25 + 0.15 * Math.sin(tick / 8);
       const dg = ctx.createLinearGradient(0, H - 140, 0, H);
       dg.addColorStop(0, 'rgba(255,40,40,0)'); dg.addColorStop(1, `rgba(255,40,40,${a})`);
@@ -1081,6 +1311,7 @@
       if (!cell) continue;
       const x = c * CELL, y = r * CELL + off;
       if (cell.t === 'brick') draw1(x, y, cell, cell.hp / refHp);
+      else if (cell.t === 'boss') { if (cell.dx === 0 && cell.dy === 0) drawBoss(r, c, cell.ref, off, draw1); }
       else drawItem(x, y, cell);
     }
 
@@ -1097,9 +1328,9 @@
       ctx.fillText('x' + (phase === 'fire' ? shotsLeft : game.balls), clampLabel(game.launchX), H - R * 2 - 22);
     }
     if (phase === 'fire') {
-      for (const b of flying) drawBall(b.x, b.y, b.i);
+      for (const b of flying) if (b.s !== 'gone') drawBall(b.x, b.y, b.i);
       if (firstLandX !== null && shotsLeft === 0) {
-        const landed = flying.filter(b => b.s === 'done').length;
+        const landed = flying.filter(b => b.s === 'done' && !b.temp).length;
         if (landed > 0) {
           ctx.fillStyle = ballColor(0); ctx.font = labelFont;
           ctx.fillText('x' + landed, clampLabel(firstLandX), H - R * 2 - 22);
@@ -1114,6 +1345,18 @@
         ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
       } else if (e.k === 'd') {
         ctx.globalAlpha = e.life / 34; puff(ctx, e.x, e.y, e.size, e.color);
+      } else if (e.k === 'boom') {
+        const t = 1 - e.life / (e.big ? 30 : 24), rr = (e.big ? 200 : 150) * t;
+        ctx.globalAlpha = (1 - t) * 0.8;
+        const bg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, Math.max(1, rr));
+        bg.addColorStop(0, 'rgba(255,240,180,1)'); bg.addColorStop(0.5, 'rgba(255,140,40,.9)'); bg.addColorStop(1, 'rgba(255,60,20,0)');
+        ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, rr), 0, Math.PI * 2); ctx.fill();
+      } else if (e.k === 'beamH' || e.k === 'beamV') {
+        ctx.globalAlpha = e.life / 14;
+        ctx.save(); ctx.shadowColor = '#ffd23a'; ctx.shadowBlur = 20; ctx.fillStyle = '#fff6c0';
+        const th = 4 + e.life * 0.8;
+        if (e.k === 'beamH') ctx.fillRect(0, e.y - th / 2, W, th); else ctx.fillRect(e.x - th / 2, 0, th, H);
+        ctx.restore();
       } else if (e.k === 'c') {
         ctx.globalAlpha = e.life / 36 * 0.85; puff(ctx, e.x, e.y, e.size, '#ffffff');
       } else {
@@ -1123,6 +1366,16 @@
     }
     ctx.globalAlpha = 1;
 
+    if (combo && phase === 'fire') {
+      const pop = 1 + Math.max(0, combo.life - 55) / 15 * 0.4;
+      ctx.save(); ctx.translate(W / 2, 70); ctx.scale(pop, pop);
+      ctx.globalAlpha = Math.min(1, combo.life / 15);
+      const hue = Math.min(combo.n * 12, 300);
+      ctx.font = '900 46px Roboto, Arial, sans-serif';
+      ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeText(`KOMBO ×${combo.n}`, 0, 0);
+      ctx.fillStyle = `hsl(${40 - Math.min(hue, 40) + (combo.n >= 12 ? 290 : 0)},95%,60%)`; ctx.fillText(`KOMBO ×${combo.n}`, 0, 0);
+      ctx.restore(); ctx.globalAlpha = 1;
+    }
     if (banner) {
       const a = Math.min(1, banner.life / 25, (150 - banner.life) / 15 + 0.01);
       ctx.globalAlpha = Math.max(0, a);
@@ -1169,7 +1422,7 @@
       if (y < R || bounces > 1) break;
       const c = Math.floor(x / CELL), r = Math.floor(y / CELL);
       const cell = game.grid[r] && game.grid[r][c];
-      if (cell && cell.t === 'brick') break;
+      if (isSolid(cell)) break;
       dist += 2;
       if (dist % 28 === 0) {
         ctx.globalAlpha = 1 - s / maxLen * 0.7;
@@ -1187,7 +1440,7 @@
       acc -= STEP_MS;
       tick++;
       if (phase === 'fire') {
-        const n = fast || turnTime > 60 * 15 ? 3 : 1;
+        const n = fast ? 3 : turnTime > 60 * 12 ? 3 : turnTime > 60 * 6 ? 2 : 1;
         for (let k = 0; k < n && phase === 'fire'; k++) stepPhysics();
       } else if (phase === 'shift') {
         shiftAnim += 0.12;
@@ -1200,15 +1453,17 @@
       }
       if (shake > 0) shake--;
       if (banner && --banner.life <= 0) banner = null;
+      if (combo && --combo.life <= 0) combo = null;
       for (const w of walkers) {
         w.x += w.v; w.ph += Math.abs(w.v) * 0.18;
         if (w.x < -20) w.x = W + 20; if (w.x > W + 20) w.x = -20;
       }
-      for (const row of game.grid) for (const cell of row) if (cell && cell.wob) cell.wob = Math.max(0, cell.wob - 0.05);
+      for (const row of game.grid) for (const cell of row) { const o = cell && cell.t === 'boss' ? cell.ref : cell; if (o && o.wob) o.wob = Math.max(0, o.wob - (cell.t === 'boss' ? 0.0125 : 0.05)); }
       for (const e of effects) {
         e.life--;
         if (e.k === 'p' || e.k === 'd') { e.x += e.vx; e.y += e.vy; e.vy += 0.3; }
         else if (e.k === 'c') { e.size += 0.6; e.y -= 0.3; }
+        else if (e.k === 'boom' || e.k === 'beamH' || e.k === 'beamV') {}
         else e.y -= 1.2;
       }
       effects = effects.filter(e => e.life > 0);
@@ -1258,8 +1513,8 @@
     $('zoneHint').textContent = game.zone < ZMAX ? `Ko'tarilish: ${game.climb}/${need}` : `Cho'qqi bonusi: ${game.climb}/${need}`;
   }
   function updateCtrl() {
-    $('fastBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60 * 2);
-    $('recallBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60 * 2);
+    $('fastBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60);
+    $('recallBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60);
     $('fastBtn').classList.toggle('active', fast);
   }
   function show(id) { $(id).classList.add('show'); }
@@ -1294,7 +1549,7 @@
     const rows = [
       ['Rekord (LEVEL)', profile.record], ['Joriy LEVEL', game.level], ["To'plar soni", game.balls],
       ['Hozirgi joy', `${ZONES[game.zone].icon} ${ZONES[game.zone].name} (${altText(game.zone)})`], ['Eng baland joy', `${mz.icon} ${mz.name} (${altText(profile.maxZone)})`],
-      ["Ko'tarilishlar", profile.climbs], ['Yiqilishlar', profile.falls],
+      ["Ko'tarilishlar", profile.climbs], ['Yiqilishlar', profile.falls], ['Yengilgan bosslar', profile.bosses || 0],
       ["Sindirilgan g'ishtlar", profile.bricks], ["Yig'ilgan halqalar", profile.rings],
       ['S tangalar', profile.coins], ['P bonuslar', profile.gems], ['Parashyutlar', profile.chutes],
     ];
@@ -1338,6 +1593,10 @@
         || !(g.level >= 1) || !(g.balls >= 1) || typeof g.launchX !== 'number') return null;
     g.zone = Math.max(ZMIN, Math.min(ZMAX, g.zone | 0));
     g.climb = g.climb | 0;
+    const bosses = {};   // JSON'dan keyin boss qismlari yana bitta jonni bo'lishadi
+    for (const row of g.grid) for (const c of row) if (c && c.t === 'boss') {
+      c.ref = bosses[c.ref.bid] = bosses[c.ref.bid] || c.ref;
+    }
     for (const row of g.grid) for (const c of row) if (c && c.t === 'brick') {
       c.m = Math.max(c.m || 0, c.hp); if (c.s === undefined) c.s = rnd(1000);
     }
