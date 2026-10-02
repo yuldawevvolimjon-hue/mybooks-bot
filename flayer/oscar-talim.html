@@ -8,24 +8,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* ===== O'ZGARTIRISH UCHUN: telefon, Telegram va kurslar pastdagi HTML da. =====
-     Chop etish: Ctrl+P → A5 (148×210 mm), chekkasiz, «fon rasmlari» yoqilgan. */
+     Chop etish: Ctrl+P → 99×210 mm (DL), chekkasiz, «fon rasmlari» yoqilgan. */
   :root {
     --navy: #0f1f3d; --navy2: #16294f; --text: #f5f7fb; --hint: #aab6cf;
     --gold: #f5b82e; --gold2: #ffd56a; --orange: #ff7a3d; --green: #2ec27e;
     --head: Montserrat, Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     --sans: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  @page { size: 148mm 210mm; margin: 0; }
+  @page { size: 99mm 210mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #e9ecf3; }
   body { font-family: var(--sans); color: var(--text); display: grid; place-items: center; min-height: 100vh; padding: 24px; }
   @media print { body { padding: 0; background: var(--navy); } .flayer { box-shadow: none; } }
 
   .flayer {
-    position: relative; width: 148mm; height: 210mm; overflow: hidden;
+    position: relative; width: 99mm; height: 210mm; overflow: hidden;
     background: linear-gradient(165deg, #1b3263 0%, var(--navy) 55%, #0a1530 100%);
     box-shadow: 0 30px 80px rgba(15,31,61,.45);
-    display: flex; flex-direction: column; padding: 9mm 10mm 7mm;
+    display: flex; flex-direction: column; padding: 7mm 7mm 6mm;
   }
   /* bezak doiralar */
   .d1, .d2 { position: absolute; border-radius: 50%; pointer-events: none; }
@@ -85,6 +85,30 @@
   .soc svg { width: 3.8mm; height: 3.8mm; fill: var(--navy); }
   .chaq { font-family: var(--head); font-weight: 800; font-size: 8pt; color: var(--orange); text-transform: uppercase; letter-spacing: .1em; }
   .izoh { position: relative; text-align: center; font-size: 6.8pt; color: var(--hint); margin: auto 0 0; padding-top: 2.5mm; letter-spacing: .04em; }
+
+  /* ---- 99×210 mm uchun moslash */
+  .d1 { width: 70mm; height: 70mm; right: -30mm; top: -25mm; }
+  .grid { background-size: 7mm 7mm; }
+  .logo .mark { width: 11mm; height: 11mm; border-radius: 3mm; } .logo .mark svg { width: 7.5mm; height: 7.5mm; }
+  .logo b { font-size: 13pt; } .logo span { font-size: 6pt; letter-spacing: .18em; }
+  .qabul { font-size: 6.5pt; } .qabul b { font-size: 7pt; }
+  h1 { font-size: 20pt; margin: 6mm 0 2.2mm; }
+  .lead { font-size: 8pt; line-height: 1.42; }
+  .aksiya { margin-top: 4.5mm; font-size: 8pt; padding: 1.8mm 3.5mm 1.8mm 2mm; gap: 2.2mm; }
+  .aksiya i { width: 6mm; height: 6mm; font-size: 9.5pt; } .aksiya small { font-size: 6.2pt; }
+  .sarlavha { font-size: 7pt; margin: 6mm 0 2.5mm; }
+  .kurslar { grid-template-columns: 1fr 1fr; gap: 2.4mm; }
+  .kurs { padding: 2.4mm 2.4mm 2.2mm; border-radius: 3mm; display: grid; grid-template-columns: auto 1fr; column-gap: 1.8mm; align-items: center; }
+  .kurs i { font-size: 10.5pt; grid-row: 1 / 3; } .kurs b { font-size: 8pt; margin: 0 0 .4mm; } .kurs span { font-size: 6.5pt; line-height: 1.3; }
+  .afz { grid-template-columns: 1fr 1fr; gap: 1.8mm 2.5mm; }
+  .afz div { font-size: 7pt; line-height: 1.25; } .afz div::before { width: 3.4mm; height: 3.4mm; font-size: 6pt; }
+  .pastki { grid-template-columns: 1fr; gap: 2.2mm; padding: 3.2mm 4mm; border-radius: 4mm; margin-top: auto; }
+  .tel { font-size: 14pt; } .tel small { font-size: 6.3pt; margin-bottom: 1.2mm; }
+  .manzil { font-size: 7.2pt; margin-top: 1.8mm; }
+  .soc { grid-template-columns: auto auto; gap: 1.5mm 3mm; text-align: left; justify-content: start; align-items: center;
+         font-size: 7pt; border-top: .3mm solid rgba(15,31,61,.12); padding-top: 2.2mm; }
+  .soc span { justify-content: flex-start; } .soc .chaq { grid-column: 1 / -1; font-size: 7pt; }
+  .izoh { font-size: 6.5pt; margin: 2.5mm 0 0; padding: 0; }
 </style>
 </head>
 <body>
@@ -93,7 +117,7 @@
 
   <div class="top">
     <div class="logo">
-      <div class="mark">O</div>
+      <div class="mark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 1 8.5l11 5.5 9-4.5V16h2V8.5L12 3zm-6 9.6V17c0 1.7 2.7 3.5 6 3.5s6-1.8 6-3.5v-4.4l-6 3-6-3z"/></svg></div>
       <div><b>OSCAR <em>TA'LIM</em></b><span>o'quv markazi</span></div>
     </div>
     <div class="qabul"><b>Qabul ochiq</b>yangi guruhlarga<br>yozilish davom etmoqda</div>
@@ -109,21 +133,21 @@
   <!-- Kurslarni o'zgartiring: nomi, qisqa izoh. 6 ta eng chiroyli ko'rinadi -->
   <div class="kurslar">
     <div class="kurs"><i>🇬🇧</i><b>Ingliz tili</b><span>Beginner darajadan boshlab, speaking klublar</span></div>
-    <div class="kurs"><i>🎯</i><b>IELTS</b><span>Mock testlar, strategiya va 7+ ball sari tayyorlov</span></div>
+    <div class="kurs"><i>🎯</i><b>IELTS</b><span>Mock testlar, 7+ ball sari tayyorlov</span></div>
     <div class="kurs"><i>📐</i><b>Matematika</b><span>Maktab dasturi, DTM va olimpiadaga tayyorlov</span></div>
-    <div class="kurs"><i>🤖</i><b>Sun'iy intellekt</b><span>ChatGPT va AI vositalari bilan ishlash, amaliy loyihalar</span></div>
+    <div class="kurs"><i>🤖</i><b>Sun'iy intellekt</b><span>ChatGPT va AI vositalari, amaliy loyihalar</span></div>
     <div class="kurs"><i>🇷🇺</i><b>Rus tili</b><span>Nol darajadan erkin so'zlashuvgacha</span></div>
-    <div class="kurs qoshimcha"><i>➕</i><b>Yangi guruhlar</b><span>Har oy ochiladi — o'zingizga mos vaqtni tanlang</span></div>
+    <div class="kurs qoshimcha"><i>➕</i><b>Yangi guruhlar</b><span>Har oy ochiladi — mos vaqtni tanlang</span></div>
   </div>
 
   <div class="sarlavha">Nega aynan biz</div>
   <div class="afz">
-    <div>Tajribali, sertifikatli o'qituvchilar</div>
-    <div>Guruhda 8–10 nafargacha o'quvchi</div>
+    <div>Tajribali, sertifikatli ustozlar</div>
+    <div>Kichik guruhlar: 8–10 o'quvchi</div>
     <div>Ertalabki va kechki guruhlar</div>
     <div>Kurs yakunida sertifikat</div>
     <div>Ota-onalarga oylik hisobot</div>
-    <div>Qulay, zamonaviy xonalar</div>
+    <div>Zamonaviy, qulay xonalar</div>
   </div>
 
   <div class="pastki">
