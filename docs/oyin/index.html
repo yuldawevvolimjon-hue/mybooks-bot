@@ -41,6 +41,10 @@
   .ibtn:active { transform: scale(.93); }
   #zoneBox { text-align: center; font-weight: 800; font-size: 15px; min-width: 120px; }
   #zoneName { white-space: nowrap; }
+  #zoneName .alt { display: inline-block; min-width: 30px; padding: 0 7px; margin-left: 4px; border-radius: 9px;
+                   font-size: 15px; background: rgba(255,255,255,.3); }
+  #zoneName .alt.neg { background: #e8432e; color: #fff; }
+  #zoneName .alt.pos { background: #2fb34a; color: #fff; }
   .bar { height: 8px; border-radius: 6px; margin-top: 5px; overflow: hidden;
          background: color-mix(in srgb, var(--ink) 18%, transparent); }
   .bar i { display: block; height: 100%; width: 0; border-radius: 6px; transition: width .4s;
@@ -168,11 +172,11 @@
   <p>• O'yin <b>hech qachon tugamaydi</b> — har yurishda LEVEL oshib boradi.</p>
   <h3>Qatlamlar</h3>
   <ul class="layers">
-    <li>🪐 <b>Koinot</b> — asteroidlar</li>
-    <li>☁️ <b>Osmon</b> — bulutlar</li>
-    <li>🌳 <b>Yer usti</b> — shaffof suyuq g'ishtlar (boshlanish)</li>
-    <li>🪱 <b>Yer osti</b> — tuproq g'ishtlar</li>
-    <li>💎 <b>Chuqur qatlam</b> — tosh va kristallar</li>
+    <li>🪐 <b>Koinot (+2)</b> — asteroidlar</li>
+    <li>☁️ <b>Osmon (+1)</b> — bulutlar</li>
+    <li>🌳 <b>Yer usti (0)</b> — shaffof suyuq g'ishtlar (boshlanish)</li>
+    <li>🪱 <b>Yer osti (−1)</b> — tuproq g'ishtlar</li>
+    <li>💎 <b>Chuqurlik (−2)</b> — tosh va kristallar</li>
   </ul>
   <p>• G'ishtlarni chiziqdan uzoq tutsangiz, ko'tarilish chizig'i to'ladi va siz <b>yuqoriga ko'tarilasiz</b>.</p>
   <p>• G'isht pastki chiziqqa yetsa — pastki qatorlar o'pirilib, siz <b>bir qatlam pastga tushasiz</b>.</p>
@@ -208,6 +212,7 @@
   const R = 12;               // to'p radiusi
   const SPEED = 15;           // har qadamda piksel
   const GAP = 3;              // g'isht chetidagi bo'shliq
+  const BR = 8;               // g'isht burchagining yumaloqligi (shakli — to'rtburchak)
   const FIRE_GAP = 4;         // to'plar orasidagi qadamlar
   const STEP_MS = 1000 / 60;
   const MIN_ANGLE = 8 * Math.PI / 180;
@@ -218,7 +223,7 @@
   // Yer ostida P (minerallar) ko'p, osmonda S tangalar ko'p; yuqorida g'ishtlar zichroq.
   // Pastki qatlamlarda g'ishtlar yengilroq (hpK) — yiqilgan o'yinchi qaytib chiqa olishi uchun.
   const ZONES = {
-    '-2': { name: 'Chuqur qatlam', icon: '💎', style: 'stone',
+    '-2': { name: 'Chuqurlik', icon: '💎', style: 'stone',
             top: '#3b3640', ground: '#4a1608', ink: '#f1e9ff', ink2: '#ffd7b0',
             maxB: 3, coin: 0.08, gem: 0.2, dbl: 0, hpK: 0.6 },
     '-1': { name: 'Yer osti', icon: '🪱', style: 'soil',
@@ -236,6 +241,8 @@
   };
   // Keyingi qatlamga chiqish uchun kerakli ochko: yer ostidan chiqish osonroq, osmonda qiyinroq.
   const climbNeed = z => z < 0 ? 6 : 10 + 3 * z;
+  // Balandlik ishora bilan: yer usti 0, yer ostida minus, osmonda plyus
+  const altText = z => z > 0 ? '+' + z : z < 0 ? '−' + (-z) : '0';
 
   const SKINS = [
     { id: 'blue',    name: "Ko'k",     color: '#5aa5f5', price: 0 },
@@ -770,7 +777,7 @@
       } else if (from > ZMIN) {
         to = from - 1;
         clearRows(ROWS - 4);
-        showBanner(`${ZONES[to].icon} ${ZONES[to].name}`, from > 0 ? 'Pastga tushdingiz…' : "Yer ostiga qulab tushdingiz!");
+        showBanner(`${ZONES[to].icon} ${ZONES[to].name} ${altText(to)}`, from > 0 ? 'Pastga tushdingiz…' : "Yer ostiga qulab tushdingiz!");
         beep(140, 0.5, 0.07, 'sawtooth');
       } else {
         clearRows(ROWS - 3);
@@ -788,7 +795,7 @@
         if (from < ZMAX) {
           to = from + 1;
           profile.climbs++;
-          showBanner(`${ZONES[to].icon} ${ZONES[to].name}`, from < 0 ? 'Yuqoriga chiqdingiz!' : "Yuqoriga ko'tarildingiz!");
+          showBanner(`${ZONES[to].icon} ${ZONES[to].name} ${altText(to)}`, from < 0 ? 'Yuqoriga chiqdingiz!' : "Yuqoriga ko'tarildingiz!");
           beep(660, 0.15, 0.05, 'sine'); setTimeout(() => beep(990, 0.2, 0.05, 'sine'), 140);
         } else {
           profile.coins += 10;
@@ -869,7 +876,7 @@
 
   // Yer usti: shaffof shisha idish ichida chayqalayotgan suyuqlik. Suyuqlik sathi = qolgan zarbalar.
   function drawLiquid(x, y, cell, t) {
-    const s = CELL - GAP * 2, x0 = x + GAP, y0 = y + GAP, rad = 16;
+    const s = CELL - GAP * 2, x0 = x + GAP, y0 = y + GAP, rad = BR;
     const col = liquidRGB(t), wob = cell.wob || 0;
     ctx.save();
     roundRect(x0, y0, s, s, rad);
@@ -900,7 +907,7 @@
     // shisha yaltirog'i
     const gl = ctx.createLinearGradient(0, y0, 0, y0 + s * 0.45);
     gl.addColorStop(0, 'rgba(255,255,255,.55)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gl; roundRect(x0 + 6, y0 + 4, s - 12, s * 0.4, 12); ctx.fill();
+    ctx.fillStyle = gl; roundRect(x0 + 6, y0 + 4, s - 12, s * 0.4, 6); ctx.fill();
     ctx.restore();
     roundRect(x0, y0, s, s, rad);
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke();
@@ -928,7 +935,7 @@
     const base = tint(t, [168, 120, 76], [116, 76, 44], [84, 52, 34]);
     const gr = ctx.createLinearGradient(0, y0, 0, y0 + s);
     gr.addColorStop(0, `rgb(${mix(base, [255, 230, 190], 0.15)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.2)})`);
-    ctx.save(); roundRect(x0, y0, s, s, 12); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
+    ctx.save(); roundRect(x0, y0, s, s, BR); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
     for (let i = 0; i < 14; i++) {
       ctx.fillStyle = rand() < 0.5 ? 'rgba(50,28,12,.4)' : 'rgba(230,200,160,.3)';
       ctx.beginPath(); ctx.ellipse(x0 + rand() * s, y0 + rand() * s, 1.5 + rand() * 3, 1 + rand() * 2.5, rand() * 3, 0, Math.PI * 2); ctx.fill();
@@ -946,69 +953,71 @@
     number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#fff4e0');
   }
 
-  // Chuqur qatlam: tosh, ichida porlayotgan kristallar.
+  // Chuqurlik: to'rtburchak tosh, ichida porlayotgan kristallar.
   function drawStone(x, y, cell, t) {
     const s = CELL - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
     const x0 = x + GAP + sh, y0 = y + GAP, rand = prng(cell.s + 3);
     const base = tint(t, [128, 122, 136], [92, 86, 102], [72, 60, 96]);
     const gr = ctx.createLinearGradient(x0, y0, x0 + s, y0 + s);
     gr.addColorStop(0, `rgb(${mix(base, [255, 255, 255], 0.15)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.25)})`);
-    ctx.save(); ctx.beginPath();
-    for (let k = 0; k < 8; k++) {
-      const a = k / 8 * Math.PI * 2 + Math.PI / 8, rr = s * 0.5 * (1.18 + (rand() - 0.5) * 0.12);
-      ctx.lineTo(x0 + s / 2 + Math.max(-s / 2, Math.min(s / 2, Math.cos(a) * rr)), y0 + s / 2 + Math.max(-s / 2, Math.min(s / 2, Math.sin(a) * rr)));
+    ctx.save(); roundRect(x0, y0, s, s, BR); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
+    for (let i = 0; i < 5; i++) {   // tosh yuzasidagi dog'lar
+      ctx.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.14)';
+      ctx.beginPath(); ctx.ellipse(x0 + rand() * s, y0 + rand() * s, 6 + rand() * 10, 4 + rand() * 7, rand() * 3, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.closePath(); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
     const cc = rand() < 0.5 ? '#9b7bff' : '#5fe0ff';
-    crystal(ctx, x0 + 18 + rand() * (s - 36), y0 + s - 10, 0.55, cc, rand);
+    crystal(ctx, x0 + 18 + rand() * (s - 36), y0 + s - 8, 0.55, cc, rand);
     cracks(x0, y0, s, cell.hp / cell.m, prng(cell.s + 51), 'rgba(20,16,26,.8)');
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x0, y0, s, 4);
     ctx.restore();
     number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#ffffff');
   }
 
-  // Osmon: bulut. Kuchli (ko'p zarbali) bulut — qoramtir yomg'ir buluti.
+  // Osmon: to'rtburchak bulut bo'lagi. Kuchli (ko'p zarbali) bulut — qoramtir yomg'ir buluti.
   function drawCloud(x, y, cell, t) {
-    const cx = x + CELL / 2, cy = y + CELL / 2 + Math.sin(tick / 30 + cell.s) * 2;
-    const k = 1 + (cell.wob || 0) * 0.08;
-    const lvl = cell.hp / cell.m, sz = (0.82 + 0.18 * lvl) * k;
+    const s = CELL - GAP * 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
+    const k = (cell.wob || 0) * 3;
+    const x0 = x + GAP - k / 2, y0 = y + GAP + bob - k / 2, w = s + k;
     const base = tint(t, [255, 255, 255], [214, 222, 234], [150, 160, 182]);
     const shade = mix(base, [60, 80, 110], 0.22);
-    const puffs = [[-24, 8, 22], [-6, -10, 28], [20, -4, 24], [30, 14, 18], [2, 14, 24], [-30, 18, 14]];
-    ctx.globalAlpha = 0.95;
-    puffs.forEach(([dx, dy, r]) => puff(ctx, cx + dx * sz, cy + dy * sz + 4, r * sz, `rgb(${shade})`));
-    puffs.forEach(([dx, dy, r]) => puff(ctx, cx + dx * sz, cy + dy * sz, r * sz, `rgb(${base})`));
-    ctx.globalAlpha = 0.55;
-    puff(ctx, cx - 10 * sz, cy - 18 * sz, 10 * sz, '#ffffff');
-    ctx.globalAlpha = 1;
+    const gr = ctx.createLinearGradient(0, y0, 0, y0 + w);
+    gr.addColorStop(0, `rgb(${base})`); gr.addColorStop(1, `rgb(${shade})`);
+    ctx.save(); roundRect(x0, y0, w, w, BR); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
+    // ichidagi momiqdek bo'rtiqlar
+    [[0.25, 0.3, 26], [0.62, 0.22, 30], [0.85, 0.5, 22], [0.4, 0.62, 28], [0.15, 0.78, 20], [0.72, 0.82, 24]]
+      .forEach(([fx, fy, r], i) => puff(ctx, x0 + fx * w, y0 + fy * w, r, `rgba(${mix(base, [255, 255, 255], 0.5)},${i < 2 ? 0.55 : 0.3})`));
+    ctx.restore();
+    roundRect(x0, y0, w, w, BR);
+    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2; ctx.stroke();
     if (t > 1) {   // yomg'ir tomchilari
       ctx.strokeStyle = 'rgba(90,140,210,.7)'; ctx.lineWidth = 2;
       for (let i = 0; i < 3; i++) {
-        const dy = (tick * 1.5 + i * 13) % 16;
-        ctx.beginPath(); ctx.moveTo(cx - 16 + i * 16, cy + 34 + dy); ctx.lineTo(cx - 18 + i * 16, cy + 40 + dy); ctx.stroke();
+        const dy = (tick * 1.5 + i * 13) % 14;
+        const rx = x0 + w * (0.25 + i * 0.25);
+        ctx.beginPath(); ctx.moveTo(rx, y0 + w - 18 + dy); ctx.lineTo(rx - 2, y0 + w - 12 + dy); ctx.stroke();
       }
     }
-    number(cell.hp, cx, cy + 4, t > 1.2 ? '#ffffff' : '#3d5476', 'rgba(255,255,255,.35)');
+    number(cell.hp, x + CELL / 2, y + CELL / 2 + bob, t > 1.2 ? '#ffffff' : '#3d5476', 'rgba(255,255,255,.35)');
   }
 
-  // Koinot: asteroid — notekis tosh, kraterlar bilan.
+  // Koinot: to'rtburchak asteroid bo'lagi — kraterlar bilan.
   function drawRock(x, y, cell, t) {
-    const cx = x + CELL / 2, cy = y + CELL / 2, rand = prng(cell.s + 11);
-    const sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
+    const s = CELL - GAP * 2, sh = Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
+    const x0 = x + GAP + sh, y0 = y + GAP, cx = x0 + s / 2, cy = y0 + s / 2, rand = prng(cell.s + 11);
     const base = tint(t, [150, 138, 128], [112, 100, 92], [96, 72, 110]);
-    const gr = ctx.createRadialGradient(cx - 14, cy - 16, 6, cx, cy, 50);
+    const gr = ctx.createRadialGradient(cx - 18, cy - 20, 6, cx, cy, 66);
     gr.addColorStop(0, `rgb(${mix(base, [255, 255, 255], 0.25)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.35)})`);
-    ctx.save(); ctx.translate(sh, 0);
-    ctx.beginPath();
-    for (let k = 0; k < 11; k++) { const a = k / 11 * Math.PI * 2, rr = 40 + rand() * 7; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
-    ctx.closePath(); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
-    for (let i = 0; i < 4; i++) {
-      const px = cx + (rand() - 0.5) * 56, py = cy + (rand() - 0.5) * 56, r = 4 + rand() * 7;
+    ctx.save(); roundRect(x0, y0, s, s, BR); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
+    for (let i = 0; i < 5; i++) {
+      const px = x0 + 10 + rand() * (s - 20), py = y0 + 10 + rand() * (s - 20), r = 4 + rand() * 7;
       ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px + 1, py + 1, r, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke();
     }
-    cracks(cx - 40, cy - 40, 80, cell.hp / cell.m, prng(cell.s + 5), 'rgba(20,14,10,.8)');
+    cracks(x0, y0, s, cell.hp / cell.m, prng(cell.s + 5), 'rgba(20,14,10,.8)');
     ctx.restore();
-    number(cell.hp, cx + sh, cy, '#ffffff');
+    roundRect(x0, y0, s, s, BR);
+    ctx.strokeStyle = 'rgba(150,190,255,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    number(cell.hp, x + CELL / 2 + sh, y + CELL / 2, '#ffffff');
   }
 
   const DRAW = { liquid: drawLiquid, soil: drawSoil, stone: drawStone, cloud: drawCloud, rock: drawRock };
@@ -1243,7 +1252,8 @@
     $('record').textContent = profile.record;
     $('score').textContent = game.level;
     const Z = ZONES[game.zone], need = climbNeed(game.zone);
-    $('zoneName').textContent = `${Z.icon} ${Z.name}`;
+    const alt = altText(game.zone);
+    $('zoneName').innerHTML = `${Z.icon} ${Z.name} <b class="alt ${game.zone < 0 ? 'neg' : game.zone > 0 ? 'pos' : ''}">${alt}</b>`;
     $('zoneFill').style.width = Math.min(100, game.climb / need * 100) + '%';
     $('zoneHint').textContent = game.zone < ZMAX ? `Ko'tarilish: ${game.climb}/${need}` : `Cho'qqi bonusi: ${game.climb}/${need}`;
   }
@@ -1283,7 +1293,7 @@
     const mz = ZONES[profile.maxZone];
     const rows = [
       ['Rekord (LEVEL)', profile.record], ['Joriy LEVEL', game.level], ["To'plar soni", game.balls],
-      ['Hozirgi joy', `${ZONES[game.zone].icon} ${ZONES[game.zone].name}`], ['Eng baland joy', `${mz.icon} ${mz.name}`],
+      ['Hozirgi joy', `${ZONES[game.zone].icon} ${ZONES[game.zone].name} (${altText(game.zone)})`], ['Eng baland joy', `${mz.icon} ${mz.name} (${altText(profile.maxZone)})`],
       ["Ko'tarilishlar", profile.climbs], ['Yiqilishlar', profile.falls],
       ["Sindirilgan g'ishtlar", profile.bricks], ["Yig'ilgan halqalar", profile.rings],
       ['S tangalar', profile.coins], ['P bonuslar', profile.gems], ['Parashyutlar', profile.chutes],
