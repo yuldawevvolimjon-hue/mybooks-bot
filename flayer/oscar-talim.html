@@ -20,6 +20,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #e9ecf3; }
   body { font-family: var(--sans); color: var(--text); display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 24px; }
+  .flayer > * { flex-shrink: 0; }
   .flayer + .flayer { page-break-before: always; break-before: page; }
   @media print { body { padding: 0; gap: 0; display: block; background: var(--navy); } .flayer { box-shadow: none; } }
 
@@ -117,6 +118,30 @@
   [lang=ru] .kurs b { font-size: 7.4pt; } [lang=ru] .kurs span { font-size: 6.2pt; }
   [lang=ru] .afz div { font-size: 6.6pt; }
   [lang=ru] .qabul { font-size: 6pt; } [lang=ru] .qabul b { font-size: 6.5pt; }
+
+  /* ---- o'quvchilar rasmi */
+  .rasm { position: relative; flex: none; margin: 3.5mm 0 0; border-radius: 3.5mm; overflow: hidden; height: 23.5mm;
+          border: .4mm solid rgba(255,206,0,.55); box-shadow: 0 3mm 8mm rgba(0,0,0,.35); }
+  .rasm img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+  .rasm span { position: absolute; left: 0; right: 0; bottom: 0; padding: 4mm 3mm 1.8mm; font-size: 6.6pt; font-weight: 600; color: #fff;
+               background: linear-gradient(transparent, rgba(7,38,77,.85)); }
+  /* rasm uchun joy: */
+  h1 { font-size: 17.5pt !important; margin: 4mm 0 1.6mm !important; }
+  .lead { font-size: 7.3pt !important; line-height: 1.35 !important; }
+  .aksiya { margin-top: 3.2mm !important; padding: 1.5mm 3.2mm 1.5mm 1.8mm !important; }
+  .sarlavha { margin: 3.4mm 0 1.6mm !important; }
+  .kurslar { gap: 1.8mm !important; }
+  .kurs { padding: 1.7mm 2.2mm 1.6mm !important; }
+  .kurs b { font-size: 7.4pt !important; margin-bottom: .3mm !important; } .kurs span { font-size: 6.1pt !important; }
+  .afz { gap: 1.2mm 2.5mm !important; margin-bottom: 2.5mm !important; } .afz div { font-size: 6.6pt !important; }
+  .pastki { padding: 2.6mm 4mm !important; gap: 1.6mm !important; }
+  .tel { font-size: 13pt !important; } .manzil { margin-top: 1.4mm !important; font-size: 7pt !important; }
+  .soc { padding-top: 1.8mm !important; }
+  .top { padding: 2.4mm 3mm !important; } .logo img { height: 14mm !important; }
+  [lang=ru] h1 { font-size: 16.5pt !important; }
+  [lang=ru] .kurs b { font-size: 7pt !important; } [lang=ru] .kurs span { font-size: 5.9pt !important; }
+  [lang=ru] .afz div { font-size: 6.3pt !important; }
+  [lang=ru] .lead { font-size: 7pt !important; } [lang=ru] .rasm span { font-size: 6.2pt; }
 </style>
 </head>
 <body>
@@ -133,6 +158,7 @@
 
   <!-- Aksiya matnini o'zingizga moslang -->
   <div class="aksiya"><i>🎁</i><div>Birinchi sinov darsi — BEPUL<small>Bu oy yozilganlarga chegirma</small></div></div>
+  <div class="rasm"><img src="rasm.jpg" alt="O'quvchilarimiz"><span>🎓 Bitiruvchilarimiz — diplom va sovg'alar bilan</span></div>
 
   <div class="sarlavha">Kurslarimiz</div>
   <!-- Kurslarni o'zgartiring: nomi, qisqa izoh. 6 ta eng chiroyli ko'rinadi -->
@@ -168,7 +194,6 @@
       <span><svg viewBox="0 0 24 24"><path d="M12 2.2c3.2 0 3.6 0 4.8.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.8C2.4 3.9 4 2.4 7.2 2.3 8.4 2.2 8.8 2.2 12 2.2zM12 7a5 5 0 100 10 5 5 0 000-10zm0 8.2a3.2 3.2 0 110-6.4 3.2 3.2 0 010 6.4zm5.3-9.6a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4z"/></svg>oscar_talim</span>
     </div>
   </div>
-  <p class="izoh">Kelib ko'ring — birinchi darsni bepul sinab ko'ring!</p>
 </div>
 
 <!-- ===== ORQA TOMON (ruscha) ===== -->
@@ -185,6 +210,7 @@
 
   <!-- Aksiya matnini o'zingizga moslang -->
   <div class="aksiya"><i>🎁</i><div>Первый пробный урок — БЕСПЛАТНО<small>Скидка записавшимся в этом месяце</small></div></div>
+  <div class="rasm"><img src="rasm.jpg" alt="Наши ученики"><span>🎓 Наши выпускники — с дипломами и подарками</span></div>
 
   <div class="sarlavha">Наши курсы</div>
   <!-- Kurslarni o'zgartiring: nomi, qisqa izoh. 6 ta eng chiroyli ko'rinadi -->
@@ -220,7 +246,6 @@
       <span><svg viewBox="0 0 24 24"><path d="M12 2.2c3.2 0 3.6 0 4.8.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.8C2.4 3.9 4 2.4 7.2 2.3 8.4 2.2 8.8 2.2 12 2.2zM12 7a5 5 0 100 10 5 5 0 000-10zm0 8.2a3.2 3.2 0 110-6.4 3.2 3.2 0 010 6.4zm5.3-9.6a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4z"/></svg>oscar_talim</span>
     </div>
   </div>
-  <p class="izoh">Приходите — первый урок бесплатно!</p>
 </div>
 </body>
 </html>
