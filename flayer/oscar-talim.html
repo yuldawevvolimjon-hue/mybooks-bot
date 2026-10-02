@@ -10,8 +10,8 @@
   /* ===== O'ZGARTIRISH UCHUN: telefon, Telegram va kurslar pastdagi HTML da. =====
      Chop etish: Ctrl+P → 99×210 mm (DL), chekkasiz, «fon rasmlari» yoqilgan. */
   :root {
-    --navy: #0f1f3d; --navy2: #16294f; --text: #f5f7fb; --hint: #aab6cf;
-    --gold: #f5b82e; --gold2: #ffd56a; --orange: #ff7a3d; --green: #2ec27e;
+    --navy: #07264d; --navy2: #0058a0; --text: #f5f7fb; --hint: #b3c3dc;
+    --gold: #ffce00; --gold2: #ffe14d; --orange: #ffce00; --green: #2ec27e;
     --head: Montserrat, Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     --sans: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
@@ -23,28 +23,29 @@
 
   .flayer {
     position: relative; width: 99mm; height: 210mm; overflow: hidden;
-    background: linear-gradient(165deg, #1b3263 0%, var(--navy) 55%, #0a1530 100%);
+    background: linear-gradient(165deg, #0b4a8f 0%, #07305f 40%, var(--navy) 70%, #041a38 100%);
     box-shadow: 0 30px 80px rgba(15,31,61,.45);
     display: flex; flex-direction: column; padding: 7mm 7mm 6mm;
   }
   /* bezak doiralar */
   .d1, .d2 { position: absolute; border-radius: 50%; pointer-events: none; }
-  .d1 { width: 90mm; height: 90mm; right: -38mm; top: -30mm; background: radial-gradient(circle, rgba(245,184,46,.35), rgba(245,184,46,0) 70%); }
-  .d2 { width: 70mm; height: 70mm; left: -30mm; bottom: 30mm; background: radial-gradient(circle, rgba(255,122,61,.22), rgba(255,122,61,0) 70%); }
+  .d1 { width: 90mm; height: 90mm; right: -38mm; top: -30mm; background: radial-gradient(circle, rgba(255,206,0,.28), rgba(255,206,0,0) 70%); }
+  .d2 { width: 70mm; height: 70mm; left: -30mm; bottom: 30mm; background: radial-gradient(circle, rgba(0,88,160,.5), rgba(0,88,160,0) 70%); }
   .grid { position: absolute; inset: 0; pointer-events: none; opacity: .07;
           background-image: linear-gradient(var(--text) .3mm, transparent .3mm), linear-gradient(90deg, var(--text) .3mm, transparent .3mm);
           background-size: 8mm 8mm; mask-image: linear-gradient(#000, transparent 55%); -webkit-mask-image: linear-gradient(#000, transparent 55%); }
 
   /* ---- bosh qism */
-  .top { display: flex; align-items: center; justify-content: space-between; position: relative; }
+  .top { display: flex; align-items: center; justify-content: space-between; position: relative; background: #fff; border-radius: 4mm; padding: 3mm 3.5mm; box-shadow: 0 3mm 8mm rgba(0,0,0,.25); }
+  .logo img { display: block; height: 16mm; width: auto; }
   .logo { display: flex; align-items: center; gap: 3mm; }
   .logo .mark { width: 13mm; height: 13mm; border-radius: 3.5mm; background: linear-gradient(135deg, var(--gold2), var(--gold) 60%, var(--orange)); display: grid; place-items: center;
                 box-shadow: 0 3mm 8mm rgba(245,184,46,.35); color: var(--navy); font-family: var(--head); font-weight: 900; font-size: 20pt; }
   .logo b { display: block; font-family: var(--head); font-weight: 900; font-size: 16pt; letter-spacing: .02em; line-height: 1; }
   .logo b em { font-style: normal; color: var(--gold); }
   .logo span { display: block; font-size: 7pt; color: var(--hint); letter-spacing: .22em; text-transform: uppercase; margin-top: 1.2mm; }
-  .qabul { text-align: right; font-size: 7.5pt; color: var(--hint); line-height: 1.3; }
-  .qabul b { display: block; color: var(--green); font-weight: 800; font-size: 8.5pt; letter-spacing: .08em; text-transform: uppercase; }
+  .qabul { text-align: right; font-size: 7.5pt; color: #4e5d7c; line-height: 1.3; }
+  .qabul b { display: block; color: #1d9e63; font-weight: 800; font-size: 8.5pt; letter-spacing: .08em; text-transform: uppercase; }
   .qabul b::before { content: ""; display: inline-block; width: 2mm; height: 2mm; border-radius: 50%; background: var(--green); margin-right: 1.5mm; vertical-align: .1mm; box-shadow: 0 0 3mm var(--green); }
 
   h1 { position: relative; font-family: var(--head); font-weight: 900; font-size: 24pt; line-height: 1.05; margin: 6mm 0 2mm; letter-spacing: -.01em; }
@@ -54,19 +55,19 @@
 
   /* ---- aksiya lentasi */
   .aksiya { position: relative; margin: 4mm 0 0; display: inline-flex; align-items: center; gap: 3mm; align-self: flex-start;
-            background: linear-gradient(90deg, var(--orange), #ff9f43); color: #1a0d05; border-radius: 6mm; padding: 2.2mm 4.5mm 2.2mm 2.5mm;
-            font-weight: 800; font-size: 9.5pt; box-shadow: 0 3mm 8mm rgba(255,122,61,.35); }
-  .aksiya i { font-style: normal; display: grid; place-items: center; width: 7mm; height: 7mm; border-radius: 50%; background: rgba(255,255,255,.35); font-size: 11pt; }
+            background: linear-gradient(90deg, #ffce00, #ffdb3d); color: #07264d; border-radius: 6mm; padding: 2.2mm 4.5mm 2.2mm 2.5mm;
+            font-weight: 800; font-size: 9.5pt; box-shadow: 0 3mm 8mm rgba(255,206,0,.3); }
+  .aksiya i { font-style: normal; display: grid; place-items: center; width: 7mm; height: 7mm; border-radius: 50%; background: rgba(255,255,255,.55); font-size: 11pt; }
   .aksiya small { display: block; font-weight: 600; font-size: 7pt; opacity: .85; }
 
   /* ---- kurslar */
   .sarlavha { position: relative; font-size: 7.5pt; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: var(--gold); margin: 5mm 0 2.2mm; display: flex; align-items: center; gap: 3mm; }
-  .sarlavha::after { content: ""; flex: 1; height: .3mm; background: rgba(245,184,46,.35); }
+  .sarlavha::after { content: ""; flex: 1; height: .3mm; background: rgba(255,206,0,.35); }
   .kurslar { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; }
   .kurs { background: rgba(255,255,255,.06); border: .3mm solid rgba(255,255,255,.1); border-radius: 4mm; padding: 2.4mm 2.6mm 2.2mm; }
   .kurs i { font-style: normal; font-size: 13pt; display: block; line-height: 1; }
   .kurs b { display: block; font-family: var(--head); font-weight: 800; font-size: 8.5pt; margin: 1.5mm 0 .6mm; line-height: 1.15; }
-  .kurs.qoshimcha { background: rgba(245,184,46,.12); border-color: rgba(245,184,46,.4); }
+  .kurs.qoshimcha { background: rgba(255,206,0,.12); border-color: rgba(255,206,0,.45); }
   .kurs span { display: block; font-size: 6.8pt; color: var(--hint); line-height: 1.35; }
 
   /* ---- afzalliklar */
@@ -77,22 +78,20 @@
   /* ---- pastki qism: aloqa */
   .pastki { position: relative; margin-top: 5mm; background: var(--text); color: var(--navy); border-radius: 5mm; padding: 3.5mm 5mm; display: grid; grid-template-columns: 1fr auto; gap: 4mm; align-items: center; }
   .tel { font-family: var(--head); font-weight: 900; font-size: 16pt; letter-spacing: .02em; line-height: 1; white-space: nowrap; }
-  .tel small { display: block; font-family: var(--sans); font-weight: 600; font-size: 7pt; color: #4e5d7c; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 1.5mm; }
+  .tel small { display: block; font-family: var(--sans); font-weight: 600; font-size: 7pt; color: #0058a0; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 1.5mm; }
   .manzil { font-size: 8pt; line-height: 1.35; color: #2b3a5c; margin-top: 2.2mm; display: flex; gap: 1.5mm; }
   .manzil b { color: var(--navy); }
   .soc { display: grid; gap: 1.8mm; text-align: right; font-size: 7.5pt; font-weight: 600; color: #2b3a5c; }
   .soc span { display: inline-flex; align-items: center; gap: 1.5mm; justify-content: flex-end; }
   .soc svg { width: 3.8mm; height: 3.8mm; fill: var(--navy); }
-  .chaq { font-family: var(--head); font-weight: 800; font-size: 8pt; color: var(--orange); text-transform: uppercase; letter-spacing: .1em; }
+  .chaq { font-family: var(--head); font-weight: 800; font-size: 8pt; color: #0058a0; text-transform: uppercase; letter-spacing: .1em; }
   .izoh { position: relative; text-align: center; font-size: 6.8pt; color: var(--hint); margin: auto 0 0; padding-top: 2.5mm; letter-spacing: .04em; }
 
   /* ---- 99×210 mm uchun moslash */
   .d1 { width: 70mm; height: 70mm; right: -30mm; top: -25mm; }
   .grid { background-size: 7mm 7mm; }
-  .logo .mark { width: 11mm; height: 11mm; border-radius: 3mm; } .logo .mark svg { width: 7.5mm; height: 7.5mm; }
-  .logo b { font-size: 13pt; } .logo span { font-size: 6pt; letter-spacing: .18em; }
-  .qabul { font-size: 6.5pt; } .qabul b { font-size: 7pt; }
-  h1 { font-size: 20pt; margin: 6mm 0 2.2mm; }
+    .qabul { font-size: 6.3pt; } .qabul b { font-size: 6.8pt; }
+  h1 { font-size: 20pt; margin: 5mm 0 2mm; }
   .lead { font-size: 8pt; line-height: 1.42; }
   .aksiya { margin-top: 4.5mm; font-size: 8pt; padding: 1.8mm 3.5mm 1.8mm 2mm; gap: 2.2mm; }
   .aksiya i { width: 6mm; height: 6mm; font-size: 9.5pt; } .aksiya small { font-size: 6.2pt; }
@@ -100,7 +99,7 @@
   .kurslar { grid-template-columns: 1fr 1fr; gap: 2.4mm; }
   .kurs { padding: 2.4mm 2.4mm 2.2mm; border-radius: 3mm; display: grid; grid-template-columns: auto 1fr; column-gap: 1.8mm; align-items: center; }
   .kurs i { font-size: 10.5pt; grid-row: 1 / 3; } .kurs b { font-size: 8pt; margin: 0 0 .4mm; } .kurs span { font-size: 6.5pt; line-height: 1.3; }
-  .afz { grid-template-columns: 1fr 1fr; gap: 1.8mm 2.5mm; }
+  .afz { grid-template-columns: 1fr 1fr; gap: 1.6mm 2.5mm; margin-bottom: 4mm; }
   .afz div { font-size: 7pt; line-height: 1.25; } .afz div::before { width: 3.4mm; height: 3.4mm; font-size: 6pt; }
   .pastki { grid-template-columns: 1fr; gap: 2.2mm; padding: 3.2mm 4mm; border-radius: 4mm; margin-top: auto; }
   .tel { font-size: 14pt; } .tel small { font-size: 6.3pt; margin-bottom: 1.2mm; }
@@ -116,10 +115,7 @@
   <div class="grid"></div><div class="d1"></div><div class="d2"></div>
 
   <div class="top">
-    <div class="logo">
-      <div class="mark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 1 8.5l11 5.5 9-4.5V16h2V8.5L12 3zm-6 9.6V17c0 1.7 2.7 3.5 6 3.5s6-1.8 6-3.5v-4.4l-6 3-6-3z"/></svg></div>
-      <div><b>OSCAR <em>TA'LIM</em></b><span>o'quv markazi</span></div>
-    </div>
+    <div class="logo"><img src="logo.png" alt="Oscar ta'lim"></div>
     <div class="qabul"><b>Qabul ochiq</b>yangi guruhlarga<br>yozilish davom etmoqda</div>
   </div>
 
@@ -163,7 +159,7 @@
       <span><svg viewBox="0 0 24 24"><path d="M12 2.2c3.2 0 3.6 0 4.8.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.8C2.4 3.9 4 2.4 7.2 2.3 8.4 2.2 8.8 2.2 12 2.2zM12 7a5 5 0 100 10 5 5 0 000-10zm0 8.2a3.2 3.2 0 110-6.4 3.2 3.2 0 010 6.4zm5.3-9.6a1.2 1.2 0 100 2.4 1.2 1.2 0 000-2.4z"/></svg>oscar_talim</span>
     </div>
   </div>
-  <p class="izoh">Kelib ko'ring — birinchi darsni bepul sinab ko'rasiz!</p>
+  <p class="izoh">Kelib ko'ring — birinchi darsni bepul sinab ko'ring!</p>
 </div>
 </body>
 </html>
