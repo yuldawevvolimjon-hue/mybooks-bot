@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>To'p va G'ishtlar</title>
+<style>
+  :root {
+    --bg: #e6e6e6;
+    --ink: #151515;
+    --green: #2fb34a;
+    --ring: #5ee87a;
+    --blue: #5aa5f5;
+    --panel: #ffffff;
+    --muted: #6b6b6b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden;
+               touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { font-family: Roboto, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); }
+
+  #app { height: 100dvh; display: flex; flex-direction: column; align-items: center; }
+  #hud { width: 100%; max-width: 520px; padding: 14px 16px 10px; display: grid;
+         grid-template-columns: 1fr auto 1fr; gap: 8px 10px; align-items: center; flex: none; }
+  .pill { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px 0 6px;
+          border: 2.5px solid var(--ink); border-radius: 14px; font-weight: 700; font-size: 22px;
+          width: 100%; max-width: 150px; }
+  .pill svg { width: 34px; height: 34px; flex: none; }
+  .pill span { flex: 1; text-align: center; }
+  #scores { text-align: right; font-weight: 800; line-height: 1.15; white-space: nowrap; }
+  #scores .rec { color: var(--green); font-size: 24px; }
+  #scores .sc { font-size: 24px; }
+  .btns { display: flex; gap: 10px; justify-content: flex-end; }
+  .ibtn { width: 46px; height: 46px; border: 2.5px solid var(--ink); border-radius: 12px;
+          background: transparent; display: grid; place-items: center; padding: 0; cursor: pointer; }
+  .ibtn svg { width: 30px; height: 30px; }
+  .ibtn:active { transform: scale(.93); }
+
+  #fieldWrap { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center;
+               min-height: 0; position: relative; }
+  #field { display: block; border-top: 6px solid var(--ink); border-bottom: 6px solid var(--ink);
+           box-sizing: content-box; }
+  #ctrl { position: absolute; left: 0; right: 0; display: flex; justify-content: center; gap: 14px;
+          pointer-events: none; }
+  #ctrl button { pointer-events: auto; display: none; height: 42px; min-width: 56px; padding: 0 14px;
+                 border: 2.5px solid var(--ink); border-radius: 12px; background: var(--bg);
+                 font-weight: 800; font-size: 18px; color: var(--ink); }
+  #ctrl button.on { display: inline-block; }
+  #ctrl button.active { background: var(--ink); color: var(--bg); }
+
+  .modal { position: fixed; inset: 0; background: rgba(20,20,20,.55); display: none;
+           align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+  .modal.show { display: flex; }
+  .card { background: var(--panel); border-radius: 18px; width: 100%; max-width: 360px;
+          padding: 22px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); max-height: 90dvh; overflow: auto; }
+  .card h2 { margin: 0 0 14px; font-size: 24px; text-align: center; }
+  .card p { margin: 6px 0; color: #333; line-height: 1.45; }
+  .big { display: block; width: 100%; margin-top: 10px; height: 50px; border-radius: 14px;
+         border: 2.5px solid var(--ink); background: var(--bg); font-weight: 800; font-size: 18px;
+         color: var(--ink); cursor: pointer; }
+  .big.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .big:disabled { opacity: .45; }
+  .stat { display: flex; justify-content: space-between; padding: 9px 2px; border-bottom: 1px solid #e3e3e3;
+          font-size: 17px; }
+  .stat b { font-weight: 800; }
+  .skins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .skin { border: 2.5px solid #d4d4d4; border-radius: 14px; padding: 10px 4px 8px; text-align: center;
+          background: #fafafa; cursor: pointer; font-weight: 700; font-size: 15px; }
+  .skin.sel { border-color: var(--blue); background: #eef5ff; }
+  .skin .dot { width: 30px; height: 30px; border-radius: 50%; margin: 0 auto 6px; }
+  .skin small { display: block; color: var(--muted); font-weight: 600; margin-top: 2px; }
+  .over-score { font-size: 64px; font-weight: 900; text-align: center; margin: 4px 0; }
+  .center { text-align: center; }
+  #toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--ink);
+           color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 600; opacity: 0;
+           transition: opacity .25s; pointer-events: none; z-index: 20; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="pill" title="Tangalar">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M4 34 L14 24 M2 28 L12 21 M8 38 L17 27" stroke="#e8432e" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="24" cy="16" r="13" fill="#f7c21b" stroke="#c98a00" stroke-width="2.5"/>
+        <text x="24" y="22.5" font-size="18" font-weight="900" text-anchor="middle" fill="#c98a00" font-family="Arial">S</text>
+      </svg>
+      <span id="coins">0</span>
+    </div>
+    <div id="scores">
+      <div class="rec">RECORD : <span id="record">0</span></div>
+      <div class="sc">SCORE : <span id="score">1</span></div>
+    </div>
+    <div class="btns"><button class="ibtn" id="shopBtn" aria-label="Do'kon">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M5 14 L8 5 H32 L35 14 Z" fill="#555" stroke="#151515" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M5 14 q3.75 5 7.5 0 q3.75 5 7.5 0 q3.75 5 7.5 0 q3.75 5 7.5 0" fill="#fff" stroke="#151515" stroke-width="2"/>
+        <rect x="8" y="18" width="24" height="17" fill="#fff" stroke="#151515" stroke-width="2"/>
+        <rect x="21" y="23" width="7" height="12" fill="#f7c21b" stroke="#151515" stroke-width="2"/>
+        <circle cx="12" cy="30" r="5" fill="#151515"/>
+        <text x="12" y="32.5" font-size="7" font-weight="900" text-anchor="middle" fill="#f7c21b" font-family="Arial">S</text>
+      </svg></button></div>
+    <div class="pill" title="Bonus (P)">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M3 37 L13 25 L9 33 Z" fill="#151515"/>
+        <path d="M20 3 l3 6 6-3-1 7 7 1-5 5 5 5-7 1 1 7-6-3-3 6-3-6-6 3 1-7-7-1 5-5-5-5 7-1-1-7 6 3z" fill="#e8432e"/>
+        <circle cx="20" cy="18" r="9" fill="#f7a21b" stroke="#b55a00" stroke-width="2"/>
+        <text x="20" y="23" font-size="13" font-weight="900" text-anchor="middle" fill="#7a3400" font-family="Arial">P</text>
+      </svg>
+      <span id="gems">0</span>
+    </div>
+    <div></div>
+    <div class="btns">
+      <button class="ibtn" id="statsBtn" aria-label="Statistika">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M7 8h8v26H7zM16 15h8v19h-8zM25 22h8v12h-8z" fill="#151515"/></svg>
+      </button>
+      <button class="ibtn" id="menuBtn" aria-label="Menyu">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M7 11h26M7 20h26M7 29h26" stroke="#151515" stroke-width="3.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="fieldWrap">
+    <canvas id="field"></canvas>
+    <div id="ctrl">
+      <button id="fastBtn">⏩ 2x</button>
+      <button id="recallBtn">⬇ Qaytar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="menuModal"><div class="card">
+  <h2>Menyu</h2>
+  <button class="big primary" data-close>Davom etish</button>
+  <button class="big" id="newGameBtn">Yangi o'yin</button>
+  <button class="big" id="soundBtn">Ovoz: yoqilgan</button>
+  <button class="big" id="helpBtn">Qanday o'ynaladi?</button>
+</div></div>
+
+<div class="modal" id="helpModal"><div class="card">
+  <h2>Qanday o'ynaladi?</h2>
+  <p>• Barmog'ingizni maydonga qo'yib, nishonga oling va qo'yib yuboring: barcha to'plar ketma-ket uchadi.</p>
+  <p>• G'ishtdagi raqam — uni sindirish uchun kerakli zarbalar soni.</p>
+  <p>• <b style="color:#2fb34a">Yashil halqa</b> — +1 to'p beradi.</p>
+  <p>• <b style="color:#c98a00">S tanga</b> — do'konda to'p ranglarini sotib olish uchun.</p>
+  <p>• <b style="color:#e8432e">P bonus</b> — o'yin tugaganda davom ettirish uchun.</p>
+  <p>• Har yurishdan so'ng g'ishtlar bir qator pastga tushadi. G'isht pastki chiziqqa yetsa — o'yin tugaydi.</p>
+  <p>• Birinchi yerga tushgan to'p keyingi otish joyini belgilaydi.</p>
+  <button class="big primary" data-close>Tushunarli</button>
+</div></div>
+
+<div class="modal" id="statsModal"><div class="card">
+  <h2>Statistika</h2>
+  <div id="statsList"></div>
+  <button class="big primary" data-close>Yopish</button>
+</div></div>
+
+<div class="modal" id="shopModal"><div class="card">
+  <h2>Do'kon</h2>
+  <p class="center">Tangalar: <b id="shopCoins">0</b></p>
+  <div class="skins" id="skinList"></div>
+  <button class="big primary" data-close>Yopish</button>
+</div></div>
+
+<div class="modal" id="overModal"><div class="card">
+  <h2>O'yin tugadi</h2>
+  <div class="over-score" id="overScore">0</div>
+  <p class="center" id="overRecord"></p>
+  <button class="big primary" id="continueBtn">Davom etish (P 10)</button>
+  <button class="big" id="restartBtn">Qaytadan boshlash</button>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  // ---------- Sozlamalar ----------
+  const COLS = 6, ROWS = 9, CELL = 100;
+  const W = COLS * CELL, H = ROWS * CELL;
+  const R = 12;               // to'p radiusi
+  const SPEED = 15;           // har qadamda piksel
+  const GAP = 2;              // g'isht chetidagi bo'shliq
+  const FIRE_GAP = 4;         // to'plar orasidagi qadamlar
+  const STEP_MS = 1000 / 60;
+  const MIN_ANGLE = 8 * Math.PI / 180;
+  const SAVE_KEY = 'tg_oyin_v1';
+
+  const SKINS = [
+    { id: 'blue',    name: "Ko'k",     color: '#5aa5f5', price: 0 },
+    { id: 'red',     name: 'Qizil',    color: '#ff4155', price: 20 },
+    { id: 'green',   name: 'Yashil',   color: '#34c759', price: 30 },
+    { id: 'purple',  name: 'Binafsha', color: '#9b59f5', price: 40 },
+    { id: 'gold',    name: 'Oltin',    color: '#f7b500', price: 60 },
+    { id: 'rainbow', name: 'Kamalak',  color: 'rainbow', price: 120 },
+  ];
+
+  // ---------- Saqlash ----------
+  const store = {
+    get() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; } },
+    set(v) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(v)); } catch {} },
+  };
+  const saved = store.get();
+  const profile = Object.assign({
+    record: 0, coins: 0, gems: 0, sound: true, skin: 'blue', owned: ['blue'],
+    games: 0, bricks: 0, rings: 0, helpSeen: false,
+  }, saved.profile || {});
+
+  // ---------- Holat ----------
+  let game;            // { level, balls, launchX, grid }
+  let phase = 'aim';   // aim | fire | shift | over
+  let flying = [];     // uchayotgan to'plar
+  let shotsLeft = 0, fireTimer = 0, fireDir = null;
+  let firstLandX = null, extraBalls = 0, turnTime = 0, fast = false;
+  let shiftAnim = 0;
+  let aim = null;      // { x, y } maydon koordinatasida
+  let effects = [];    // zarrachalar va yozuvlar
+  let tick = 0;
+
+  function emptyGrid() { return Array.from({ length: ROWS }, () => Array(COLS).fill(null)); }
+
+  function newGame() {
+    game = { level: 1, balls: 1, launchX: W / 2, grid: emptyGrid() };
+    spawnRow();
+    profile.games++;
+    phase = 'aim';
+    resetTurn();
+    persist();
+    updateHud();
+  }
+
+  function resetTurn() {
+    flying = []; shotsLeft = 0; firstLandX = null; extraBalls = 0; turnTime = 0; fast = false;
+    updateCtrl();
+  }
+
+  function rnd(n) { return Math.floor(Math.random() * n); }
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+  // Yangi qator 1-qatorga qo'yiladi (0-qator doim bo'sh turadi).
+  function spawnRow() {
+    const lv = game.level;
+    const row = Array(COLS).fill(null);
+    const cols = shuffle([...Array(COLS).keys()]);
+    let i = 0;
+    row[cols[i++]] = { t: 'ring' };
+    if (Math.random() < 0.22) row[cols[i++]] = { t: 'coin' };
+    else if (Math.random() < 0.06) row[cols[i++]] = { t: 'gem' };
+    const maxB = Math.min(COLS - i, lv < 5 ? 3 : lv < 15 ? 4 : 5);
+    const nB = 1 + rnd(maxB);
+    for (let k = 0; k < nB && i < COLS; k++) {
+      const dbl = lv >= 10 && Math.random() < 0.15;
+      const hp = dbl ? lv * 2 : lv;
+      row[cols[i++]] = { t: 'brick', hp };
+    }
+    game.grid[1] = row;
+  }
+
+  // ---------- Kanvas ----------
+  const canvas = document.getElementById('field');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('fieldWrap');
+  const ctrl = document.getElementById('ctrl');
+  let scale = 1;
+
+  function resize() {
+    const availW = Math.min(window.innerWidth, 520);
+    const availH = wrap.clientHeight - 12 - 60;   // pastda boshqarish tugmalari uchun joy
+    let cssW = availW, cssH = cssW * H / W;
+    if (cssH > availH) { cssH = Math.max(availH, 200); cssW = cssH * W / H; }
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    scale = canvas.width / W;
+    ctrl.style.top = (cssH + 12 + 10) + 'px';
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- Ovoz ----------
+  let actx = null;
+  function beep(freq, dur = 0.05, vol = 0.05, type = 'square') {
+    if (!profile.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + dur);
+    } catch {}
+  }
+  let lastHitSound = 0;
+  function hitSound() {
+    const now = performance.now();
+    if (now - lastHitSound < 35) return;
+    lastHitSound = now;
+    beep(520 + Math.random() * 80, 0.04, 0.03);
+  }
+
+  // ---------- Fizika ----------
+  function fire(dir) {
+    phase = 'fire';
+    fireDir = dir;
+    shotsLeft = game.balls;
+    fireTimer = 0;
+    firstLandX = null; extraBalls = 0; turnTime = 0; fast = false;
+    updateCtrl();
+  }
+
+  function stepPhysics() {
+    turnTime++;
+    if (shotsLeft > 0) {
+      if (fireTimer <= 0) {
+        flying.push({ x: game.launchX, y: H - R, vx: fireDir.x * SPEED, vy: fireDir.y * SPEED, s: 'fly', i: flying.length });
+        shotsLeft--;
+        fireTimer = FIRE_GAP;
+      }
+      fireTimer--;
+    }
+    for (const b of flying) {
+      if (b.s === 'fly') moveBall(b);
+      else if (b.s === 'slide' || b.s === 'recall') slideBall(b);
+    }
+    if (shotsLeft === 0 && flying.every(b => b.s === 'done')) endTurn();
+    if (turnTime === 60 * 2) updateCtrl();
+  }
+
+  function moveBall(b) {
+    const n = 3;
+    for (let s = 0; s < n; s++) {
+      b.x += b.vx / n; b.y += b.vy / n;
+      if (b.x < R) { b.x = R; b.vx = Math.abs(b.vx); }
+      if (b.x > W - R) { b.x = W - R; b.vx = -Math.abs(b.vx); }
+      if (b.y < R) { b.y = R; b.vy = Math.abs(b.vy); }
+      if (b.y >= H - R && b.vy > 0) { land(b); return; }
+      collide(b);
+    }
+  }
+
+  function collide(b) {
+    const c0 = Math.max(0, Math.floor((b.x - R) / CELL)), c1 = Math.min(COLS - 1, Math.floor((b.x + R) / CELL));
+    const r0 = Math.max(0, Math.floor((b.y - R) / CELL)), r1 = Math.min(ROWS - 1, Math.floor((b.y + R) / CELL));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const cell = game.grid[r][c];
+      if (!cell) continue;
+      if (cell.t === 'brick') {
+        const x0 = c * CELL + GAP, y0 = r * CELL + GAP, x1 = (c + 1) * CELL - GAP, y1 = (r + 1) * CELL - GAP;
+        const px = Math.max(x0, Math.min(b.x, x1)), py = Math.max(y0, Math.min(b.y, y1));
+        let dx = b.x - px, dy = b.y - py;
+        let d = Math.hypot(dx, dy);
+        if (d >= R) continue;
+        let nx, ny;
+        if (d === 0) {   // markaz ichkariga kirib qolgan — eng yaqin tomondan chiqaramiz
+          const opts = [[b.x - x0, -1, 0], [x1 - b.x, 1, 0], [b.y - y0, 0, -1], [y1 - b.y, 0, 1]];
+          opts.sort((a, z) => a[0] - z[0]);
+          nx = opts[0][1]; ny = opts[0][2];
+          b.x = nx < 0 ? x0 - R : nx > 0 ? x1 + R : b.x;
+          b.y = ny < 0 ? y0 - R : ny > 0 ? y1 + R : b.y;
+        } else {
+          nx = dx / d; ny = dy / d;
+          b.x = px + nx * R; b.y = py + ny * R;
+        }
+        const dot = b.vx * nx + b.vy * ny;
+        if (dot < 0) {
+          b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny;
+          fixAngle(b);
+          hitBrick(r, c, cell);
+        }
+      } else {
+        const cx = c * CELL + CELL / 2, cy = r * CELL + CELL / 2;
+        if (Math.hypot(b.x - cx, b.y - cy) < R + 22) collect(r, c, cell);
+      }
+    }
+  }
+
+  // Deyarli gorizontal uchishni oldini oladi (aks holda to'p abadiy chayqaladi).
+  function fixAngle(b) {
+    const minVy = SPEED * 0.12;
+    if (Math.abs(b.vy) < minVy) {
+      b.vy = (b.vy >= 0 ? 1 : -1) * minVy;
+      const k = SPEED / Math.hypot(b.vx, b.vy);
+      b.vx *= k; b.vy *= k;
+    }
+  }
+
+  function hitBrick(r, c, cell) {
+    cell.hp--;
+    cell.flash = 6;
+    hitSound();
+    if (cell.hp <= 0) {
+      game.grid[r][c] = null;
+      profile.bricks++;
+      burst(c * CELL + CELL / 2, r * CELL + CELL / 2, brickColor(1));
+      beep(300, 0.08, 0.05, 'triangle');
+    }
+  }
+
+  function collect(r, c, cell) {
+    game.grid[r][c] = null;
+    const x = c * CELL + CELL / 2, y = r * CELL + CELL / 2;
+    if (cell.t === 'ring') { extraBalls++; profile.rings++; text(x, y, '+1', '#2fb34a'); beep(880, 0.09, 0.05, 'sine'); }
+    if (cell.t === 'coin') { profile.coins++; text(x, y, '+1 S', '#c98a00'); beep(1200, 0.08, 0.04, 'sine'); }
+    if (cell.t === 'gem')  { profile.gems++;  text(x, y, '+1 P', '#e8432e'); beep(1400, 0.1, 0.04, 'sine'); }
+    updateHud();
+  }
+
+  function land(b) {
+    b.y = H - R;
+    if (firstLandX === null) {
+      firstLandX = Math.max(R, Math.min(W - R, b.x));
+      b.x = firstLandX;
+      b.s = 'done';
+    } else b.s = 'slide';
+  }
+
+  function slideBall(b) {
+    const tx = firstLandX ?? game.launchX, ty = H - R;
+    const dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy);
+    const sp = b.s === 'recall' ? 30 : 22;
+    if (d <= sp) { b.x = tx; b.y = ty; b.s = 'done'; }
+    else { b.x += dx / d * sp; b.y += dy / d * sp; }
+  }
+
+  function recall() {
+    if (phase !== 'fire') return;
+    shotsLeft = 0;
+    if (firstLandX === null) firstLandX = game.launchX;
+    for (const b of flying) if (b.s === 'fly' || b.s === 'slide') b.s = 'recall';
+  }
+
+  function endTurn() {
+    game.launchX = firstLandX ?? game.launchX;
+    game.balls += extraBalls;
+    flying = [];
+    phase = 'shift';
+    shiftAnim = 0;
+    updateCtrl();
+  }
+
+  function finishShift() {
+    const g = game.grid;
+    for (let r = ROWS - 1; r > 0; r--) g[r] = g[r - 1];
+    g[0] = Array(COLS).fill(null);
+    // Pastga yetgan halqa va tangalar avtomatik yig'iladi
+    const last = g[ROWS - 1];
+    let over = false;
+    for (let c = 0; c < COLS; c++) {
+      const cell = last[c];
+      if (!cell) continue;
+      if (cell.t === 'brick') over = true;
+      else {
+        if (cell.t === 'ring') game.balls++;
+        if (cell.t === 'coin') profile.coins++;
+        if (cell.t === 'gem') profile.gems++;
+        last[c] = null;
+      }
+    }
+    game.level++;
+    spawnRow();
+    if (game.level > profile.record) profile.record = game.level;
+    if (over) { gameOver(); return; }
+    phase = 'aim';
+    resetTurn();
+    persist();
+    updateHud();
+  }
+
+  function gameOver() {
+    phase = 'over';
+    persist();
+    updateHud();
+    beep(160, 0.4, 0.07, 'sawtooth');
+    document.getElementById('overScore').textContent = game.level;
+    document.getElementById('overRecord').textContent = 'Rekord: ' + profile.record;
+    document.getElementById('continueBtn').disabled = profile.gems < 10;
+    show('overModal');
+  }
+
+  function continueGame() {
+    if (profile.gems < 10) return;
+    profile.gems -= 10;
+    // Pastki 3 qatordagi g'ishtlar olib tashlanadi
+    for (let r = ROWS - 3; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (game.grid[r][c]) { burst(c * CELL + CELL / 2, r * CELL + CELL / 2, '#ff4155'); game.grid[r][c] = null; }
+    }
+    hide('overModal');
+    phase = 'aim';
+    resetTurn();
+    persist();
+    updateHud();
+  }
+
+  // ---------- Effektlar ----------
+  function burst(x, y, color) {
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
+      effects.push({ k: 'p', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 30, color, size: 6 + Math.random() * 8 });
+    }
+  }
+  function text(x, y, str, color) { effects.push({ k: 't', x, y, life: 45, str, color }); }
+
+  // ---------- Chizish ----------
+  function brickColor(t) {
+    const lo = [251, 141, 107], hi = [255, 64, 85], dbl = [196, 34, 96];
+    let c;
+    if (t <= 1) c = lo.map((v, i) => v + (hi[i] - v) * Math.max(0, t));
+    else c = hi.map((v, i) => v + (dbl[i] - v) * Math.min(1, t - 1));
+    return `rgb(${c.map(Math.round).join(',')})`;
+  }
+
+  function ballColor(i) {
+    const sk = SKINS.find(s => s.id === profile.skin) || SKINS[0];
+    if (sk.color === 'rainbow') return `hsl(${(i * 37 + tick * 3) % 360},85%,58%)`;
+    return sk.color;
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  function draw() {
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.fillStyle = '#e6e6e6';
+    ctx.fillRect(0, 0, W, H);
+
+    const off = phase === 'shift' ? Math.min(1, shiftAnim) * CELL : 0;
+    const lv = game.level;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = game.grid[r][c];
+      if (!cell) continue;
+      const x = c * CELL, y = r * CELL + off;
+      if (cell.t === 'brick') {
+        let color = brickColor(cell.hp / lv);
+        if (cell.flash) { cell.flash--; color = '#ff8a8a'; }
+        ctx.fillStyle = color;
+        ctx.fillRect(x + GAP, y + GAP, CELL - GAP * 2, CELL - GAP * 2);
+        ctx.fillStyle = '#fff';
+        const fs = cell.hp >= 1000 ? 30 : cell.hp >= 100 ? 36 : 42;
+        ctx.font = `700 ${fs}px Roboto, Arial, sans-serif`;
+        ctx.fillText(cell.hp, x + CELL / 2, y + CELL / 2 + 2);
+      } else if (cell.t === 'ring') {
+        const pulse = 1 + Math.sin(tick / 9) * 0.07;
+        ctx.strokeStyle = '#5ee87a'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 20 * pulse, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#5ee87a';
+        ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 11, 0, Math.PI * 2); ctx.fill();
+      } else if (cell.t === 'coin' || cell.t === 'gem') {
+        const coin = cell.t === 'coin';
+        const sx = Math.abs(Math.cos(tick / 20));
+        ctx.save(); ctx.translate(x + CELL / 2, y + CELL / 2); ctx.scale(0.35 + 0.65 * sx, 1);
+        ctx.fillStyle = coin ? '#f7c21b' : '#f7a21b';
+        ctx.strokeStyle = coin ? '#c98a00' : '#b55a00'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = coin ? '#c98a00' : '#7a3400';
+        ctx.font = '900 22px Arial'; ctx.fillText(coin ? 'S' : 'P', 0, 2);
+        ctx.restore();
+      }
+    }
+
+    // Nishon chizig'i
+    if (phase === 'aim' && aim) {
+      const dir = aimDir(aim);
+      if (dir) drawAimLine(dir);
+    }
+
+    // To'plar
+    const showCount = phase === 'aim' ? game.balls : shotsLeft;
+    if (phase === 'aim' || phase === 'shift' || (phase === 'fire' && shotsLeft > 0)) {
+      const bx = phase === 'shift' ? game.launchX : game.launchX;
+      drawBall(bx, H - R, 0);
+      if (showCount > 0) {
+        ctx.fillStyle = ballColor(0);
+        ctx.font = '700 30px Roboto, Arial, sans-serif';
+        ctx.fillText('x' + (phase === 'shift' ? game.balls : showCount), clampLabel(bx), H - R * 2 - 22);
+      }
+    }
+    if (phase === 'fire' || phase === 'over') {
+      for (const b of flying) drawBall(b.x, b.y, b.i);
+      if (firstLandX !== null && phase === 'fire') {
+        const landed = flying.filter(b => b.s === 'done').length;
+        if (landed > 0 && shotsLeft === 0) {
+          ctx.fillStyle = ballColor(0);
+          ctx.font = '700 30px Roboto, Arial, sans-serif';
+          ctx.fillText('x' + landed, clampLabel(firstLandX), H - R * 2 - 22);
+        }
+      }
+    }
+
+    // Effektlar
+    for (const e of effects) {
+      if (e.k === 'p') {
+        ctx.globalAlpha = e.life / 30;
+        ctx.fillStyle = e.color;
+        ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+      } else {
+        ctx.globalAlpha = Math.min(1, e.life / 20);
+        ctx.fillStyle = e.color;
+        ctx.font = '800 30px Roboto, Arial, sans-serif';
+        ctx.fillText(e.str, e.x, e.y);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function clampLabel(x) { return Math.max(30, Math.min(W - 30, x)); }
+
+  function drawBall(x, y, i) {
+    ctx.fillStyle = ballColor(i);
+    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function aimDir(p) {
+    const ox = game.launchX, oy = H - R;
+    let dx = p.x - ox, dy = p.y - oy;
+    if (dy > -5) { dx = -dx; dy = -dy; }   // ballning pastidan — rogatka kabi teskari
+    if (dy > -5) return null;
+    let a = Math.atan2(-dy, dx);           // 0..PI
+    a = Math.max(MIN_ANGLE, Math.min(Math.PI - MIN_ANGLE, a));
+    return { x: Math.cos(a), y: -Math.sin(a) };
+  }
+
+  function drawAimLine(dir) {
+    let x = game.launchX, y = H - R, vx = dir.x, vy = dir.y;
+    ctx.fillStyle = ballColor(0);
+    let dist = 0, bounces = 0;
+    const maxLen = 1100;
+    for (let s = 0; s < maxLen; s += 2) {
+      x += vx * 2; y += vy * 2;
+      if (x < R) { x = R; vx = -vx; bounces++; }
+      if (x > W - R) { x = W - R; vx = -vx; bounces++; }
+      if (y < R || bounces > 1) break;
+      const c = Math.floor(x / CELL), r = Math.floor(y / CELL);
+      const cell = game.grid[r] && game.grid[r][c];
+      if (cell && cell.t === 'brick') break;
+      dist += 2;
+      if (dist % 28 === 0) {
+        ctx.globalAlpha = 1 - s / maxLen * 0.7;
+        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Asosiy sikl ----------
+  let lastT = performance.now(), acc = 0;
+  function loop(t) {
+    acc += Math.min(100, t - lastT); lastT = t;
+    while (acc >= STEP_MS) {
+      acc -= STEP_MS;
+      tick++;
+      if (phase === 'fire') {
+        const n = fast || turnTime > 60 * 15 ? 3 : 1;
+        for (let k = 0; k < n && phase === 'fire'; k++) stepPhysics();
+      } else if (phase === 'shift') {
+        shiftAnim += 0.12;
+        if (shiftAnim >= 1) finishShift();
+      }
+      for (const e of effects) {
+        e.life--;
+        if (e.k === 'p') { e.x += e.vx; e.y += e.vy; e.vy += 0.3; } else e.y -= 1.2;
+      }
+      effects = effects.filter(e => e.life > 0);
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Kiritish ----------
+  function toField(ev) {
+    const rc = canvas.getBoundingClientRect();
+    return { x: (ev.clientX - rc.left) / rc.width * W, y: (ev.clientY - rc.top) / rc.height * H };
+  }
+  let pointerId = null;
+  wrap.addEventListener('pointerdown', ev => {
+    if (phase !== 'aim' || ev.target.closest('button')) return;
+    pointerId = ev.pointerId;
+    aim = toField(ev);
+  });
+  window.addEventListener('pointermove', ev => {
+    if (ev.pointerId !== pointerId || phase !== 'aim') return;
+    aim = toField(ev);
+  });
+  window.addEventListener('pointerup', ev => {
+    if (ev.pointerId !== pointerId) return;
+    pointerId = null;
+    if (phase === 'aim' && aim) {
+      const dir = aimDir(aim);
+      if (dir) fire(dir);
+    }
+    aim = null;
+  });
+  window.addEventListener('pointercancel', () => { pointerId = null; aim = null; });
+
+  // ---------- Interfeys ----------
+  const $ = id => document.getElementById(id);
+  function updateHud() {
+    if (game.level > profile.record) profile.record = game.level;
+    $('coins').textContent = profile.coins;
+    $('gems').textContent = profile.gems;
+    $('record').textContent = profile.record;
+    $('score').textContent = game.level;
+  }
+  function updateCtrl() {
+    $('fastBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60 * 2);
+    $('recallBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60 * 2);
+    $('fastBtn').classList.toggle('active', fast);
+  }
+  function show(id) { $(id).classList.add('show'); }
+  function hide(id) { $(id).classList.remove('show'); }
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+
+  function persist() {
+    if (game.level > profile.record) profile.record = game.level;
+    const data = { profile };
+    if (phase !== 'over') data.game = game;
+    store.set(data);
+  }
+
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.remove('show')));
+  $('menuBtn').onclick = () => { $('soundBtn').textContent = 'Ovoz: ' + (profile.sound ? 'yoqilgan' : "o'chirilgan"); show('menuModal'); };
+  $('soundBtn').onclick = () => { profile.sound = !profile.sound; $('soundBtn').textContent = 'Ovoz: ' + (profile.sound ? 'yoqilgan' : "o'chirilgan"); persist(); };
+  $('helpBtn').onclick = () => { hide('menuModal'); show('helpModal'); };
+  $('newGameBtn').onclick = () => {
+    if (!confirm("Yangi o'yin boshlansinmi? Joriy o'yin yo'qoladi.")) return;
+    hide('menuModal'); effects = []; newGame();
+  };
+  $('restartBtn').onclick = () => { hide('overModal'); effects = []; newGame(); };
+  $('continueBtn').onclick = continueGame;
+  $('fastBtn').onclick = () => { fast = !fast; updateCtrl(); };
+  $('recallBtn').onclick = recall;
+
+  $('statsBtn').onclick = () => {
+    const rows = [
+      ['Rekord', profile.record], ['Joriy ball', game.level], ["To'plar soni", game.balls],
+      ["O'ynalgan o'yinlar", profile.games], ["Sindirilgan g'ishtlar", profile.bricks],
+      ["Yig'ilgan halqalar", profile.rings], ['S tangalar', profile.coins], ['P bonuslar', profile.gems],
+    ];
+    $('statsList').innerHTML = rows.map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('');
+    show('statsModal');
+  };
+
+  function renderShop() {
+    $('shopCoins').textContent = profile.coins;
+    $('skinList').innerHTML = SKINS.map(s => {
+      const owned = profile.owned.includes(s.id);
+      const bg = s.color === 'rainbow' ? 'conic-gradient(red,orange,yellow,lime,cyan,blue,magenta,red)' : s.color;
+      const label = profile.skin === s.id ? 'Tanlangan' : owned ? 'Tanlash' : s.price + ' S';
+      return `<div class="skin ${profile.skin === s.id ? 'sel' : ''}" data-id="${s.id}">
+        <div class="dot" style="background:${bg}"></div>${s.name}<small>${label}</small></div>`;
+    }).join('');
+  }
+  $('shopBtn').onclick = () => { renderShop(); show('shopModal'); };
+  $('skinList').addEventListener('click', ev => {
+    const el = ev.target.closest('.skin'); if (!el) return;
+    const s = SKINS.find(k => k.id === el.dataset.id);
+    if (!profile.owned.includes(s.id)) {
+      if (profile.coins < s.price) { toast("Tanga yetarli emas"); return; }
+      profile.coins -= s.price; profile.owned.push(s.id); toast(s.name + ' sotib olindi!');
+    }
+    profile.skin = s.id;
+    persist(); renderShop(); updateHud();
+  });
+
+  // ---------- Boshlash ----------
+  function validGame(g) {
+    return g && Array.isArray(g.grid) && g.grid.length === ROWS && g.grid.every(r => Array.isArray(r) && r.length === COLS)
+      && g.level >= 1 && g.balls >= 1 && typeof g.launchX === 'number';
+  }
+  resize();
+  if (validGame(saved.game)) { game = saved.game; updateHud(); }
+  else newGame();
+  if (!profile.helpSeen) { profile.helpSeen = true; persist(); show('helpModal'); }
+  requestAnimationFrame(loop);
+  // Sahifa yopilayotganda saqlab qo'yamiz (to'plar havoda bo'lsa — yurish boshidagi holat saqlanadi)
+  document.addEventListener('visibilitychange', () => { if (document.hidden) store.set(Object.assign(store.get(), { profile })); });
+})();
+</script>
+</body>
+</html>
