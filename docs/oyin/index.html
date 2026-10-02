@@ -320,11 +320,13 @@
   // Yangi qator 1-qatorga qo'yiladi (0-qator odatda bo'sh; boss chiqqanda uning yuqori yarmi shu yerda).
   function spawnRow(zone) {
     const Z = ZONES[zone], lv = game.level;
-    const row = Array(COLS).fill(null);
+    // 1-qatorda bossning yuqori yarmi turgan bo'lishi mumkin — uni o'chirib yubormaymiz
+    const row = game.grid[1] ? [...game.grid[1]] : Array(COLS).fill(null);
     const base = Math.max(1, Math.round(lv * Z.hpK));
-    let free = [...Array(COLS).keys()];
-    if (lv >= 10 && lv % 10 === 0) {   // har 10-levelda boss
-      const c = rnd(COLS - 1);
+    let free = [...Array(COLS).keys()].filter(k => !row[k]);
+    const bossSpots = free.filter(k => free.includes(k + 1) && !game.grid[0][k] && !game.grid[0][k + 1]);
+    if (lv >= 10 && lv % 10 === 0 && bossSpots.length) {   // har 10-levelda boss
+      const c = bossSpots[rnd(bossSpots.length)];
       const ref = { hp: base * 6, m: base * 6, s: rnd(1000), bid: rnd(1e9) };
       game.grid[0][c] = { t: 'boss', ref, dx: 0, dy: 0 };
       game.grid[0][c + 1] = { t: 'boss', ref, dx: 1, dy: 0 };
@@ -1306,12 +1308,15 @@
     const off = phase === 'shift' ? Math.min(1, shiftAnim) * CELL : 0;
     const refHp = Math.max(1, game.level * ZONES[game.zone].hpK), draw1 = DRAW[curStyle()];
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const drawnBoss = new Set();
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const cell = game.grid[r][c];
       if (!cell) continue;
       const x = c * CELL, y = r * CELL + off;
       if (cell.t === 'brick') draw1(x, y, cell, cell.hp / refHp);
-      else if (cell.t === 'boss') { if (cell.dx === 0 && cell.dy === 0) drawBoss(r, c, cell.ref, off, draw1); }
+      else if (cell.t === 'boss') {   // boss bir marta, o'zining yuqori-chap burchagidan chiziladi
+        if (!drawnBoss.has(cell.ref)) { drawnBoss.add(cell.ref); drawBoss(r - cell.dy, c - cell.dx, cell.ref, off, draw1); }
+      }
       else drawItem(x, y, cell);
     }
 
@@ -1594,8 +1599,15 @@
     g.zone = Math.max(ZMIN, Math.min(ZMAX, g.zone | 0));
     g.climb = g.climb | 0;
     const bosses = {};   // JSON'dan keyin boss qismlari yana bitta jonni bo'lishadi
+    const parts = {};
     for (const row of g.grid) for (const c of row) if (c && c.t === 'boss') {
       c.ref = bosses[c.ref.bid] = bosses[c.ref.bid] || c.ref;
+      parts[c.ref.bid] = (parts[c.ref.bid] || 0) + 1;
+    }
+    // Eski xato tufayli chala qolgan boss qismlari (ko'rinmas g'ishtlar) olib tashlanadi
+    for (const row of g.grid) for (let k = 0; k < COLS; k++) {
+      const c = row[k];
+      if (c && c.t === 'boss' && parts[c.ref.bid] !== 4) row[k] = null;
     }
     for (const row of g.grid) for (const c of row) if (c && c.t === 'brick') {
       c.m = Math.max(c.m || 0, c.hp); if (c.s === undefined) c.s = rnd(1000);
