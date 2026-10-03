@@ -89,6 +89,11 @@
   .chute .em { font-size: 30px; }
   .chute div { flex: 1; font-weight: 700; }
   .chute small { display: block; color: #6b6b6b; font-weight: 500; }
+  .upgs { display: grid; gap: 8px; }
+  .pips { display: flex; gap: 3px; margin-top: 5px; }
+  .pips i { flex: 1; max-width: 18px; height: 5px; border-radius: 3px; background: #dde3ea; }
+  .pips i.f { background: #2fb34a; }
+  .chute button:disabled { background: #9aa5b1; }
   .chute button { height: 38px; border-radius: 10px; border: 0; background: #e8432e; color: #fff;
                   font-weight: 800; padding: 0 12px; }
   .layers { margin: 8px 0 4px; padding: 0; list-style: none; }
@@ -150,6 +155,8 @@
   <div id="fieldWrap">
     <canvas id="field"></canvas>
     <div id="ctrl">
+      <button id="boostFire" title="Olovli zarba">🔥 <span>0</span></button>
+      <button id="boostHeavy" title="Po'lat zarba">🔩 <span>0</span></button>
       <button id="fastBtn">⏩ 3x</button>
       <button id="recallBtn">⬇ Qaytar</button>
     </div>
@@ -180,6 +187,9 @@
     <li>👑 <b>Boss</b> — har 10-levelda; yengsangiz +15 S, +3 P, +2 to'p</li>
     <li>🔥 <b>Kombo</b> — bir otishda har 5 g'isht uchun +1 S</li>
   </ul>
+  <h3>To'p kuchi</h3>
+  <p>• Do'konda S tangaga: 💪 kritik zarba, 🚀 tezlik, 🧲 magnit, ➕ qo'shimcha to'p.</p>
+  <p>• P bonusga maxsus zarbalar: 🔥 olovli (g'ishtni teshib o'tadi) va 🔩 po'lat (2× kuch). Otishdan oldin pastdagi tugmani bosing.</p>
   <h3>Qatlamlar</h3>
   <ul class="layers">
     <li>🪐 <b>Koinot (+2)</b> — asteroidlar</li>
@@ -188,6 +198,7 @@
     <li>🪱 <b>Yer osti (−1)</b> — tuproq g'ishtlar</li>
     <li>💎 <b>Chuqurlik (−2)</b> — tosh va kristallar</li>
   </ul>
+  <p>• Yer usti va osmon <b>telefoningiz soati va fasliga</b> mos: tong, kun, shom, tun; qishda qor, kuzda xazon, bahorda gul.</p>
   <p>• G'ishtlarni chiziqdan uzoq tutsangiz, ko'tarilish chizig'i to'ladi va siz <b>yuqoriga ko'tarilasiz</b>.</p>
   <p>• G'isht pastki chiziqqa yetsa — pastki qatorlar o'pirilib, siz <b>bir qatlam pastga tushasiz</b>.</p>
   <p>• <b style="color:#c98a00">S tanga</b> — to'p ranglari uchun. <b style="color:#e8432e">P bonus</b> — parashyut uchun (yiqilishdan saqlaydi). Yer ostida P ko'proq, osmonda S ko'proq.</p>
@@ -203,6 +214,10 @@
 <div class="modal" id="shopModal"><div class="card">
   <h2>Do'kon</h2>
   <p class="center">S: <b id="shopCoins">0</b> &nbsp;·&nbsp; P: <b id="shopGems">0</b></p>
+  <h3>To'p kuchi</h3>
+  <div class="upgs" id="upgList"></div>
+  <h3>Maxsus zarbalar</h3>
+  <div class="upgs" id="boostList"></div>
   <h3>Parashyut</h3>
   <div class="chute"><span class="em">🪂</span>
     <div>Parashyut <small>Bir marta yiqilishdan saqlaydi. Sizda: <b id="chuteCount">0</b></small></div>
@@ -263,6 +278,23 @@
     { id: 'rainbow', name: 'Kamalak',  color: 'rainbow', price: 120 },
   ];
 
+  // To'p kuchi: doimiy yangilanishlar (S tangaga, darajasi oshgan sari qimmatlashadi)
+  const UPG = [
+    { id: 'power', icon: '💪', name: 'Zarba kuchi', max: 10, price: l => Math.round(15 * Math.pow(1.5, l)),
+      desc: l => `Kritik (2×) zarba ehtimoli: ${l * 7}%` },
+    { id: 'speed', icon: '🚀', name: 'Tezlik', max: 5, price: l => Math.round(12 * Math.pow(1.6, l)),
+      desc: l => `To'p tezligi: +${l * 6}%` },
+    { id: 'magnet', icon: '🧲', name: 'Magnit', max: 5, price: l => Math.round(10 * Math.pow(1.6, l)),
+      desc: l => `Halqa va tangalarni ${l * 9} px uzoqdan tortadi` },
+    { id: 'start', icon: '➕', name: "Qo'shimcha to'p", max: 10, price: l => Math.round(25 * Math.pow(1.45, l)),
+      desc: l => `Sotib olganda +1 to'p; yangi o'yin ${3 + l} to'p bilan` },
+  ];
+  // Maxsus zarbalar: bir otishlik (P bonusga), otishdan oldin tanlanadi
+  const BOOSTS = [
+    { id: 'fire', icon: '🔥', name: 'Olovli zarba', price: 5, desc: "To'plar g'ishtlarni teshib o'tadi" },
+    { id: 'heavy', icon: '🔩', name: "Po'lat zarba", price: 3, desc: 'Har urilish 2 barobar kuchli' },
+  ];
+
   // ---------- Saqlash ----------
   const store = {
     get() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; } },
@@ -272,7 +304,13 @@
   const profile = Object.assign({
     record: 1, coins: 0, gems: 0, sound: true, music: true, skin: 'blue', owned: ['blue'],
     games: 0, bricks: 0, rings: 0, helpSeen: false, chutes: 0, falls: 0, climbs: 0, maxZone: 0,
+    up: {}, boost: {},
   }, saved.profile || {});
+
+  profile.up = Object.assign({ power: 0, speed: 0, magnet: 0, start: 0 }, profile.up);
+  profile.boost = Object.assign({ fire: 0, heavy: 0 }, profile.boost);
+  const ballSpeed = () => SPEED * (1 + 0.06 * profile.up.speed);
+  let armed = null, shotBoost = null;   // tanlangan maxsus zarba / joriy otishniki
 
   // ---------- Holat ----------
   let game;            // { level, balls, launchX, grid, zone, climb }
@@ -302,7 +340,7 @@
   }
 
   function newGame() {
-    game = { level: 1, balls: 3, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0 };
+    game = { level: 1, balls: 3 + profile.up.start, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0 };
     spawnRow(0);
     profile.games++;
     phase = 'aim';
@@ -382,10 +420,100 @@
   }
   window.addEventListener('resize', resize);
 
+  // ---------- Real vaqt va fasl ----------
+  // Yer usti va osmon telefon soati va oyiga qarab o'zgaradi: tong, kun, shom, tun; qish, bahor, yoz, kuz.
+  const SKY_KEYS = [   // [soat, osmon tepasi, ufq]
+    [0, '#0b1430', '#1f2d55'], [4.6, '#111a3c', '#2a3463'], [5.8, '#3f4f88', '#e7a185'], [7, '#8cc0ec', '#ffe0bb'],
+    [9, '#aedcff', '#eef8ff'], [13, '#bfe6ff', '#f2fbff'], [16.8, '#a9d6f6', '#fff0d0'], [18.4, '#7c9fd4', '#ffbb80'],
+    [19.5, '#4b4c86', '#ee9277'], [20.6, '#1d2552', '#3a3d70'], [22, '#0b1430', '#1f2d55'], [24, '#0b1430', '#1f2d55'],
+  ];
+  const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const rgbHex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  const lerpHex = (a, b, t) => rgbHex(hexRgb(a).map((v, i) => v + (hexRgb(b)[i] - v) * t));
+  const lum = h => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
+  function dayInfo(d = new Date()) {
+    const h = d.getHours() + d.getMinutes() / 60, mo = d.getMonth();
+    let k = 0; while (k < SKY_KEYS.length - 2 && SKY_KEYS[k + 1][0] <= h) k++;
+    const [h0, t0, b0] = SKY_KEYS[k], [h1, t1, b1] = SKY_KEYS[k + 1], t = (h - h0) / (h1 - h0);
+    const top = lerpHex(t0, t1, t), bot = lerpHex(b0, b1, t);
+    const season = [11, 0, 1].includes(mo) ? 'winter' : mo <= 4 ? 'spring' : mo <= 7 ? 'summer' : 'autumn';
+    const night = h < 5.6 || h >= 20.4, golden = (h >= 5.6 && h < 7.6) || (h >= 17.4 && h < 20.4);
+    // Kechasi tabiat qorong'ilashadi, tong/shomda iliq nur tushadi
+    const darkK = night ? 0.62 : h < 6.6 ? (6.6 - h) * 0.5 : h > 19.4 ? (h - 19.4) * 0.6 : 0;
+    return {
+      h, top, bot, night, golden, season, darkK: Math.min(0.62, darkK), dark: lum(top) < 0.42,
+      sun: h >= 5.6 && h < 20.4 ? (h - 5.6) / 14.8 : null,   // 0 — sharq ufqi, 1 — g'arb ufqi
+      key: season + Math.floor(h * 6),
+      seasonName: { winter: 'Qish', spring: 'Bahor', summer: 'Yoz', autumn: 'Kuz' }[season],
+      seasonIcon: { winter: '❄️', spring: '🌸', summer: '☀️', autumn: '🍂' }[season],
+      partName: night ? 'Tun' : h < 10 ? 'Tong' : h < 17.4 ? 'Kun' : 'Shom',
+    };
+  }
+  let DAY = dayInfo();
+  // Tabiat rangini vaqtga moslash: tunda qorong'ilashtirish, oltin soatda iliq tus
+  const nat = c => { let r = c; if (DAY.golden) r = lerpHex(r, '#ff9a5c', 0.14); return DAY.darkK ? lerpHex(r, '#141c38', DAY.darkK) : r; };
+  const skyTop = () => lerpHex(DAY.top, '#1d5fc4', DAY.dark ? 0.12 : 0.62);
+
   function applyZoneColors(z) {
     const Z = ZONES[z], st = document.documentElement.style;
-    st.setProperty('--top', Z.top); st.setProperty('--ground', Z.ground);
-    st.setProperty('--ink', Z.ink); st.setProperty('--ink2', Z.ink2);
+    let top = Z.top, ink = Z.ink, ink2 = Z.ink2;
+    if (z === 0) { top = DAY.top; ink = DAY.dark ? '#f2f6ff' : '#14324a'; }
+    if (z === 1) { top = skyTop(); ink = '#ffffff'; ink2 = DAY.dark ? '#ffffff' : Z.ink2; }
+    const ground = z === 1 && DAY.dark ? '#4c5878' : Z.ground;
+    st.setProperty('--top', top); st.setProperty('--ground', ground);
+    st.setProperty('--ink', ink); st.setProperty('--ink2', ink2);
+  }
+  // Har daqiqada vaqt tekshiriladi; o'zgargan bo'lsa yer usti va osmon foni qayta chiziladi
+  setInterval(() => {
+    const nd = dayInfo();
+    if (nd.key === DAY.key) return;
+    DAY = nd;
+    bgCache[0] = renderBg(0); bgCache[1] = renderBg(1);
+    if (!zoneAnim && (game.zone === 0 || game.zone === 1)) applyZoneColors(game.zone);
+  }, 60000);
+
+  // Fasl zarralari: kuzda barglar, qishda qor, bahorda gulbarglar, yozda (kechasi) yaltiroq qo'ng'izlar
+  const seasonFx = [];
+  function updateSeason() {
+    const z = zoneAnim ? zoneAnim.to : game.zone;
+    // Osmonda faqat qishda qor yog'adi; barg, gul va qo'ng'izlar yer ustida
+    if (z !== 0 && !(z === 1 && DAY.season === 'winter')) { seasonFx.length = 0; return; }
+    const S = DAY.season, want = S === 'winter' ? 45 : S === 'autumn' ? 12 : S === 'spring' ? 10 : DAY.night ? 14 : 0;
+    if (seasonFx.length < want && Math.random() < 0.15) {
+      const fly = S === 'summer';
+      seasonFx.push({
+        x: Math.random() * W, y: fly ? H - 40 - Math.random() * 300 : -10, vx: (Math.random() - 0.5) * 0.6,
+        vy: S === 'winter' ? 0.6 + Math.random() * 0.9 : fly ? 0 : 0.5 + Math.random() * 0.6,
+        r: S === 'winter' ? 1.2 + Math.random() * 2.3 : 4 + Math.random() * 3, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.08,
+        ph: Math.random() * 6, life: fly ? 400 : 9999,
+        col: S === 'autumn' ? ['#e8822c', '#f2b33d', '#c9512a', '#a8742a'][rnd(4)] : S === 'spring' ? ['#ffc4d8', '#ffd9e6', '#fff0f5'][rnd(3)] : '#ffffff',
+      });
+    }
+    for (let i = seasonFx.length - 1; i >= 0; i--) {
+      const f = seasonFx[i];
+      f.ph += 0.03; f.rot += f.vr; f.life--;
+      if (S === 'summer') { f.x += Math.sin(f.ph) * 0.5; f.y += Math.cos(f.ph * 0.7) * 0.4; }
+      else { f.x += f.vx + Math.sin(f.ph) * (S === 'winter' ? 0.35 : 0.9); f.y += f.vy; }
+      if (f.y > H + 10 || f.life <= 0 || f.x < -20 || f.x > W + 20) seasonFx.splice(i, 1);
+    }
+  }
+  function drawSeason() {
+    for (const f of seasonFx) {
+      if (DAY.season === 'winter') { ctx.globalAlpha = 0.85; puff(ctx, f.x, f.y, f.r, '#ffffff'); }
+      else if (DAY.season === 'summer') {
+        const a = 0.4 + 0.6 * Math.max(0, Math.sin(f.ph * 3));
+        ctx.globalAlpha = a * Math.min(1, f.life / 60);
+        const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 9);
+        g.addColorStop(0, 'rgba(230,255,120,1)'); g.addColorStop(1, 'rgba(230,255,120,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 9, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.rot); ctx.globalAlpha = 0.9;
+        ctx.fillStyle = f.col; ctx.beginPath(); ctx.ellipse(0, 0, f.r, f.r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        if (DAY.season === 'autumn') { ctx.strokeStyle = 'rgba(90,50,20,.5)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-f.r, 0); ctx.lineTo(f.r, 0); ctx.stroke(); }
+        ctx.restore();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   // ---------- Fonlar (statik qism oldindan chiziladi) ----------
@@ -420,35 +548,84 @@
     [[-26, 6, 18], [-8, -6, 24], [16, -2, 20], [32, 8, 14], [4, 10, 18]].forEach(([dx, dy, r]) => puff(g, x + dx * k, y + dy * k, r * k, col));
   }
 
+  function sunMoon(g, rand, sx, sy) {
+    if (DAY.sun !== null) {
+      const p = DAY.sun, x = W * (0.08 + 0.84 * p), y = sy - Math.sin(Math.PI * p) * (sy - 110);
+      const low = 1 - Math.sin(Math.PI * p);   // ufqqa yaqinligi
+      glow(g, x, y, 170, low > 0.6 ? 'rgba(255,170,90,.55)' : 'rgba(255,236,150,.55)');
+      puff(g, x, y, 34, lerpHex('#ffe27a', '#ff8a4a', Math.max(0, low - 0.35) * 1.4));
+    } else {
+      for (let i = 0; i < 90; i++) { g.globalAlpha = 0.3 + rand() * 0.7; puff(g, rand() * W, rand() * (H * 0.6), 0.5 + rand() * 1.3, '#ffffff'); }
+      g.globalAlpha = 1;
+      glow(g, sx, 150, 120, 'rgba(220,230,255,.25)');
+      g.save(); g.beginPath(); g.rect(0, 0, W, H); g.arc(sx + 11, 143, 23, 0, Math.PI * 2); g.clip('evenodd');
+      puff(g, sx, 150, 26, '#eef1ff');   // o'roqsimon oy
+      g.restore();
+    }
+  }
+  function tree(g, x, y, s, rand) {
+    const S = DAY.season;
+    g.fillStyle = nat('#7d5c3e'); g.fillRect(x - 2 * s, y - 16 * s, 4 * s, 16 * s);
+    if (S === 'winter') {   // yalang'och shoxlar va qor
+      g.strokeStyle = nat('#6e5440'); g.lineWidth = 1.6 * s; g.lineCap = 'round';
+      for (const [dx, dy] of [[-9, -30], [8, -32], [0, -36], [-5, -24], [6, -22]]) { g.beginPath(); g.moveTo(x, y - 14 * s); g.lineTo(x + dx * s, y + dy * s); g.stroke(); }
+      for (const [dx, dy] of [[-9, -30], [8, -32], [0, -36]]) puff(g, x + dx * s, y + dy * s, 2.5 * s, nat('#ffffff'));
+      return;
+    }
+    const pal = S === 'autumn' ? ['#e8822c', '#f2b33d', '#c9512a', '#d99a2b'] : S === 'spring' ? ['#a9dd85'] : ['#86c264'];
+    const c = nat(pal[Math.floor(rand() * pal.length)]);
+    puff(g, x, y - 22 * s, 13 * s, c); puff(g, x - 7 * s, y - 16 * s, 9 * s, c); puff(g, x + 7 * s, y - 16 * s, 9 * s, c);
+    if (S === 'spring') for (let i = 0; i < 6; i++) puff(g, x + (rand() - 0.5) * 22 * s, y - 14 * s - rand() * 18 * s, 1.8 * s, nat('#ffb7cf'));
+  }
+  // Tepalikdagi kichik uy: tunda va shomda derazalarida chiroq yonadi
+  function house(g, x, y) {
+    const lit = DAY.night || DAY.h >= 18.6 || DAY.h < 6.6;
+    g.fillStyle = nat('#e8d7be'); g.fillRect(x - 22, y - 26, 44, 26);
+    g.fillStyle = nat(DAY.season === 'winter' ? '#f4f7fb' : '#b5523b');
+    g.beginPath(); g.moveTo(x - 27, y - 24); g.lineTo(x, y - 44); g.lineTo(x + 27, y - 24); g.closePath(); g.fill();
+    g.fillStyle = nat('#8a4a36'); g.fillRect(x + 10, y - 44, 6, 12);
+    for (const wx of [x - 13, x + 5]) {
+      if (lit) glow(g, wx + 4, y - 14, 22, 'rgba(255,200,90,.55)');
+      g.fillStyle = lit ? '#ffd36b' : nat('#7fa7c9'); g.fillRect(wx, y - 19, 9, 9);
+    }
+  }
+  const HOUSE_X = W * 0.74;
+
   function bgSurface(g, rand) {
-    vgrad(g, [[0, '#bfe6ff'], [0.7, '#e6f6ff'], [1, '#f2fbff']]);
-    glow(g, W - 95, 175, 170, 'rgba(255,236,150,.55)');
-    puff(g, W - 95, 175, 36, '#ffe27a');
-    hill(g, H - 110, 70, 1.2, 0.6, '#d5ecc6');
-    // uzoqdagi daraxtlar
+    vgrad(g, [[0, DAY.top], [0.75, DAY.bot], [1, DAY.bot]]);
+    sunMoon(g, rand, W * 0.8, H * 0.62);
+    const S = DAY.season;
+    const hills = { summer: ['#cfe8bd', '#b2db96'], spring: ['#d7efc4', '#bfe4a2'], autumn: ['#e4d9a6', '#cfbf7c'], winter: ['#eef3f8', '#dde7f0'] }[S];
+    hill(g, H - 110, 70, 1.2, 0.6, nat(hills[0]));
     for (let i = 0; i < 7; i++) {
-      const x = 40 + rand() * (W - 80), y = hillY(x, H - 110, 70, 1.2, 0.6) + 4, s = 0.7 + rand() * 0.5;
-      g.fillStyle = '#9b7a5a'; g.fillRect(x - 2 * s, y - 16 * s, 4 * s, 16 * s);
-      puff(g, x, y - 22 * s, 13 * s, '#a9d58e'); puff(g, x - 7 * s, y - 16 * s, 9 * s, '#a9d58e'); puff(g, x + 7 * s, y - 16 * s, 9 * s, '#a9d58e');
+      const x = 40 + rand() * (W - 80);
+      if (Math.abs(x - HOUSE_X) < 40) continue;
+      tree(g, x, hillY(x, H - 110, 70, 1.2, 0.6) + 4, 0.7 + rand() * 0.5, rand);
     }
-    hill(g, H - 50, 34, 0.8, 2.2, '#b9df9f');
-    // o't
-    g.fillStyle = '#6dbf4b'; g.fillRect(0, H - 14, W, 14);
-    g.strokeStyle = '#5aa83c'; g.lineWidth = 2;
-    for (let x = 0; x < W; x += 5) {
-      g.beginPath(); g.moveTo(x, H - 13); g.lineTo(x + rand() * 4 - 2, H - 18 - rand() * 7); g.stroke();
+    house(g, HOUSE_X, hillY(HOUSE_X, H - 110, 70, 1.2, 0.6) + 6);
+    hill(g, H - 50, 34, 0.8, 2.2, nat(hills[1]));
+    // yer qoplami: o't, xazon yoki qor
+    const grass = { summer: ['#6dbf4b', '#5aa83c'], spring: ['#7fcc58', '#68b443'], autumn: ['#a4a548', '#8a8a3a'], winter: ['#f4f8fc', '#dce6f0'] }[S];
+    g.fillStyle = nat(grass[0]); g.fillRect(0, H - 14, W, 14);
+    g.strokeStyle = nat(grass[1]); g.lineWidth = 2;
+    if (S === 'winter') {
+      for (let x = 0; x < W; x += 18) puff(g, x + rand() * 8, H - 13, 7 + rand() * 5, nat('#f4f8fc'));
+    } else {
+      for (let x = 0; x < W; x += 5) { g.beginPath(); g.moveTo(x, H - 13); g.lineTo(x + rand() * 4 - 2, H - 18 - rand() * 7); g.stroke(); }
     }
-    for (let i = 0; i < 18; i++) puff(g, rand() * W, H - 16 - rand() * 18, 2.5, ['#ffffff', '#ffe066', '#ff8fb1'][rnd(3)]);
+    if (S === 'autumn') for (let i = 0; i < 40; i++) { g.fillStyle = nat(['#e8822c', '#f2b33d', '#c9512a'][rnd(3)]); g.beginPath(); g.ellipse(rand() * W, H - 6 - rand() * 10, 3.5, 1.8, rand() * 3, 0, Math.PI * 2); g.fill(); }
+    if (S === 'spring' || S === 'summer') for (let i = 0; i < 18; i++) puff(g, rand() * W, H - 16 - rand() * 18, 2.5, nat(['#ffffff', '#ffe066', '#ff8fb1'][rnd(3)]));
   }
 
   function bgSky(g, rand) {
-    vgrad(g, [[0, '#3d97f5'], [0.65, '#9fd2ff'], [1, '#e3f2ff']]);
-    glow(g, 100, 190, 180, 'rgba(255,248,210,.5)');
-    puff(g, 100, 190, 30, '#fff6cf');
-    for (let i = 0; i < 9; i++) cloudShape(g, rand() * W, 250 + rand() * (H - 380), 0.8 + rand() * 0.9, 'rgba(255,255,255,.28)');
+    const top = skyTop();
+    vgrad(g, [[0, top], [0.65, lerpHex(top, DAY.bot, 0.55)], [1, DAY.bot]]);
+    sunMoon(g, rand, W * 0.2, H * 0.55);
+    const far = DAY.night ? 'rgba(150,165,200,.16)' : DAY.golden ? 'rgba(255,205,185,.3)' : 'rgba(255,255,255,.28)';
+    for (let i = 0; i < 9; i++) cloudShape(g, rand() * W, 250 + rand() * (H - 380), 0.8 + rand() * 0.9, far);
     // bulut "pol"i — to'p shu ustida turadi
-    for (let x = -20; x < W + 40; x += 34) puff(g, x, H + 4 + rand() * 6, 26 + rand() * 18, '#dbe9f7');
-    for (let x = -10; x < W + 40; x += 30) puff(g, x, H + 10 + rand() * 6, 22 + rand() * 16, '#ffffff');
+    for (let x = -20; x < W + 40; x += 34) puff(g, x, H + 4 + rand() * 6, 26 + rand() * 18, nat('#dbe9f7'));
+    for (let x = -10; x < W + 40; x += 30) puff(g, x, H + 10 + rand() * 6, 22 + rand() * 16, nat('#ffffff'));
   }
 
   function bgSpace(g, rand) {
@@ -548,16 +725,26 @@
 
   function liveBg(z) {
     if (z === 0) {
-      ctx.globalAlpha = 0.55;
-      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.15 + i * 0.07) + i * 260) % (W + 160)) - 80, 60 + i * 55, 0.8, '#ffffff');
+      ctx.globalAlpha = DAY.night ? 0.22 : 0.55;
+      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.15 + i * 0.07) + i * 260) % (W + 160)) - 80, 60 + i * 55, 0.8, DAY.golden ? '#ffe1cf' : '#ffffff');
       ctx.globalAlpha = 1;
-      for (const w of walkers) drawWalker(w);
+      // mo'ridan tutun (sovuq faslda yoki kechqurun)
+      if (DAY.season === 'winter' || DAY.season === 'autumn' || DAY.darkK > 0) {
+        const cx = HOUSE_X + 13, cy = hillY(HOUSE_X, H - 110, 70, 1.2, 0.6) - 40;
+        for (let i = 0; i < 6; i++) {
+          const t = ((tick * 0.5 + i * 40) % 240) / 240;
+          ctx.globalAlpha = (1 - t) * 0.35; puff(ctx, cx + Math.sin(t * 6 + i) * 6 + t * 30, cy - t * 120, 4 + t * 14, DAY.night ? '#8a90a8' : '#e8e8ee');
+        }
+        ctx.globalAlpha = 1;
+      }
+      // odamlar kunduzi yuradi (tunda uyda)
+      if (DAY.h >= 6.3 && DAY.h < 21.5) for (const w of walkers) drawWalker(w);
     } else if (z === 1) {
-      ctx.globalAlpha = 0.6;
-      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.25 + i * 0.1) + i * 230) % (W + 200)) - 100, 180 + i * 170, 1.1, '#ffffff');
+      ctx.globalAlpha = DAY.night ? 0.25 : 0.6;
+      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.25 + i * 0.1) + i * 230) % (W + 200)) - 100, 180 + i * 170, 1.1, DAY.golden ? '#ffe1cf' : '#ffffff');
       ctx.globalAlpha = 1;
       ctx.strokeStyle = 'rgba(30,60,100,.55)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-      for (let i = 0; i < 3; i++) {
+      if (!DAY.night) for (let i = 0; i < 3; i++) {
         const x = ((tick * 0.6 + i * 45) % (W + 120)) - 60, y = 260 + i * 22 + Math.sin(tick / 40 + i) * 8;
         const f = Math.sin(tick / 6 + i) * 5;
         ctx.beginPath(); ctx.moveTo(x - 9, y - f); ctx.lineTo(x, y); ctx.lineTo(x + 9, y - f); ctx.stroke();
@@ -882,18 +1069,32 @@
     fireTimer = 0;
     firstLandX = null; extraBalls = 0; turnTime = 0; fast = false;
     turnKills = 0; combo = null;
+    shotBoost = null;
+    if (armed && profile.boost[armed] > 0) { profile.boost[armed]--; shotBoost = armed; persist(); }
+    armed = null;
     updateCtrl();
   }
 
   function newBall(x, y, vx, vy, temp) {
-    flying.push({ x, y, vx, vy, s: 'fly', i: flying.length, hit: new Set(), temp });
+    flying.push({ x, y, vx, vy, s: 'fly', i: flying.length, hit: new Set(), temp,
+      fire: shotBoost === 'fire', heavy: shotBoost === 'heavy', pierced: new Set(), tr: [] });
+  }
+
+  // Bitta urilish kuchi: po'lat zarba 2×, kritik zarba yana 2×
+  function hitPower(b, x, y) {
+    let n = b.heavy ? 2 : 1;
+    if (Math.random() < profile.up.power * 0.07) {
+      n *= 2;
+      for (let i = 0; i < 5; i++) { const a = Math.random() * Math.PI * 2; pushFx({ k: 'p', x, y, vx: Math.cos(a) * 4, vy: Math.sin(a) * 4, life: 16, color: '#ffd23a', size: 3 }); }
+    }
+    return n;
   }
 
   function stepPhysics() {
     turnTime++;
     if (shotsLeft > 0) {
       if (fireTimer <= 0) {
-        newBall(game.launchX, H - R, fireDir.x * SPEED, fireDir.y * SPEED, false);
+        newBall(game.launchX, H - R, fireDir.x * ballSpeed(), fireDir.y * ballSpeed(), false);
         shotsLeft--;
         fireTimer = FIRE_GAP;
       }
@@ -910,11 +1111,12 @@
 
   function moveBall(b) {
     const n = 3;
+    b.tr.push(b.x, b.y); if (b.tr.length > 14) b.tr.splice(0, 2);   // harakat izi
     for (let s = 0; s < n; s++) {
       b.x += b.vx / n; b.y += b.vy / n;
-      if (b.x < R) { b.x = R; b.vx = Math.abs(b.vx); }
-      if (b.x > W - R) { b.x = W - R; b.vx = -Math.abs(b.vx); }
-      if (b.y < R) { b.y = R; b.vy = Math.abs(b.vy); }
+      if (b.x < R) { b.x = R; b.vx = Math.abs(b.vx); b.pierced.clear(); }
+      if (b.x > W - R) { b.x = W - R; b.vx = -Math.abs(b.vx); b.pierced.clear(); }
+      if (b.y < R) { b.y = R; b.vy = Math.abs(b.vy); b.pierced.clear(); }
       if (b.y >= H - R && b.vy > 0) { land(b); return; }
       collide(b);
     }
@@ -941,6 +1143,11 @@
         const px = Math.max(x0, Math.min(b.x, x1)), py = Math.max(y0, Math.min(b.y, y1));
         const dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
         if (d >= R) continue;
+        if (b.fire) {   // olovli to'p qaytmaydi — g'ishtni teshib o'tadi (har o'tishda bir marta uradi)
+          const key = cell.t === 'boss' ? cell.ref : cell;
+          if (!b.pierced.has(key)) { b.pierced.add(key); hitSound(); damage(r, c, hitPower(b, px, py) * 2, px, py); }
+          continue;
+        }
         let nx, ny;
         if (d === 0) {   // markaz ichkariga kirib qolgan — eng yaqin tomondan chiqaramiz
           const opts = [[b.x - x0, -1, 0], [x1 - b.x, 1, 0], [b.y - y0, 0, -1], [y1 - b.y, 0, 1]];
@@ -957,11 +1164,11 @@
           b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny;
           fixAngle(b);
           hitSound();
-          damage(r, c, 1, px, py);
+          damage(r, c, hitPower(b, px, py), px, py);
         }
       } else {
         const cx = c * CELL + CELL / 2, cy = r * CELL + CELL / 2;
-        if (Math.hypot(b.x - cx, b.y - cy) >= R + 22) continue;
+        if (Math.hypot(b.x - cx, b.y - cy) >= R + 22 + profile.up.magnet * 9) continue;
         if (SPECIALS.includes(cell.t)) special(b, r, c, cell);
         else collect(r, c, cell);
       }
@@ -970,10 +1177,10 @@
 
   // Deyarli gorizontal uchishni oldini oladi (aks holda to'p abadiy chayqaladi).
   function fixAngle(b) {
-    const minVy = SPEED * 0.12;
+    const sp = Math.hypot(b.vx, b.vy), minVy = sp * 0.12;
     if (Math.abs(b.vy) < minVy) {
       b.vy = (b.vy >= 0 ? 1 : -1) * minVy;
-      const k = SPEED / Math.hypot(b.vx, b.vy);
+      const k = sp / Math.hypot(b.vx, b.vy);
       b.vx *= k; b.vy *= k;
     }
   }
@@ -1087,6 +1294,7 @@
       const a = (Math.random() < 0.5 ? -1 : 1) * 0.45;
       const vx = b.vx * Math.cos(a) - b.vy * Math.sin(a), vy = b.vx * Math.sin(a) + b.vy * Math.cos(a);
       newBall(b.x, b.y, vx, vy, true);
+      Object.assign(flying[flying.length - 1], { fire: b.fire, heavy: b.heavy });
       flying[flying.length - 1].hit = new Set(b.hit);
       fixAngle(flying[flying.length - 1]);
       beep(900, 0.06, 0.03, 'sine');
@@ -1716,6 +1924,8 @@
       liveBg(game.zone);
     }
 
+    drawSeason();
+
     // Xavf: g'isht chiziqqa bir qadam qolganda pastda qizil nur
     if (phase === 'aim' && game.grid[ROWS - 2].some(isSolid)) {
       const a = 0.25 + 0.15 * Math.sin(tick / 8);
@@ -1727,6 +1937,15 @@
     const off = phase === 'shift' ? Math.min(1, shiftAnim) * CELL : 0;
     const refHp = Math.max(1, game.level * ZONES[game.zone].hpK), draw1 = DRAW[curStyle()];
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // G'ishtlar soyasi — chuqurlik hissi uchun (yorug'lik yuqori-chapdan)
+    const shadowCol = { liquid: 'rgba(40,70,110,.12)', cloud: 'rgba(40,70,120,.13)', soil: 'rgba(25,12,0,.28)', stone: 'rgba(0,0,0,.35)', rock: 'rgba(0,0,0,.45)' }[curStyle()];
+    ctx.fillStyle = shadowCol;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = game.grid[r][c];
+      if (!isSolid(cell)) continue;
+      const [x0, y0, x1, y1] = cellRect(r, c, cell);
+      roundRect(x0 + 5, y0 + 7 + off, x1 - x0, y1 - y0, BR); ctx.fill();
+    }
     const drawnBoss = new Set();
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const cell = game.grid[r][c];
@@ -1747,12 +1966,12 @@
     // To'plar
     const labelFont = '800 30px Roboto, Arial, sans-serif';
     if (phase === 'aim' || phase === 'shift' || phase === 'zone' || (phase === 'fire' && shotsLeft > 0)) {
-      drawBall(game.launchX, H - R, 0);
+      drawBall(game.launchX, H - R, 0, armed ? { fire: armed === 'fire', heavy: armed === 'heavy' } : null);
       ctx.fillStyle = ballColor(0); ctx.font = labelFont;
       ctx.fillText('x' + (phase === 'fire' ? shotsLeft : game.balls), clampLabel(game.launchX), H - R * 2 - 22);
     }
     if (phase === 'fire') {
-      for (const b of flying) if (b.s !== 'gone') drawBall(b.x, b.y, b.i);
+      for (const b of flying) if (b.s !== 'gone') { if (b.s === 'fly') drawTrail(b); drawBall(b.x, b.y, b.i, b); }
       if (firstLandX !== null && shotsLeft === 0) {
         const landed = flying.filter(b => b.s === 'done' && !b.temp).length;
         if (landed > 0) {
@@ -1828,12 +2047,35 @@
 
   function clampLabel(x) { return Math.max(30, Math.min(W - 30, x)); }
 
-  function drawBall(x, y, i) {
-    ctx.fillStyle = ballColor(i);
-    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.45)';
-    ctx.beginPath(); ctx.arc(x - 4, y - 4, 4, 0, Math.PI * 2); ctx.fill();
+  // Hajmli shar: asosiy rang + yorug'lik dog'i + qorong'i chet (har qanday rang bilan ishlaydi)
+  function drawBall(x, y, i, b) {
+    const fire = b && b.fire, heavy = b && b.heavy, r = heavy ? R + 2 : R;
+    if (fire) {   // olov yorug'i
+      const fl = 0.8 + Math.sin(tick * 0.9 + i) * 0.2;
+      const g0 = ctx.createRadialGradient(x, y, 2, x, y, r * 2.4 * fl);
+      g0.addColorStop(0, 'rgba(255,200,80,.7)'); g0.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = g0; ctx.beginPath(); ctx.arc(x, y, r * 2.4 * fl, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = fire ? '#ff7a1a' : heavy ? '#8d99a6' : ballColor(i);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    const hl = ctx.createRadialGradient(x - r * 0.4, y - r * 0.45, 0.5, x - r * 0.2, y - r * 0.2, r * 1.05);
+    hl.addColorStop(0, 'rgba(255,255,255,.85)'); hl.addColorStop(0.35, 'rgba(255,255,255,.18)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl; ctx.fill();
+    const sh = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.5, x, y, r * 1.02);
+    sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(1, heavy ? 'rgba(20,30,40,.55)' : 'rgba(0,0,0,.32)');
+    ctx.fillStyle = sh; ctx.fill();
+    if (heavy) { ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, r * 0.62, -2.4, -0.9); ctx.stroke(); }
+  }
+  // Harakat izi: oddiy to'pda xira iz, olovlida alanga
+  function drawTrail(b) {
+    const t = b.tr, n = t.length / 2;
+    for (let k = 0; k < n; k++) {
+      const f = (k + 1) / (n + 1);
+      ctx.globalAlpha = f * (b.fire ? 0.55 : 0.18);
+      ctx.fillStyle = b.fire ? (k % 2 ? '#ffb347' : '#ff6a1a') : b.heavy ? '#8d99a6' : ballColor(b.i);
+      ctx.beginPath(); ctx.arc(t[k * 2], t[k * 2 + 1], R * (0.35 + 0.6 * f) * (b.fire ? 1.15 : 1), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function aimDir(p) {
@@ -1891,6 +2133,7 @@
       if (banner && --banner.life <= 0) banner = null;
       if (combo && --combo.life <= 0) combo = null;
       ambientCrumbs();
+      updateSeason();
       if (tick % 30 === 0) Music.setTension(game.grid.some(row => row.some(c => c && c.t === 'boss')));
       for (const w of walkers) {
         w.x += w.v; w.ph += Math.abs(w.v) * 0.18;
@@ -1957,6 +2200,12 @@
     $('zoneHint').textContent = game.zone < ZMAX ? `Ko'tarilish: ${game.climb}/${need}` : `Cho'qqi bonusi: ${game.climb}/${need}`;
   }
   function updateCtrl() {
+    for (const [id, key] of [['boostFire', 'fire'], ['boostHeavy', 'heavy']]) {
+      const el = $(id);
+      el.classList.toggle('on', phase === 'aim');
+      el.classList.toggle('active', armed === key);
+      el.querySelector('span').textContent = profile.boost[key];
+    }
     $('fastBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60);
     $('recallBtn').classList.toggle('on', phase === 'fire' && turnTime >= 60);
     $('fastBtn').classList.toggle('active', fast);
@@ -2009,6 +2258,16 @@
   };
 
   function renderShop() {
+    $('upgList').innerHTML = UPG.map(u => {
+      const l = profile.up[u.id], maxed = l >= u.max;
+      const pips = Array.from({ length: u.max }, (_, k) => `<i class="${k < l ? 'f' : ''}"></i>`).join('');
+      return `<div class="chute"><span class="em">${u.icon}</span>
+        <div>${u.name} <small>${u.desc(maxed ? l : l + 1)}${maxed ? '' : ' (keyingi daraja)'}</small><span class="pips">${pips}</span></div>
+        <button data-up="${u.id}" ${maxed ? 'disabled' : ''}>${maxed ? 'MAX' : 'S ' + u.price(l)}</button></div>`;
+    }).join('');
+    $('boostList').innerHTML = BOOSTS.map(b => `<div class="chute"><span class="em">${b.icon}</span>
+        <div>${b.name} <small>${b.desc}. Sizda: <b>${profile.boost[b.id]}</b></small></div>
+        <button data-boost="${b.id}">P ${b.price}</button></div>`).join('');
     $('shopCoins').textContent = profile.coins;
     $('shopGems').textContent = profile.gems;
     $('chuteCount').textContent = profile.chutes;
@@ -2021,6 +2280,32 @@
     }).join('');
   }
   $('shopBtn').onclick = () => { renderShop(); show('shopModal'); };
+  $('upgList').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-up]'); if (!btn) return;
+    const u = UPG.find(k => k.id === btn.dataset.up), l = profile.up[u.id];
+    if (l >= u.max) return;
+    if (profile.coins < u.price(l)) { toast('S tanga yetarli emas'); return; }
+    profile.coins -= u.price(l); profile.up[u.id]++;
+    if (u.id === 'start') game.balls++;
+    toast(`${u.icon} ${u.name}: ${profile.up[u.id]}-daraja`);
+    persist(); renderShop(); updateHud();
+  });
+  $('boostList').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-boost]'); if (!btn) return;
+    const b = BOOSTS.find(k => k.id === btn.dataset.boost);
+    if (profile.gems < b.price) { toast('P bonus yetarli emas'); return; }
+    profile.gems -= b.price; profile.boost[b.id]++;
+    toast(`${b.icon} ${b.name} olindi`);
+    persist(); renderShop(); updateHud(); updateCtrl();
+  });
+  for (const [id, key] of [['boostFire', 'fire'], ['boostHeavy', 'heavy']]) {
+    $(id).onclick = () => {
+      if (phase !== 'aim') return;
+      if (profile.boost[key] <= 0) { toast("Do'kondan oling (P bonusga)"); renderShop(); show('shopModal'); return; }
+      armed = armed === key ? null : key;
+      updateCtrl();
+    };
+  }
   $('buyChute').onclick = () => {
     if (profile.gems < 10) { toast('P bonus yetarli emas'); return; }
     profile.gems -= 10; profile.chutes++;
@@ -2065,6 +2350,8 @@
   if (game) { applyZoneColors(game.zone); updateHud(); }
   else newGame();
   if (!profile.helpSeen) { profile.helpSeen = true; persist(); show('helpModal'); }
+  updateCtrl();
+  toast(`${DAY.seasonIcon} ${DAY.seasonName} · ${DAY.partName}`);
   requestAnimationFrame(loop);
   // Sahifa yopilayotganda profilni saqlaymiz (o'yin holati har yurish boshida saqlanadi)
   document.addEventListener('visibilitychange', () => {
