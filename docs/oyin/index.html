@@ -161,6 +161,7 @@
   <button class="big primary" data-close>Davom etish</button>
   <button class="big" id="newGameBtn">Yangi o'yin</button>
   <button class="big" id="soundBtn">Ovoz: yoqilgan</button>
+  <button class="big" id="musicBtn">Musiqa: yoqilgan</button>
   <button class="big" id="helpBtn">Qanday o'ynaladi?</button>
 </div></div>
 
@@ -269,7 +270,7 @@
   };
   const saved = store.get();
   const profile = Object.assign({
-    record: 1, coins: 0, gems: 0, sound: true, skin: 'blue', owned: ['blue'],
+    record: 1, coins: 0, gems: 0, sound: true, music: true, skin: 'blue', owned: ['blue'],
     games: 0, bricks: 0, rings: 0, helpSeen: false, chutes: 0, falls: 0, climbs: 0, maxZone: 0,
   }, saved.profile || {});
 
@@ -307,6 +308,7 @@
     phase = 'aim';
     zoneAnim = null;
     applyZoneColors(0);
+    Music.setZone(0);
     resetTurn();
     persist();
     updateHud();
@@ -634,6 +636,240 @@
     const base = { liquid: 620, cloud: 760, rock: 420, soil: 300, stone: 380 }[curStyle()];
     beep(base + Math.random() * 60, 0.04, 0.03, curStyle() === 'liquid' ? 'sine' : 'square');
   }
+
+  // ---------- Musiqa (Web Audio orqali kodda yaratiladi, tashqi fayl yo'q) ----------
+  // Har qatlamning o'z kuyi: lad, temp, akkordlar ketma-ketligi, cholg'ular va tabiat ovozlari.
+  const SCALES = {
+    major: [0, 2, 4, 5, 7, 9, 11], lydian: [0, 2, 4, 6, 7, 9, 11], dorian: [0, 2, 3, 5, 7, 9, 10],
+    aeolian: [0, 2, 3, 5, 7, 8, 10], phrygian: [0, 1, 3, 5, 7, 8, 10],
+  };
+  const SONGS = {
+    // Yer usti: quvnoq, quyoshli — chertma arpeggio, hushtak kuyi, yengil ritm, qushlar
+    '0': { gain: 1.1, bpm: 100, root: 60, scale: 'major', prog: [0, 4, 5, 3], seventh: false,
+      pad: { type: 'triangle', vol: 0.035, att: 0.5, cut: 1600 },
+      bass: { steps: [0, 6, 8, 14], type: 'sine', vol: 0.09, oct: -2 },
+      arp: { steps: [0, 2, 4, 6, 8, 10, 12, 14], seq: [0, 1, 2, 1, 0, 2, 1, 2], oct: 1, inst: 'pluck', vol: 0.045 },
+      lead: { inst: 'whistle', vol: 0.04, oct: 1, every: 2 },
+      drums: { kick: [0, 8], kv: 0.12, shaker: [2, 6, 10, 14], sv: 0.025 },
+      amb: { bird: 0.035, breeze: 0.012 } },
+    // Osmon: havodor, sekin — uzun pad, qo'ng'iroqchalar, shamol
+    '1': { gain: 0.65, bpm: 76, root: 65, scale: 'lydian', prog: [0, 1, 4, 0], seventh: true,
+      pad: { type: 'sine', vol: 0.05, att: 1.4, cut: 2600 },
+      bass: { steps: [0], type: 'sine', vol: 0.07, oct: -2, long: true },
+      arp: { steps: [0, 3, 6, 10, 12], seq: [0, 2, 3, 1, 2], oct: 1, inst: 'bell', vol: 0.03 },
+      lead: { inst: 'bell', vol: 0.025, oct: 2, every: 2 },
+      drums: null,
+      amb: { wind: 0.05, sparkle: 0.01 } },
+    // Koinot: sirli, keng — chuqur dron, aks-sadoli qo'ng'iroqlar, uchqunlar
+    '2': { gain: 1.05, bpm: 60, root: 57, scale: 'aeolian', prog: [0, 5, 3, 4], seventh: true,
+      pad: { type: 'sawtooth', vol: 0.022, att: 2.2, cut: 900 },
+      bass: { steps: [0], type: 'sine', vol: 0.08, oct: -2, long: true },
+      arp: { steps: [0, 5, 8, 11, 14], seq: [2, 0, 3, 1, 2], oct: 2, inst: 'bell', vol: 0.022 },
+      lead: null,
+      drums: null,
+      amb: { sparkle: 0.05, ping: 0.006 } },
+    // Yer osti: yog'och marimba, taqillatish, suv tomchilari
+    '-1': { gain: 1.55, bpm: 92, root: 50, scale: 'dorian', prog: [0, 3, 0, 6], seventh: false,
+      pad: { type: 'triangle', vol: 0.025, att: 0.8, cut: 900 },
+      bass: { steps: [0, 10], type: 'triangle', vol: 0.1, oct: -1 },
+      arp: { steps: [0, 3, 6, 8, 11, 14], seq: [0, 2, 1, 2, 0, 1], oct: 1, inst: 'marimba', vol: 0.06 },
+      lead: { inst: 'marimba', vol: 0.045, oct: 2, every: 2 },
+      drums: { kick: [0, 8], kv: 0.1, knock: [4, 12, 15], nv: 0.05 },
+      amb: { drip: 0.04 } },
+    // Chuqurlik: past va qorong'i — yurak urishi ritmi, gumburlash, lava bilqillashi
+    '-2': { gain: 1.7, bpm: 68, root: 45, scale: 'phrygian', prog: [0, 1, 0, 6], seventh: false,
+      pad: { type: 'sawtooth', vol: 0.03, att: 1.2, cut: 600 },
+      bass: { steps: [0, 8], type: 'sawtooth', vol: 0.06, oct: -1, cut: 300 },
+      arp: { steps: [0, 6, 10], seq: [0, 2, 1], oct: 1, inst: 'pluck', vol: 0.04, cut: 1200 },
+      lead: { inst: 'bell', vol: 0.02, oct: 1, every: 4 },
+      drums: { kick: [0, 3], kv: 0.16 },
+      amb: { rumble: 0.11, bubble: 0.03 } },
+  };
+
+  function MusicEngine(ac) {
+    const out = ac.createGain(); out.gain.value = 0.6; out.connect(ac.destination);
+    const verb = ac.createConvolver();
+    const len = Math.floor(ac.sampleRate * 2.6), ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.8); }
+    verb.buffer = ir;
+    const vg = ac.createGain(); vg.gain.value = 0.5; verb.connect(vg); vg.connect(out);
+    const dly = ac.createDelay(1.5); dly.delayTime.value = 0.42;
+    const fb = ac.createGain(); fb.gain.value = 0.35; dly.connect(fb); fb.connect(dly);
+    const dg = ac.createGain(); dg.gain.value = 0.45; dly.connect(dg); dg.connect(out);
+    const nbuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    { const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+
+    let cur = null, zone = 0, step = 0, bar = 0, nextT = 0, tension = false, leadPat = null;
+    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+
+    // Qatlam uchun alohida "shina": almashganda eskisi so'nadi, yangisi kuchayadi
+    function bundle(t, fade, z) {
+      const b = { dry: ac.createGain(), rev: ac.createGain(), dly: ac.createGain(), stops: [] };
+      for (const g of [b.dry, b.rev, b.dly]) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(SONGS[z].gain, t + fade); }
+      b.dry.connect(out); b.rev.connect(verb); b.dly.connect(dly);
+      return b;
+    }
+    function fadeOut(b, t, dur) {
+      for (const g of [b.dry, b.rev, b.dly]) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value || 1, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); }
+      b.stops.forEach(f => f(t + dur + 0.1));
+      setTimeout(() => { try { b.dry.disconnect(); b.rev.disconnect(); b.dly.disconnect(); } catch {} }, (dur + 0.5) * 1000);
+    }
+    function route(g, rev = 0, del = 0) {
+      g.connect(cur.dry);
+      if (rev) { const s = ac.createGain(); s.gain.value = rev; g.connect(s); s.connect(cur.rev); }
+      if (del) { const s = ac.createGain(); s.gain.value = del; g.connect(s); s.connect(cur.dly); }
+    }
+    // Asosiy ovoz: osilyator + filtr + konvert (perc — urma, aks holda cho'ziq)
+    function voice(type, f, t, dur, vol, o = {}) {
+      const osc = ac.createOscillator(); osc.type = type;
+      osc.frequency.setValueAtTime(f, t);
+      if (o.glide) osc.frequency.exponentialRampToValueAtTime(o.glide, t + (o.gt || dur));
+      if (o.det) osc.detune.value = o.det;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      if (o.perc) {
+        g.gain.exponentialRampToValueAtTime(vol, t + (o.att || 0.005));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      } else {
+        const att = o.att || 0.02, rel = o.rel || 0.3;
+        g.gain.exponentialRampToValueAtTime(vol, t + att);
+        g.gain.setValueAtTime(vol, t + Math.max(att, dur - rel));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      }
+      let n = osc;
+      if (o.cut) { const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = o.cut; fl.Q.value = o.q || 0.7; osc.connect(fl); n = fl; }
+      n.connect(g); route(g, o.rev, o.del);
+      osc.start(t); osc.stop(t + dur + 0.05);
+    }
+    function noise(t, dur, vol, type, freq, q = 1) {
+      const src = ac.createBufferSource(); src.buffer = nbuf;
+      const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
+      const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(fl); fl.connect(g); route(g, 0.1);
+      src.start(t, Math.random() * 1.5); src.stop(t + dur + 0.02);
+    }
+    const INST = {
+      pluck: (t, m, v, c) => voice('triangle', mtof(m), t, 0.45, v, { perc: true, cut: c || 2400, rev: 0.25, del: 0.15 }),
+      marimba: (t, m, v) => { voice('sine', mtof(m), t, 0.4, v, { perc: true, rev: 0.3 }); voice('sine', mtof(m) * 4, t, 0.06, v * 0.35, { perc: true }); },
+      bell: (t, m, v) => { voice('sine', mtof(m), t, 2.4, v, { perc: true, rev: 0.7, del: 0.35 }); voice('sine', mtof(m) * 2.76, t, 1.1, v * 0.3, { perc: true, rev: 0.6 }); },
+      whistle: (t, m, v, c, dur) => voice('sine', mtof(m), t, dur || 0.35, v, { att: 0.03, rel: 0.12, rev: 0.4, del: 0.2 }),
+    };
+    function kick(t, v) { voice('sine', 130, t, 0.32, v, { perc: true, glide: 42, gt: 0.25 }); }
+
+    // Uzluksiz tabiat ovozlari (shamol, gumburlash, mayin shabada)
+    function startAmb(b, z, t) {
+      const A = SONGS[z].amb;
+      const loop = (vol, type, freq, q, lfo) => {
+        const src = ac.createBufferSource(); src.buffer = nbuf; src.loop = true;
+        const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
+        const g = ac.createGain(); g.gain.value = vol;
+        src.connect(fl); fl.connect(g); g.connect(b.dry);
+        let l = null;
+        if (lfo) {
+          l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = freq * 0.6;
+          l.connect(lg); lg.connect(fl.frequency); l.start(t);
+        }
+        src.start(t);
+        b.stops.push(tt => { try { src.stop(tt); l && l.stop(tt); } catch {} });
+      };
+      if (A.wind) loop(A.wind, 'bandpass', 600, 0.8, 0.07);
+      if (A.breeze) loop(A.breeze, 'bandpass', 900, 0.5, 0.05);
+      if (A.rumble) loop(A.rumble, 'lowpass', 110, 1, 0.04);
+    }
+    function ambEvents(t, S) {
+      const A = S.amb, r = Math.random;
+      if (A.bird && r() < A.bird) { const f = 2200 + r() * 1800, n = 2 + Math.floor(r() * 3); for (let i = 0; i < n; i++) voice('sine', f, t + i * 0.09, 0.07, 0.02, { perc: true, glide: f * (1.3 + r() * 0.4), gt: 0.06, rev: 0.3 }); }
+      if (A.drip && r() < A.drip) voice('sine', 1300 + r() * 500, t, 0.14, 0.035, { perc: true, glide: 420, gt: 0.08, rev: 0.6, del: 0.4 });
+      if (A.sparkle && r() < A.sparkle) INST.bell(t, S.root + 24 + SCALES[S.scale][Math.floor(r() * 7)], 0.012);
+      if (A.ping && r() < A.ping) voice('sine', 1760, t, 1.6, 0.02, { perc: true, rev: 0.8, del: 0.6 });
+      if (A.bubble && r() < A.bubble) voice('sine', 70 + r() * 40, t, 0.18, 0.06, { perc: true, glide: 160 + r() * 80, gt: 0.15 });
+    }
+
+    const deg = (S, d) => S.root + 12 * Math.floor(d / 7) + SCALES[S.scale][((d % 7) + 7) % 7];
+    function chordOf(S, d) { const c = [deg(S, d), deg(S, d + 2), deg(S, d + 4)]; if (S.seventh) c.push(deg(S, d + 6)); return c; }
+
+    // Har bir 16-lik nota uchun nimani chalish kerakligini hal qiladi
+    function playStep(t) {
+      const S = SONGS[zone], i = step % 16, spb = 60 / S.bpm / 4;
+      const cd = S.prog[bar % S.prog.length], ch = chordOf(S, cd);
+      if (i === 0) {
+        const dur = spb * 16 + 0.4;
+        for (const m of ch) for (const det of [-7, 7]) voice(S.pad.type, mtof(m), t, dur, S.pad.vol, { att: S.pad.att, rel: 0.6, cut: S.pad.cut, det, rev: 0.6 });
+        // Kuy: har necha taktda bir, takt boshida tasodifiy (lekin lad ichida) yangi jumla tuziladi
+        leadPat = null;
+        if (S.lead && bar % S.lead.every === S.lead.every - 1) {
+          const rand = prng(bar * 977 + zone * 131 + 7);
+          leadPat = {};
+          let d = cd + 7 * S.lead.oct + [0, 2, 4][Math.floor(rand() * 3)];
+          for (const st of [0, 2, 4, 6, 8, 10, 12, 14]) {
+            if (rand() < 0.55) { leadPat[st] = deg(S, d); d += [-2, -1, 1, 2, 0][Math.floor(rand() * 5)]; }
+          }
+        }
+      }
+      if (S.bass && S.bass.steps.includes(i)) {
+        const k = S.bass.steps.indexOf(i), m = (k % 2 ? deg(S, cd + 4) : ch[0]) + 12 * S.bass.oct;
+        voice(S.bass.type, mtof(m), t, S.bass.long ? spb * 16 : spb * 3, S.bass.vol, S.bass.long ? { att: 0.4, rel: 0.8, cut: S.bass.cut || 500 } : { perc: true, att: 0.01, cut: S.bass.cut || 700 });
+      }
+      if (S.arp && S.arp.steps.includes(i)) {
+        const k = S.arp.steps.indexOf(i), m = ch[S.arp.seq[k % S.arp.seq.length] % ch.length] + 12 * S.arp.oct;
+        INST[S.arp.inst](t, m, S.arp.vol, S.arp.cut);
+      }
+      if (leadPat && leadPat[i] !== undefined) INST[S.lead.inst](t, leadPat[i], S.lead.vol, 0, spb * 2);
+      const D = S.drums;
+      if (D) {
+        if (D.kick && D.kick.includes(i)) kick(t, D.kv);
+        if (D.shaker && D.shaker.includes(i)) noise(t, 0.05, D.sv, 'bandpass', 6000, 1.2);
+        if (D.knock && D.knock.includes(i)) noise(t, 0.05, D.nv, 'bandpass', 1700, 8);
+      }
+      if (tension) {   // boss bor — ritm tezlashadi
+        noise(t, 0.04, i % 4 === 2 ? 0.03 : 0.015, 'highpass', 7000);
+        if (i % 4 === 0) kick(t, 0.13);
+      }
+      ambEvents(t, S);
+    }
+
+    return {
+      start(z, t, fade = 2.5) { zone = z; cur = bundle(t, fade, z); startAmb(cur, z, t); nextT = t + 0.05; step = 0; bar = 0; },
+      schedule(until) {
+        while (nextT < until) {
+          playStep(nextT);
+          nextT += 60 / SONGS[zone].bpm / 4;
+          step++; if (step % 16 === 0) bar++;
+        }
+      },
+      setZone(z, t) {
+        if (z === zone || !cur) { zone = z; return; }
+        fadeOut(cur, t, 2.5);
+        zone = z; cur = bundle(t, 2.5, z); startAmb(cur, z, t);
+        step = 0; bar = 0; nextT = Math.max(nextT, t + 0.05);
+      },
+      stop(t) { if (cur) fadeOut(cur, t, 0.6); cur = null; },
+      setTension(v) { tension = v; },
+    };
+  }
+
+  // Musiqa boshqaruvchisi: brauzer ovozni faqat foydalanuvchi bosgandan keyin ruxsat beradi
+  const Music = {
+    eng: null, timer: null, on: false,
+    start(z) {
+      if (this.on || !profile.music) return;
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        if (!this.eng) this.eng = MusicEngine(actx);
+        this.eng.start(z, actx.currentTime);
+        this.on = true;
+        this.timer = setInterval(() => this.eng.schedule(actx.currentTime + 0.25), 50);
+      } catch {}
+    },
+    stop() {
+      if (!this.on) return;
+      this.on = false; clearInterval(this.timer);
+      try { this.eng.stop(actx.currentTime); } catch {}
+    },
+    setZone(z) { if (this.on) try { this.eng.setZone(z, actx.currentTime); } catch {} },
+    setTension(v) { if (this.eng) this.eng.setTension(v); },
+  };
 
   // ---------- Fizika ----------
   const isSolid = c => c && (c.t === 'brick' || c.t === 'boss');
@@ -984,6 +1220,7 @@
     spawnRow(to);
     if (to !== from) {
       zoneAnim = { from, to, t: 0 };
+      Music.setZone(to);
       phase = 'zone';
     } else {
       phase = 'aim';
@@ -1654,6 +1891,7 @@
       if (banner && --banner.life <= 0) banner = null;
       if (combo && --combo.life <= 0) combo = null;
       ambientCrumbs();
+      if (tick % 30 === 0) Music.setTension(game.grid.some(row => row.some(c => c && c.t === 'boss')));
       for (const w of walkers) {
         w.x += w.v; w.ph += Math.abs(w.v) * 0.18;
         if (w.x < -20) w.x = W + 20; if (w.x > W + 20) w.x = -20;
@@ -1737,7 +1975,14 @@
 
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.remove('show')));
   const soundLabel = () => 'Ovoz: ' + (profile.sound ? 'yoqilgan' : "o'chirilgan");
-  $('menuBtn').onclick = () => { resetNewBtn(); $('soundBtn').textContent = soundLabel(); show('menuModal'); };
+  const musicLabel = () => 'Musiqa: ' + (profile.music ? 'yoqilgan' : "o'chirilgan");
+  $('menuBtn').onclick = () => { resetNewBtn(); $('soundBtn').textContent = soundLabel(); $('musicBtn').textContent = musicLabel(); show('menuModal'); };
+  $('musicBtn').onclick = () => {
+    profile.music = !profile.music; $('musicBtn').textContent = musicLabel(); persist();
+    if (profile.music) Music.start(game.zone); else Music.stop();
+  };
+  // Birinchi bosishda musiqa boshlanadi (brauzer avtomatik ovozga ruxsat bermaydi)
+  window.addEventListener('pointerdown', () => Music.start(game.zone));
   $('soundBtn').onclick = () => { profile.sound = !profile.sound; $('soundBtn').textContent = soundLabel(); persist(); };
   $('helpBtn').onclick = () => { hide('menuModal'); show('helpModal'); };
   // Tasdiqlash sahifaning o'zida: birinchi bosish so'raydi, ikkinchisi boshlaydi
@@ -1824,7 +2069,10 @@
   // Sahifa yopilayotganda profilni saqlaymiz (o'yin holati har yurish boshida saqlanadi)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) store.set(Object.assign(store.get(), { profile }));
+    // Ilova yashirilganda musiqa va ovozlar to'xtaydi, qaytganda davom etadi
+    try { if (actx) document.hidden ? actx.suspend() : actx.resume(); } catch {}
   });
+  window.__musicEngine = MusicEngine;   // sinov uchun (oflayn render)
 })();
 </script>
 </body>
