@@ -5,10 +5,13 @@ siz nomingizdan javob beradi.
 
 | Rejim | Nima qiladi |
 |---|---|
-| ⏰+🤖 **Avtojavob + AI** *(standart)* | Avval «hozir bandman» matnini yuboradi, keyin AI savolga javob beradi va suhbatni davom ettiradi |
-| 🤖 **AI suhbat** | Faqat AI javob beradi |
-| ⏰ **Avtojavob** | Faqat tayyor matn (bir suhbatga 6 soatda bir marta) |
+| ⭐ **Aralash** *(standart)* | Siz **belgilagan** odamlarga faqat «Hozir bandman, bo'shashim bilan o'zim yozaman» boradi; **qolganlar** bilan AI suhbatlashadi |
+| 🤖 **Hammaga AI** | Hammaga AI javob beradi |
+| ⏰ **Hammaga avtojavob** | Hammaga faqat tayyor matn |
 | ⛔ **O'chiq** | Hech narsa qilmaydi |
+
+Avtojavob bir odamga 6 soatda bir marta yuboriladi. **Guruh, kanal va
+botlarga** bot hech qachon yozmaydi — faqat odamlar bilan shaxsiy chatlarda.
 
 Siz o'zingiz biror chatda yozsangiz, bot o'sha chatda **30 daqiqa jim turadi**
 va suhbatingizga aralashmaydi.
@@ -30,10 +33,12 @@ va suhbatingizga aralashmaydi.
 ## Sozlash (botning o'ziga yozasiz)
 
 - `/start` — holat va rejim tugmalari
-- `/matn Hozir bandman, kechqurun yozaman` — avtojavob matni
+- `/matn Hozir bandman, bo'shab o'zim yozaman` — avtojavob matni
 - `/haqimda Ismim Ali, dizaynerman. Logotip 300 ming so'm, 3 kunda tayyor.` —
   AI shu ma'lumotga tayanadi (bilmagan narsani o'ylab topmaydi)
 - `/tozala` — AI suhbat tarixini o'chirish
+- **⭐ Belgilanganlar** — pastdagi **➕ Belgilash** tugmasini bosib kontaktlaringizdan
+  tanlaysiz (bir yo'la 10 tagacha). Ro'yxatdan olish: ism yonidagi `/ochir_…` ni bosing.
 
 Kompyuterda ishga tushirish: `pip install -r requirements.txt`, keyin
 `BOT_TOKEN=... ANTHROPIC_API_KEY=... python3 bot.py`.

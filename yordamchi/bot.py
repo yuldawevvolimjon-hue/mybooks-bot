@@ -3,13 +3,14 @@
 Shaxsiy yordamchi — Telegram «Chat automation» (Business) boti.
 
 Bot shaxsiy akkauntingizga ulanadi (Settings → Chat automation) va sizga
-yozganlarga siz nomingizdan javob beradi. Ikki rejim bor:
-  ⏰ Avtojavob — tayyor matn (masalan «Hozir bandman, keyinroq yozaman»).
-                 Har bir suhbatga AVTO_QAYTA soatda bir marta yuboriladi.
-  🤖 AI suhbat — Claude suhbatni o'qib, siz haqingizdagi ma'lumot asosida
-                 tabiiy javob yozadi.
-  ⏰+🤖 Ikkalasi — avval avtojavob matni («hozir bandman»), keyin AI
-                 suhbatni davom ettiradi (standart rejim).
+yozganlarga siz nomingizdan javob beradi. Rejimlar:
+  ⭐ Aralash   — siz belgilagan odamlarga faqat avtojavob («Hozir bandman,
+                 bo'shab o'zim yozaman»), qolganlar bilan AI suhbatlashadi
+                 (standart rejim).
+  🤖 AI suhbat — hammaga AI javob beradi.
+  ⏰ Avtojavob — hammaga tayyor matn.
+Avtojavob bir suhbatga AVTO_QAYTA soatda bir marta yuboriladi. Guruh, kanal
+va botlarga bot hech qachon yozmaydi — faqat odamlar bilan shaxsiy chatlarda.
 Siz o'zingiz biror chatda yozsangiz, bot o'sha chatda TINCH daqiqa jim turadi —
 suhbatga aralashmaydi.
 
@@ -18,6 +19,7 @@ Sozlash — botning o'ziga (shaxsiy chatda) yoziladi, faqat ulagan egasi uchun:
     /matn <matn>        avtojavob matni
     /haqimda <matn>     AI uchun siz haqingizda: ism, kasb, narxlar, manzil...
     /tozala             AI suhbat tarixini o'chirish
+    ⭐ Belgilanganlar   «➕ Belgilash» tugmasi bilan kontakt tanlanadi
 
 Rejimlar:
     python3 bot.py                 # doimiy (server bo'lsa): long polling
@@ -59,11 +61,10 @@ AVTO_QAYTA = int(os.environ.get("AVTO_QAYTA") or 6) * 3600
 KUTISH = 4                 # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
 TARIX = 30                 # AI uchun har bir suhbatdan nechta oxirgi xabar saqlanadi
 
-STANDART_MATN = ("Assalomu alaykum! Hozir javob bera olmayman, "
-                 "imkon bo'lishi bilan o'zim yozaman 🙏")
+STANDART_MATN = "Assalomu alaykum! Hozir bandman, bo'shashim bilan o'zim yozaman 🙏"
 TAVSIF = ("🤝 Shaxsiy yordamchi — Telegram'da siz band paytingizda "
           "yozganlarga javob beradi.\n\n"
-          "⏰ Avtojavob yoki 🤖 AI suhbat.\n\n"
+          "⭐ Belgilaganlaringizga — «hozir bandman», qolganlar bilan — 🤖 AI suhbat.\n\n"
           "Ulash: Settings → Chat automation → shu botni tanlang.")
 QISQA_TAVSIF = "🤝 Band paytingizda yozganlarga siz nomingizdan javob beradi"
 BUYRUQLAR = [
@@ -72,8 +73,15 @@ BUYRUQLAR = [
     {"command": "haqimda", "description": "🤖 AI uchun siz haqingizda"},
     {"command": "tozala", "description": "🧹 AI suhbat tarixini o'chirish"},
 ]
-REJIMLAR = {"ikkalasi": "⏰+🤖 Avtojavob + AI", "ai": "🤖 AI suhbat",
-            "avto": "⏰ Avtojavob", "off": "⛔ O'chiq"}
+REJIMLAR = {"aralash": "⭐ Belgilanganlarga avtojavob, qolganlarga AI",
+            "ai": "🤖 Hammaga AI", "avto": "⏰ Hammaga avtojavob", "off": "⛔ O'chiq"}
+BELGILASH = "➕ Belgilash"
+ROYXAT = "⭐ Belgilanganlar"
+KLAVIATURA = {"keyboard": [[{"text": BELGILASH, "request_users": {
+                  "request_id": 1, "user_is_bot": False, "max_quantity": 10,
+                  "request_name": True, "request_username": True}},
+                            {"text": ROYXAT}]],
+              "resize_keyboard": True, "is_persistent": True}
 
 _db_lock = threading.Lock()
 
@@ -133,7 +141,9 @@ def save(db):
 
 def ega(db, uid):
     e = db["egalar"].setdefault(str(uid), {})
-    e.setdefault("rejim", "ikkalasi")
+    if e.get("rejim") not in REJIMLAR:
+        e["rejim"] = "aralash"
+    e.setdefault("belgilangan", {})  # user id → ism: ularga faqat avtojavob
     e.setdefault("matn", STANDART_MATN)
     e.setdefault("haqimda", "")
     return e
@@ -174,10 +184,6 @@ def ai_tizim(e):
         "keyinroq javob berishini ayting. Agar sizdan bot yoki sun'iy intellekt "
         "ekanligingizni so'rashsa, rostini ayting." % ism,
     ]
-    if e.get("rejim") == "ikkalasi":
-        qism.append("%s hozir band — suhbatdoshga bu haqda avtojavob allaqachon "
-                    "yuborilgan, uni takrorlamang. Savoliga javob bering yoki "
-                    "suhbatni davom ettiring." % ism)
     if e.get("haqimda"):
         qism.append("%s haqida ma'lumot:\n%s" % (ism, e["haqimda"]))
     return "\n\n".join(qism)
@@ -262,6 +268,8 @@ def biznes_xabar(msg, db, pool):
         return
     frm = msg.get("from") or {}
     chat_id = msg["chat"]["id"]
+    if msg["chat"].get("type", "private") != "private":   # guruh va kanallarga yozmaymiz
+        return
     matn = xabar_matni(msg)
     with _db_lock:
         c = chat_holati(db, conn_id, chat_id)
@@ -302,8 +310,12 @@ def javob_ber(db, conn_id, chat_id, message_id):
             if c.get("tinch", 0) > time.time():
                 return
             ai_bor = anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY"))
-            avto = e["rejim"] in ("avto", "ikkalasi") or not ai_bor
-            ai = e["rejim"] in ("ai", "ikkalasi") and ai_bor
+            belgili = str(chat_id) in e["belgilangan"]
+            if e["rejim"] == "aralash":
+                ai = ai_bor and not belgili
+            else:
+                ai = ai_bor and e["rejim"] == "ai"
+            avto = not ai
             avto_matn = None
             if avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
                 c["avto"] = time.time()
@@ -337,6 +349,8 @@ def holat(chat, uid, db, bosh=""):
     ai_bor = anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY"))
     matn = (bosh + "📍 Rejim: <b>%s</b>\n\n" % REJIMLAR[e["rejim"]] +
             "⏰ Avtojavob matni:\n<i>%s</i>\n\n" % escape(e["matn"]) +
+            "⭐ Belgilanganlar: <b>%d ta</b> — ularga faqat avtojavob boradi\n\n"
+            % len(e["belgilangan"]) +
             "🤖 AI uchun siz haqingizda:\n<i>%s</i>\n\n"
             % (escape(e["haqimda"]) or "— hali yozilmagan (/haqimda)") +
             "Siz o'zingiz chatda yozsangiz, bot u yerda %d daqiqa jim turadi.\n\n"
@@ -347,8 +361,22 @@ def holat(chat, uid, db, bosh=""):
         matn += ("\n\n⚠️ AI kaliti (ANTHROPIC_API_KEY) qo'yilmagan — "
                  "hozircha faqat avtojavob yuboriladi.")
     tugmalar = [[(("✅ " if e["rejim"] == k else "") + v, "rejim:" + k)]
-                for k, v in REJIMLAR.items()]
+                for k, v in REJIMLAR.items()] + [[(ROYXAT, "royxat")]]
     send(chat, matn, inline(tugmalar))
+
+
+def royxat(chat, uid, db, bosh=""):
+    with _db_lock:
+        b = dict(ega(db, uid)["belgilangan"])
+    if b:
+        qator = ["%d. %s — /ochir_%s" % (i, escape(nom), k)
+                 for i, (k, nom) in enumerate(b.items(), 1)]
+        matn = "⭐ <b>Belgilanganlar</b> — ularga faqat avtojavob boradi:\n\n" + "\n".join(qator)
+    else:
+        matn = "⭐ Hali hech kim belgilanmagan."
+    send(chat, bosh + matn + "\n\nQo'shish: pastdagi <b>%s</b> tugmasi → kontaktlarni "
+                             "tanlang. Olib tashlash: ism yonidagi /ochir_… ni bosing." % BELGILASH,
+         KLAVIATURA)
 
 
 def handle(msg, db):
@@ -366,6 +394,23 @@ def handle(msg, db):
                    "yozganlarga javob beraman.\n\n"
                    "<i>Eslatma: bu funksiya uchun Telegram Premium kerak bo'lishi mumkin.</i>")
         return
+    if msg.get("users_shared"):
+        with _db_lock:
+            b = ega(db, uid)["belgilangan"]
+            for u in msg["users_shared"].get("users", []):
+                nom = " ".join(x for x in (u.get("first_name"), u.get("last_name")) if x)
+                b[str(u["user_id"])] = nom or ("@" + u["username"] if u.get("username")
+                                               else str(u["user_id"]))
+        royxat(chat, uid, db, "✅ Belgilandi.\n\n")
+        return
+    if text == ROYXAT:
+        royxat(chat, uid, db)
+        return
+    if buyruq.startswith("/ochir_"):
+        with _db_lock:
+            nom = ega(db, uid)["belgilangan"].pop(buyruq[7:], None)
+        royxat(chat, uid, db, ("❌ %s ro'yxatdan olindi.\n\n" % escape(nom)) if nom else "")
+        return
     with _db_lock:
         e = ega(db, uid)
         if buyruq == "/matn" and qolgan.strip():
@@ -381,7 +426,7 @@ def handle(msg, db):
             javob = "🧹 AI suhbat tarixi o'chirildi."
         elif buyruq in ("/matn", "/haqimda"):
             javob = ("Buyruqdan keyin matnni yozing, masalan:\n<code>%s</code>" %
-                     ("/matn Hozir bandman, kechqurun yozaman"
+                     ("/matn Hozir bandman, bo'shab o'zim yozaman"
                       if buyruq == "/matn" else
                       "/haqimda Ismim Ali, dizaynerman. Logotip 300 ming so'm, 3 kunda tayyor."))
         else:
@@ -403,6 +448,9 @@ def callback(cq, db):
         if m:
             call("deleteMessage", chat_id=m["chat"]["id"], message_id=m["message_id"])
             holat(m["chat"]["id"], uid, db)
+    elif data == "royxat" and ulangan(db, uid):
+        call("answerCallbackQuery", callback_query_id=cq["id"])
+        royxat(cq["from"]["id"], uid, db)
     else:
         call("answerCallbackQuery", callback_query_id=cq["id"])
 
