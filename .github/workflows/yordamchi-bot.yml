@@ -41,6 +41,10 @@ jobs:
     env:
       BOT_TOKEN: ${{ secrets.YORDAMCHI_BOT_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Bot faqat shu akkaunt(lar)da ishlaydi; o'zgartirish: Variables → YORDAMCHI_EGALAR
+      EGALAR: ${{ vars.YORDAMCHI_EGALAR || 'YULDASHEEVO' }}
+      # AI tez rejimi; arzonroq bo'lsin desangiz: Variables → YORDAMCHI_TEZ = 0
+      TEZ: ${{ vars.YORDAMCHI_TEZ || '1' }}
       STATE_FILE: ${{ github.workspace }}/state/yordamchi.json
       REJIM: ${{ github.event.inputs.rejim || 'xabarlar' }}
       PYTHONUNBUFFERED: "1"   # jurnal darhol yozilsin
