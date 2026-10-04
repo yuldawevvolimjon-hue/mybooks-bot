@@ -1,0 +1,82 @@
+# Shaxsiy yordamchi (Chat automation) boti — GitHub Actions'da ishlaydi (server kerak emas).
+#
+# Har ishga tushish 50 daqiqa uzluksiz ishlaydi. Jadval har 10 daqiqada
+# navbatdagi ishga tushishni tayyorlab qo'yadi: oldingisi tugashi bilan
+# keyingisi boshlanadi. Navbatda kutib qolgan eski ishga tushishlar
+# «cancelled» bo'ladi — bu normal holat.
+# "Run workflow" → rejim "sozlash": buyruqlar va tavsifni bir marta o'rnatadi.
+#
+# Kerak: Settings → Secrets and variables → Actions →
+#   secret   YORDAMCHI_BOT_TOKEN  — BotFather bergan token (Business Mode yoqilgan bot)
+#   secret   ANTHROPIC_API_KEY    — AI suhbat uchun Claude API kaliti
+#                                   (bo'lmasa, faqat avtojavob ishlaydi)
+#
+# Eslatma: GitHub jadval bo'yicha ishga tushirishni faqat asosiy (main)
+# shoxchadagi workflow uchun qiladi va 60 kun harakat bo'lmasa o'chiradi.
+
+name: Yordamchi bot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      rejim:
+        description: "Nima qilsin"
+        type: choice
+        options: [xabarlar, sozlash]
+        default: xabarlar
+
+concurrency:
+  group: yordamchi-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BOT_TOKEN: ${{ secrets.YORDAMCHI_BOT_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      STATE_FILE: ${{ github.workspace }}/state/yordamchi.json
+      REJIM: ${{ github.event.inputs.rejim || 'xabarlar' }}
+      PYTHONUNBUFFERED: "1"   # jurnal darhol yozilsin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: yordamchi/requirements.txt
+
+      - run: pip install -r yordamchi/requirements.txt
+
+      - name: Sozlamalar va suhbatlarni tiklash
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: yordamchi-state-${{ github.run_id }}
+          restore-keys: yordamchi-state-
+
+      - name: Bot
+        run: |
+          mkdir -p state
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::warning::YORDAMCHI_BOT_TOKEN secret qo'shilmagan — bot ishga tushmadi."
+            exit 0
+          fi
+          case "$REJIM" in
+            sozlash) python3 yordamchi/bot.py --setup ;;
+            *)       python3 yordamchi/bot.py --uzluksiz 50 ;;
+          esac
+
+      - name: Sozlamalar va suhbatlarni saqlash
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: yordamchi-state-${{ github.run_id }}
