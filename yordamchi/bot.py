@@ -35,6 +35,7 @@ Muhit o'zgaruvchilari:
     MODEL              Claude modeli (standart claude-opus-5-5)
     TINCH              egasi yozgandan keyin necha daqiqa jim turish (standart 30)
     AVTO_QAYTA         avtojavob bir suhbatga necha soatda bir marta (standart 6)
+    EGALAR             bot ishlaydigan akkauntlar username'i (standart YULDASHEEVO)
     TEZ                AI tez rejimi: 1 — yoqiq (standart), 0 — o'chiq (arzonroq)
 """
 
@@ -64,6 +65,10 @@ TINCH = int(os.environ.get("TINCH") or 30) * 60
 AVTO_QAYTA = int(os.environ.get("AVTO_QAYTA") or 6) * 3600
 BOT_NOMI = "Yordamchi"
 BOTPIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "botpic.png")
+# Bot faqat shu akkauntlarga ishlaydi (username, vergul bilan). Boshqa kimdir
+# ulasa — javob bermaydi, AI pulingiz sarflanmaydi.
+EGALAR = {x.strip().lstrip("@").lower()
+          for x in (os.environ.get("EGALAR") or "YULDASHEEVO").split(",") if x.strip()}
 TEZ = os.environ.get("TEZ", "1") != "0"   # AI tez rejimi (2 baravar qimmatroq)
 KUTISH = 1.5               # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
 TARIX = 30                 # AI uchun har bir suhbatdan nechta oxirgi xabar saqlanadi
@@ -318,13 +323,20 @@ def ulanish(bc, db):
     """Kimdir botni Chat automation orqali uladi, o'zgartirdi yoki uzdi."""
     uid = bc["user"]["id"]
     rights = bc.get("rights") or {}
+    chat = bc.get("user_chat_id") or uid
+    if (bc["user"].get("username") or "").lower() not in EGALAR:
+        print("begona ulanish rad etildi:", uid, bc["user"].get("username"))
+        with _db_lock:
+            db["ulanish"].pop(bc["id"], None)
+        if bc.get("is_enabled"):
+            send(chat, "⛔ Bu shaxsiy bot, u faqat egasining akkauntida ishlaydi.")
+        return
     with _db_lock:
         db["ulanish"][bc["id"]] = {"egasi": uid, "chat": bc.get("user_chat_id") or uid,
                                    "yoqiq": bool(bc.get("is_enabled")),
                                    "javob": bool(rights.get("can_reply", bc.get("can_reply")))}
         e = ega(db, uid)
         e["ism"] = bc["user"].get("first_name") or e.get("ism") or ""
-    chat = bc.get("user_chat_id") or uid
     if not bc.get("is_enabled"):
         send(chat, "🔌 Yordamchi akkauntingizdan uzildi. Qayta ulash: "
                    "Settings → Chat automation.")
