@@ -9,6 +9,8 @@ yozganlarga siz nomingizdan javob beradi. Rejimlar:
                  (standart rejim).
   🤖 AI suhbat — hammaga AI javob beradi.
   ⏰ Avtojavob — hammaga tayyor matn.
+Yangi odam yozsa, bot jim turadi: egasi u bilan o'zi kamida bir marta
+yozishgandan keyingina bot unga javob bera boshlaydi.
 AI suhbatda muhim gap chiqsa (taklif, uchrashuv, pul, shoshilinch ish), bot
 egasiga o'z chatida «⚠️ Ali: ...» deb bildirishnoma yuboradi.
 Avtojavob bir suhbatga AVTO_QAYTA soatda bir marta yuboriladi. Guruh, kanal
@@ -368,6 +370,7 @@ def biznes_xabar(msg, db, pool):
         if frm.get("id") == u["egasi"]:
             # Egasi o'zi yozyapti — bot bu chatda bir muddat aralashmaydi.
             c["tinch"] = time.time() + TINCH
+            c["tanish"] = True                    # egasi bu odam bilan o'zi gaplashgan
             print("  egasi o'zi yozdi — bu chatda %d daqiqa jim" % (TINCH // 60))
             if matn:
                 c["tarix"] = (c["tarix"] + [{"kim": "men", "matn": matn}])[-TARIX:]
@@ -421,6 +424,10 @@ def javob_ber(db, conn_id, chat_id, message_id):
                 return
             ai_bor = anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY"))
             belgili = str(chat_id) in e["belgilangan"]
+            if not belgili and not c.get("tanish"):
+                # Yangi odam: egasi u bilan hali o'zi gaplashmagan — bot jim turadi.
+                print("  javob yo'q: yangi odam, egasi u bilan hali gaplashmagan")
+                return
             if e["rejim"] == "aralash":
                 ai = ai_bor and not belgili
             else:
@@ -474,7 +481,9 @@ def holat(chat, uid, db, bosh=""):
             % len(e["belgilangan"]) +
             "🤖 AI uchun siz haqingizda:\n<i>%s</i>\n\n"
             % (escape(e["haqimda"]) or "— hali yozilmagan (/haqimda)") +
-            "Siz o'zingiz chatda yozsangiz, bot u yerda %d daqiqa jim turadi.\n\n"
+            "Siz o'zingiz chatda yozsangiz, bot u yerda %d daqiqa jim turadi.\n"
+            "🆕 Yangi odamlarga bot yozmaydi — siz u bilan o'zingiz bir marta "
+            "yozishganingizdan keyin javob bera boshlaydi.\n\n"
             "/matn &lt;matn&gt; — avtojavob matnini o'zgartirish\n"
             "/haqimda &lt;matn&gt; — AI uchun: ism, kasb, narxlar, manzil, ish vaqti\n"
             "/tozala — AI suhbat tarixini o'chirish" % (TINCH // 60))
