@@ -324,6 +324,8 @@ def ulanish(bc, db):
     uid = bc["user"]["id"]
     rights = bc.get("rights") or {}
     chat = bc.get("user_chat_id") or uid
+    print("ulanish: @%s yoqiq=%s ruxsatlar=%s" % (bc["user"].get("username"),
+                                                  bc.get("is_enabled"), rights))
     if (bc["user"].get("username") or "").lower() not in EGALAR:
         print("begona ulanish rad etildi:", uid, bc["user"].get("username"))
         with _db_lock:
@@ -350,11 +352,13 @@ def ulanish(bc, db):
 def biznes_xabar(msg, db, pool):
     conn_id = msg.get("business_connection_id")
     u = db["ulanish"].get(conn_id)
+    frm = msg.get("from") or {}
+    print("biznes xabar: chat %s, kimdan %s" % (msg["chat"].get("id"), frm.get("id")))
     if not u or not u["yoqiq"]:
+        print("  o'tkazildi: ulanish topilmadi yoki o'chiq")
         return
     if msg.get("sender_business_bot"):            # botning o'zi yuborgani — tarixda bor
         return
-    frm = msg.get("from") or {}
     chat_id = msg["chat"]["id"]
     if msg["chat"].get("type", "private") != "private":   # guruh va kanallarga yozmaymiz
         return
@@ -364,6 +368,7 @@ def biznes_xabar(msg, db, pool):
         if frm.get("id") == u["egasi"]:
             # Egasi o'zi yozyapti — bot bu chatda bir muddat aralashmaydi.
             c["tinch"] = time.time() + TINCH
+            print("  egasi o'zi yozdi — bu chatda %d daqiqa jim" % (TINCH // 60))
             if matn:
                 c["tarix"] = (c["tarix"] + [{"kim": "men", "matn": matn}])[-TARIX:]
             return
@@ -401,14 +406,18 @@ def javob_ber(db, conn_id, chat_id, message_id):
         with _db_lock:
             u = db["ulanish"].get(conn_id) or {}
             if not u.get("yoqiq") or not u.get("javob"):
+                print("  javob yo'q: javob berish ruxsati o'chiq")
                 return
             c = chat_holati(db, conn_id, chat_id)
             e = ega(db, u["egasi"])
             if c.get("oxirgi") != message_id:         # ketidan yana yozdi — o'sha javob beradi
                 return
             if e["rejim"] == "off":
+                print("  javob yo'q: rejim o'chiq")
                 return
             if c.get("tinch", 0) > time.time():
+                print("  javob yo'q: egasi yaqinda yozgan, yana %d daqiqa jim"
+                      % ((c["tinch"] - time.time()) // 60 + 1))
                 return
             ai_bor = anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY"))
             belgili = str(chat_id) in e["belgilangan"]
@@ -421,6 +430,9 @@ def javob_ber(db, conn_id, chat_id, message_id):
             if avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
                 c["avto"] = time.time()
                 avto_matn = e["matn"]
+            elif avto:
+                print("  javob yo'q: avtojavob bu odamga %d soat ichida yuborilgan"
+                      % (AVTO_QAYTA // 3600))
             tarix = list(c["tarix"])
             ega_nusxa = dict(e)
         if avto_matn:
@@ -451,7 +463,12 @@ def ulangan(db, uid):
 def holat(chat, uid, db, bosh=""):
     e = ega(db, uid)
     ai_bor = anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY"))
-    matn = (bosh + "📍 Rejim: <b>%s</b>\n\n" % REJIMLAR[e["rejim"]] +
+    javob_bor = any(u["egasi"] == uid and u["yoqiq"] and u["javob"]
+                    for u in db["ulanish"].values())
+    matn = (bosh + "📍 Rejim: <b>%s</b>\n" % REJIMLAR[e["rejim"]] +
+            ("✅ Javob berish ruxsati bor\n\n" if javob_bor else
+             "❌ <b>Javob berish ruxsati yo'q</b> — Settings → Chat automation → "
+             "Manage Messages → Reply to messages ni yoqing\n\n") +
             "⏰ Avtojavob matni:\n<i>%s</i>\n\n" % escape(e["matn"]) +
             "⭐ Belgilanganlar: <b>%d ta</b> — ularga faqat avtojavob boradi\n\n"
             % len(e["belgilangan"]) +
@@ -572,6 +589,8 @@ def process(updates, db, pool):
                 handle(upd["message"], db)
             elif upd.get("callback_query"):
                 callback(upd["callback_query"], db)
+            else:
+                print("boshqa yangilanish:", [k for k in upd if k != "update_id"])
         except Exception as e:
             print("xato:", repr(e), file=sys.stderr)
     return last
