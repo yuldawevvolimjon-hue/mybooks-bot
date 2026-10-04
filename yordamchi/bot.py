@@ -61,7 +61,7 @@ AVTO_QAYTA = int(os.environ.get("AVTO_QAYTA") or 6) * 3600
 KUTISH = 4                 # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
 TARIX = 30                 # AI uchun har bir suhbatdan nechta oxirgi xabar saqlanadi
 
-STANDART_MATN = "Assalomu alaykum! Hozir bandman, bo'shashim bilan o'zim yozaman 🙏"
+STANDART_MATN = "Assalomu alaykum! Hozir bandman, bo'shashim bilan o'zim yozaman"
 TAVSIF = ("🤝 Shaxsiy yordamchi — Telegram'da siz band paytingizda "
           "yozganlarga javob beradi.\n\n"
           "⭐ Belgilaganlaringizga — «hozir bandman», qolganlar bilan — 🤖 AI suhbat.\n\n"
