@@ -13,6 +13,14 @@ siz nomingizdan javob beradi.
 Avtojavob bir odamga 6 soatda bir marta yuboriladi. **Guruh, kanal va
 botlarga** bot hech qachon yozmaydi — faqat odamlar bilan shaxsiy chatlarda.
 
+**🔔 Muhim gaplar haqida bildirishnoma.** AI do'stlaringiz bilan gaplashib
+turadi, lekin taklif, uchrashuv, pul, iltimos yoki shoshilinch gap chiqsa, o'zi
+va'da bermaydi va sizga bot chatida xabar yuboradi, masalan:
+
+> ⚠️ **Ali** muhim gap yozdi: **kechqurun uyiga oshga chaqiryapti**
+
+Shunda hamma chatni o'qishingiz shart emas — faqat shu xabarlarni ko'rasiz.
+
 Siz o'zingiz biror chatda yozsangiz, bot o'sha chatda **30 daqiqa jim turadi**
 va suhbatingizga aralashmaydi.
 

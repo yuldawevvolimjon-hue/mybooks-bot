@@ -9,6 +9,8 @@ yozganlarga siz nomingizdan javob beradi. Rejimlar:
                  (standart rejim).
   🤖 AI suhbat — hammaga AI javob beradi.
   ⏰ Avtojavob — hammaga tayyor matn.
+AI suhbatda muhim gap chiqsa (taklif, uchrashuv, pul, shoshilinch ish), bot
+egasiga o'z chatida «⚠️ Ali: ...» deb bildirishnoma yuboradi.
 Avtojavob bir suhbatga AVTO_QAYTA soatda bir marta yuboriladi. Guruh, kanal
 va botlarga bot hech qachon yozmaydi — faqat odamlar bilan shaxsiy chatlarda.
 Siz o'zingiz biror chatda yozsangiz, bot o'sha chatda TINCH daqiqa jim turadi —
@@ -183,6 +185,12 @@ def ai_tizim(e):
         "yoki va'da kabi aniq narsalarni o'ylab topmang — bilmasangiz, %s o'zi "
         "keyinroq javob berishini ayting. Agar sizdan bot yoki sun'iy intellekt "
         "ekanligingizni so'rashsa, rostini ayting." % ism,
+        "%s yozishmalarni o'zi o'qimaydi. Shuning uchun suhbatdoshning oxirgi "
+        "xabarlarida %s o'zi bilishi yoki qaror qilishi kerak bo'lgan gap bo'lsa — "
+        "taklif yoki chaqiruv (uyga, to'yga, biror joyga), uchrashuv, vaqt, pul, "
+        "iltimos, shoshilinch yoki yomon xabar — muhim=true qiling va «qisqa» "
+        "maydoniga buni bir gapda yozing (masalan: «kechqurun uyiga oshga "
+        "chaqiryapti»). Oddiy salom-alik, hazil, gap-so'zda muhim=false, qisqa=\"\"." % (ism, ism),
     ]
     if e.get("haqimda"):
         qism.append("%s haqida ma'lumot:\n%s" % (ism, e["haqimda"]))
@@ -204,9 +212,20 @@ def ai_xabarlar(tarix):
 
 
 _ai = None
+JAVOB_SXEMA = {
+    "type": "object",
+    "properties": {
+        "javob": {"type": "string", "description": "suhbatdoshga yuboriladigan javob"},
+        "muhim": {"type": "boolean", "description": "egasiga bildirishnoma kerakmi"},
+        "qisqa": {"type": "string", "description": "muhim gap bir gapda; muhim bo'lmasa bo'sh"},
+    },
+    "required": ["javob", "muhim", "qisqa"],
+    "additionalProperties": False,
+}
 
 
 def ai_javob(e, tarix):
+    """(javob, muhim gap yoki None) — yoki xato bo'lsa None."""
     global _ai
     xabarlar = ai_xabarlar(tarix)
     if not xabarlar or xabarlar[-1]["role"] != "user":
@@ -219,7 +238,8 @@ def ai_javob(e, tarix):
             max_tokens=4000,
             system=ai_tizim(e),
             messages=xabarlar,
-            output_config={"effort": "low"},       # oddiy suhbat — tez va arzon
+            output_config={"effort": "low",        # oddiy suhbat — tez va arzon
+                           "format": {"type": "json_schema", "schema": JAVOB_SXEMA}},
             cache_control={"type": "ephemeral"},
             # Xavfsizlik filtri rad etsa, Anthropic tavsiya qilgan model qayta urinadi.
             betas=["server-side-fallback-2026-07-01"],
@@ -234,8 +254,15 @@ def ai_javob(e, tarix):
     if r.stop_reason == "refusal":
         print("AI rad etdi:", getattr(r.stop_details, "category", None), file=sys.stderr)
         return None
-    matn = "".join(b.text for b in r.content if b.type == "text").strip()
-    return matn or None
+    try:
+        d = json.loads("".join(b.text for b in r.content if b.type == "text"))
+    except ValueError:
+        print("AI javobi JSON emas:", r.stop_reason, file=sys.stderr)
+        return None
+    javob = (d.get("javob") or "").strip()
+    if not javob:
+        return None
+    return javob, ((d.get("qisqa") or "").strip() or "muhim gap yozdi") if d.get("muhim") else None
 
 
 # ---------------------------------------------------------------- business
@@ -244,7 +271,8 @@ def ulanish(bc, db):
     uid = bc["user"]["id"]
     rights = bc.get("rights") or {}
     with _db_lock:
-        db["ulanish"][bc["id"]] = {"egasi": uid, "yoqiq": bool(bc.get("is_enabled")),
+        db["ulanish"][bc["id"]] = {"egasi": uid, "chat": bc.get("user_chat_id") or uid,
+                                   "yoqiq": bool(bc.get("is_enabled")),
                                    "javob": bool(rights.get("can_reply", bc.get("can_reply")))}
         e = ega(db, uid)
         e["ism"] = bc["user"].get("first_name") or e.get("ism") or ""
@@ -282,6 +310,8 @@ def biznes_xabar(msg, db, pool):
         if frm.get("is_bot") or not matn:
             return
         c["tarix"] = (c["tarix"] + [{"kim": "u", "matn": matn}])[-TARIX:]
+        c["ism"] = " ".join(x for x in (frm.get("first_name"), frm.get("last_name")) if x)
+        c["username"] = frm.get("username") or ""
         c["oxirgi"] = msg["message_id"]
     pool.submit(javob_ber, db, conn_id, chat_id, msg["message_id"])
 
@@ -292,6 +322,17 @@ def yubor(c, conn_id, chat_id, matn):
         with _db_lock:
             c["tarix"] = (c["tarix"] + [{"kim": "men", "matn": matn}])[-TARIX:]
         print("javob:", chat_id, matn[:40].replace("\n", " "))
+
+
+def bildir(u, chat_id, c, muhim, tarix):
+    """Egasiga bot chatida: kim, nima muhim gap yozdi."""
+    kim = '<a href="tg://user?id=%s">%s</a>' % (chat_id, escape(c.get("ism") or "Kimdir"))
+    if c.get("username"):
+        kim += " (@%s)" % escape(c["username"])
+    oxirgi = [t["matn"] for t in tarix if t["kim"] == "u"][-3:]
+    send(u.get("chat") or u["egasi"],
+         "⚠️ %s muhim gap yozdi:\n<b>%s</b>\n\n💬 <i>%s</i>"
+         % (kim, escape(muhim), escape("\n".join(oxirgi))[:1000]))
 
 
 def javob_ber(db, conn_id, chat_id, message_id):
@@ -328,13 +369,16 @@ def javob_ber(db, conn_id, chat_id, message_id):
             return
         call("sendChatAction", chat_id=chat_id, action="typing",
              business_connection_id=conn_id)
-        matn = ai_javob(ega_nusxa, tarix)
-        if not matn:
+        natija = ai_javob(ega_nusxa, tarix)
+        if not natija:
             return
+        matn, muhim = natija
         with _db_lock:
             if c.get("oxirgi") != message_id or c.get("tinch", 0) > time.time():
                 return                                # bu orada egasi yoki suhbatdosh yozdi
         yubor(c, conn_id, chat_id, matn)
+        if muhim:
+            bildir(u, chat_id, c, muhim, tarix)
     except Exception as x:
         print("xato:", repr(x), file=sys.stderr)
 
