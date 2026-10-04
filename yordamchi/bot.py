@@ -35,6 +35,7 @@ Muhit o'zgaruvchilari:
     MODEL              Claude modeli (standart claude-opus-5-5)
     TINCH              egasi yozgandan keyin necha daqiqa jim turish (standart 30)
     AVTO_QAYTA         avtojavob bir suhbatga necha soatda bir marta (standart 6)
+    TEZ                AI tez rejimi: 1 — yoqiq (standart), 0 — o'chiq (arzonroq)
 """
 
 import json
@@ -63,7 +64,8 @@ TINCH = int(os.environ.get("TINCH") or 30) * 60
 AVTO_QAYTA = int(os.environ.get("AVTO_QAYTA") or 6) * 3600
 BOT_NOMI = "Yordamchi"
 BOTPIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "botpic.png")
-KUTISH = 4                 # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
+TEZ = os.environ.get("TEZ", "1") != "0"   # AI tez rejimi (2 baravar qimmatroq)
+KUTISH = 1.5               # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
 TARIX = 30                 # AI uchun har bir suhbatdan nechta oxirgi xabar saqlanadi
 
 STANDART_MATN = "Assalomu alaykum! Hozir bandman, bo'shashim bilan o'zim yozaman"
@@ -268,19 +270,29 @@ def ai_javob(e, tarix):
         return None
     if _ai is None:
         _ai = anthropic.Anthropic()
+    so_rov = dict(
+        model=MODEL,
+        max_tokens=4000,
+        system=ai_tizim(e),
+        messages=xabarlar,
+        output_config={"effort": "low",        # oddiy suhbat — tez va arzon
+                       "format": {"type": "json_schema", "schema": JAVOB_SXEMA}},
+        cache_control={"type": "ephemeral"},
+        # Xavfsizlik filtri rad etsa, Anthropic tavsiya qilgan model qayta urinadi.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    )
     try:
-        r = _ai.beta.messages.create(
-            model=MODEL,
-            max_tokens=4000,
-            system=ai_tizim(e),
-            messages=xabarlar,
-            output_config={"effort": "low",        # oddiy suhbat — tez va arzon
-                           "format": {"type": "json_schema", "schema": JAVOB_SXEMA}},
-            cache_control={"type": "ephemeral"},
-            # Xavfsizlik filtri rad etsa, Anthropic tavsiya qilgan model qayta urinadi.
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        if TEZ:
+            try:                                  # tez rejim: javob ~2 baravar tezroq yoziladi
+                r = _ai.beta.messages.create(**dict(
+                    so_rov, speed="fast",
+                    betas=so_rov["betas"] + ["fast-mode-2026-02-01"]))
+            except (anthropic.RateLimitError, anthropic.BadRequestError) as x:
+                print("tez rejim ishlamadi, oddiy rejim:", x.status_code, file=sys.stderr)
+                r = _ai.beta.messages.create(**so_rov)
+        else:
+            r = _ai.beta.messages.create(**so_rov)
     except anthropic.APIStatusError as x:
         print("AI xatosi:", x.status_code, x.message, file=sys.stderr)
         return None
