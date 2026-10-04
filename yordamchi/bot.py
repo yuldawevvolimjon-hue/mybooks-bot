@@ -39,6 +39,7 @@ Muhit o'zgaruvchilari:
 
 import json
 import os
+import uuid
 import sys
 import threading
 import time
@@ -60,6 +61,8 @@ API = "https://api.telegram.org/bot%s/" % TOKEN
 MODEL = os.environ.get("MODEL") or "claude-opus-5-5"
 TINCH = int(os.environ.get("TINCH") or 30) * 60
 AVTO_QAYTA = int(os.environ.get("AVTO_QAYTA") or 6) * 3600
+BOT_NOMI = "Yordamchi"
+BOTPIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rasmlar", "botpic.png")
 KUTISH = 4                 # ketma-ket yozilgan xabarlarni bitta javob bilan qamrash uchun
 TARIX = 30                 # AI uchun har bir suhbatdan nechta oxirgi xabar saqlanadi
 
@@ -94,6 +97,39 @@ def call(method, **params):
                       for k, v in params.items() if v is not None}).encode()
     try:
         with urlopen(Request(API + method, data=data), timeout=70) as r:
+            return json.load(r)
+    except HTTPError as e:
+        try:
+            body = json.load(e)
+        except ValueError:
+            body = {"description": str(e)}
+        print("telegram xatosi:", method, body.get("description"), file=sys.stderr)
+        return {"ok": False, **body}
+    except (URLError, OSError) as e:
+        print("tarmoq xatosi:", method, e, file=sys.stderr)
+        return {"ok": False}
+
+
+def upload(method, fields, files):
+    """multipart/form-data: fields — oddiy qiymatlar, files — {nom: yo'l}."""
+    chegara = "----yordamchi" + uuid.uuid4().hex
+    qism = []
+    for k, v in fields.items():
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v)
+        qism.append(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
+                     % (chegara, k, v)).encode())
+    for k, yol in files.items():
+        qism.append(('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\n'
+                     'Content-Type: image/png\r\n\r\n' % (chegara, k, os.path.basename(yol))).encode())
+        with open(yol, "rb") as f:
+            qism.append(f.read())
+        qism.append(b"\r\n")
+    qism.append(("--%s--\r\n" % chegara).encode())
+    req = Request(API + method, data=b"".join(qism),
+                  headers={"Content-Type": "multipart/form-data; boundary=" + chegara})
+    try:
+        with urlopen(req, timeout=120) as r:
             return json.load(r)
     except HTTPError as e:
         try:
@@ -521,13 +557,19 @@ def setup():
     r1 = call("setMyCommands", commands=BUYRUQLAR)
     r2 = call("setMyDescription", description=TAVSIF)
     r3 = call("setMyShortDescription", short_description=QISQA_TAVSIF)
+    r4 = call("setMyName", name=BOT_NOMI)
+    r5 = {"ok": False}
+    if os.path.exists(BOTPIC):
+        r5 = upload("setMyProfilePhoto", {"photo": {"type": "static", "photo": "attach://rasm"}},
+                    {"rasm": BOTPIC})
     me = call("getMe").get("result", {})
     print("bot: @%s" % me.get("username", "?"),
           "| business:", me.get("can_connect_to_business"))
     if not me.get("can_connect_to_business"):
         print("ogohlantirish: BotFather → /mybots → bot → Bot Settings → "
               "Business Mode ni yoqing.", file=sys.stderr)
-    print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"))
+    print("buyruqlar:", r1.get("ok"), "| tavsif:", r2.get("ok"), r3.get("ok"),
+          "| nom:", r4.get("ok"), "| rasm:", r5.get("ok"), r5.get("description") or "")
     return all(x.get("ok") for x in (r1, r2, r3))
 
 
@@ -548,8 +590,8 @@ def main(argv):
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
         tugash = time.time() + daqiqa * 60
 
-    if not db.get("sozlandi"):                    # bir marta: buyruqlar va tavsif
-        db["sozlandi"] = setup()
+    if not db.get("sozlandi_v2"):                 # bir marta: nom, rasm, buyruqlar, tavsif
+        db["sozlandi_v2"] = setup()
     print("Yordamchi bot ishga tushdi")
     pool = ThreadPoolExecutor(max_workers=8)
     offset, soni, keyingi_saqlash = None, 0, 0
