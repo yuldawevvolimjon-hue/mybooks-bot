@@ -85,8 +85,10 @@ BUYRUQLAR = [
     {"command": "start", "description": "🏠 Holat va rejim"},
     {"command": "matn", "description": "⏰ Avtojavob matni"},
     {"command": "haqimda", "description": "🤖 AI uchun siz haqingizda"},
+    {"command": "vaqt", "description": "🕛 Avtojavob soatlari"},
     {"command": "tozala", "description": "🧹 AI suhbat tarixini o'chirish"},
 ]
+TOSHKENT = 5 * 3600        # UTC+5, yozgi vaqt yo'q
 REJIMLAR = {"aralash": "⭐ Belgilanganlarga avtojavob, qolganlarga AI",
             "ai": "🤖 Hammaga AI", "avto": "⏰ Hammaga avtojavob", "off": "⛔ O'chiq"}
 BELGILASH = "➕ Belgilash"
@@ -191,9 +193,19 @@ def ega(db, uid):
     if e.get("rejim") not in REJIMLAR:
         e["rejim"] = "aralash"
     e.setdefault("belgilangan", {})  # user id → ism: ularga faqat avtojavob
+    e.setdefault("soat", [12, 24])   # avtojavob faqat shu soatlarda (Toshkent); AI — doim
     e.setdefault("matn", STANDART_MATN)
     e.setdefault("haqimda", "")
     return e
+
+
+def soatda(e):
+    """Hozir avtojavob soatlari ichidami (Toshkent vaqti bilan)."""
+    b, t = e["soat"]
+    h = time.gmtime(time.time() + TOSHKENT).tm_hour
+    if b == t or (b, t) == (0, 24):
+        return True
+    return b <= h < t if b < t else (h >= b or h < t)
 
 
 def chat_holati(db, conn_id, chat_id):
@@ -371,6 +383,7 @@ def biznes_xabar(msg, db, pool):
             # Egasi o'zi yozyapti — bot bu chatda bir muddat aralashmaydi.
             c["tinch"] = time.time() + TINCH
             c["tanish"] = True                    # egasi bu odam bilan o'zi gaplashgan
+            c.pop("kutyapti", None)               # egasi o'zi javob berdi — navbatdagi avtojavob kerak emas
             print("  egasi o'zi yozdi — bu chatda %d daqiqa jim" % (TINCH // 60))
             if matn:
                 c["tarix"] = (c["tarix"] + [{"kim": "men", "matn": matn}])[-TARIX:]
@@ -401,6 +414,32 @@ def bildir(u, chat_id, c, muhim, tarix):
     send(u.get("chat") or u["egasi"],
          "⚠️ %s muhim gap yozdi:\n<b>%s</b>\n\n💬 <i>%s</i>"
          % (kim, escape(muhim), escape("\n".join(oxirgi))[:1000]))
+
+
+def kutganlarga(db):
+    """Soatdan tashqari yozib, hali javob olmaganlarga avtojavob (soat kirganda)."""
+    navbat = []
+    with _db_lock:
+        for kalit, c in db["chatlar"].items():
+            if not c.get("kutyapti"):
+                continue
+            conn_id, chat_id = kalit.split(":", 1)
+            u = db["ulanish"].get(conn_id) or {}
+            if not u.get("yoqiq") or not u.get("javob"):
+                continue
+            e = ega(db, u["egasi"])
+            if not soatda(e):
+                continue
+            c.pop("kutyapti", None)
+            if e["rejim"] == "off" or c.get("tinch", 0) > time.time():
+                continue
+            if time.time() - c.get("avto", 0) < AVTO_QAYTA:
+                continue
+            c["avto"] = time.time()
+            navbat.append((c, conn_id, int(chat_id), e["matn"]))
+    for c, conn_id, chat_id, matn in navbat:
+        print("navbatdagi avtojavob:", chat_id)
+        yubor(c, conn_id, chat_id, matn)
 
 
 def javob_ber(db, conn_id, chat_id, message_id):
@@ -434,7 +473,11 @@ def javob_ber(db, conn_id, chat_id, message_id):
                 ai = ai_bor and e["rejim"] == "ai"
             avto = not ai
             avto_matn = None
-            if avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
+            if avto and not soatda(e):
+                # Soatdan tashqari: egasi shu orada javob bermasa, soat kirganda yuboriladi.
+                c["kutyapti"] = True
+                print("  avtojavob navbatga qo'yildi: soat %d:00 dan keyin yuboriladi" % e["soat"][0])
+            elif avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
                 c["avto"] = time.time()
                 avto_matn = e["matn"]
             elif avto:
@@ -476,7 +519,10 @@ def holat(chat, uid, db, bosh=""):
             ("✅ Javob berish ruxsati bor\n\n" if javob_bor else
              "❌ <b>Javob berish ruxsati yo'q</b> — Settings → Chat automation → "
              "Manage Messages → Reply to messages ni yoqing\n\n") +
-            "⏰ Avtojavob matni:\n<i>%s</i>\n\n" % escape(e["matn"]) +
+            "⏰ Avtojavob matni:\n<i>%s</i>\n" % escape(e["matn"]) +
+            "🕛 Avtojavob soatlari: <b>%d:00 — %d:00</b> (Toshkent). Bundan tashqari "
+            "yozganlarga, siz javob bermasangiz, soat kirganda yuboriladi. AI — doim.\n\n"
+            % tuple(e["soat"]) +
             "⭐ Belgilanganlar: <b>%d ta</b> — ularga faqat avtojavob boradi\n\n"
             % len(e["belgilangan"]) +
             "🤖 AI uchun siz haqingizda:\n<i>%s</i>\n\n"
@@ -486,6 +532,7 @@ def holat(chat, uid, db, bosh=""):
             "yozishganingizdan keyin javob bera boshlaydi.\n\n"
             "/matn &lt;matn&gt; — avtojavob matnini o'zgartirish\n"
             "/haqimda &lt;matn&gt; — AI uchun: ism, kasb, narxlar, manzil, ish vaqti\n"
+            "/vaqt 12-24 — avtojavob soatlari\n"
             "/tozala — AI suhbat tarixini o'chirish" % (TINCH // 60))
     if not ai_bor:
         matn += ("\n\n⚠️ AI kaliti (ANTHROPIC_API_KEY) qo'yilmagan — "
@@ -549,6 +596,17 @@ def handle(msg, db):
         elif buyruq == "/haqimda" and qolgan.strip():
             e["haqimda"] = qolgan.strip()[:4000]
             javob = "✅ Saqlandi. AI endi shu ma'lumot asosida javob beradi."
+        elif buyruq == "/vaqt" and qolgan.strip():
+            try:
+                b, t = (int(x) for x in qolgan.replace(" ", "").split("-"))
+                assert 0 <= b < 24 and 0 < t <= 24
+                e["soat"] = [b, t]
+                javob = "✅ Avtojavob endi soat %d:00 dan %d:00 gacha yuboriladi." % (b, t)
+            except (ValueError, AssertionError):
+                javob = "Masalan: <code>/vaqt 12-24</code> (soat 12:00 dan 24:00 gacha)"
+        elif buyruq == "/vaqt":
+            javob = ("Hozir: soat %d:00 — %d:00. O'zgartirish, masalan:\n"
+                     "<code>/vaqt 12-24</code>  yoki doim: <code>/vaqt 0-24</code>" % tuple(e["soat"]))
         elif buyruq == "/tozala":
             for kalit in [k for k in db["chatlar"]
                           if db["ulanish"].get(k.split(":")[0], {}).get("egasi") == uid]:
@@ -642,8 +700,8 @@ def main(argv):
         daqiqa = int(argv[i + 1]) if len(argv) > i + 1 and argv[i + 1].isdigit() else 50
         tugash = time.time() + daqiqa * 60
 
-    if not db.get("sozlandi_v2"):                 # bir marta: nom, rasm, buyruqlar, tavsif
-        db["sozlandi_v2"] = setup()
+    if not db.get("sozlandi_v3"):                 # bir marta: nom, rasm, buyruqlar, tavsif
+        db["sozlandi_v3"] = setup()
     print("Yordamchi bot ishga tushdi")
     pool = ThreadPoolExecutor(max_workers=8)
     offset, soni, keyingi_saqlash = None, 0, 0
@@ -665,6 +723,7 @@ def main(argv):
                 soni += len(natija)
             elif not r.get("ok"):
                 time.sleep(5)
+            kutganlarga(db)
             if time.time() >= keyingi_saqlash:
                 save(db)
                 keyingi_saqlash = time.time() + 60
