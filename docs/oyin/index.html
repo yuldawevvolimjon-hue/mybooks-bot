@@ -1973,7 +1973,7 @@
     let o = CRACK_SPR.get(cell);
     if (o && o.key === key) return o.c;
     if (o && sprBudget <= 0 && o.st === st && o.s === s) return o.c;   // bu kadr navbati tugagan — eskisi qoladi
-    sprBudget--;
+    sprBudget -= st === 'rock' ? 0.5 : 0.25;
     const px = Math.ceil((s + 8) * scale), c = o ? o.c : document.createElement('canvas');
     if (c.width !== px) c.width = c.height = px; else c.getContext('2d').clearRect(0, 0, px, px);
     const g = c.getContext('2d'), dq = b / CRACK_STEPS;
@@ -2022,7 +2022,6 @@
   const SPR = new Map(), LAST_SPR = new WeakMap();
   function brickSprite(st, cell, t, sz) {
     const s = sz - GAP * 2, tb = Math.round(Math.min(2, Math.max(0, t)) * 8);
-    // shisha yoriqlari shisha old qatlami bilan birga pishiriladi (cb — shikast bosqichi)
     const dm = st === 'liquid' ? dmgOf(cell) : 0, cb = dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS);
     const key = `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${cb}`;
     let c = SPR.get(key);
@@ -2031,7 +2030,7 @@
       const last = LAST_SPR.get(cell);
       if (last && last._owner === cell && last._st === st && last._sz === sz) return last;
     }
-    sprBudget--;
+    sprBudget -= st === 'rock' ? 2 : 1;   // asteroid spraytini chizish ikki barobar qimmat
     let reuse = null;
     if (SPR.size >= 160) { const k0 = SPR.keys().next().value; reuse = SPR.get(k0); SPR.delete(k0); }
     const px = Math.ceil((s + 8) * scale);
@@ -2564,7 +2563,7 @@
       ctx.drawImage(fxGlow('255,230,150'), L.src.x - x0 - 140, L.src.y - y0 - 140, 280, 280);
       ctx.globalAlpha = ga;
     }
-    ctx.drawImage(spr, -4, -4, s + 8, s + 8);   // shisha old qatlami (qirra, yaltiroq, tungi soya, yoriqlar)
+    ctx.drawImage(spr, -4, -4, s + 8, s + 8);   // shisha old qatlami (qirra, yaltiroq, tungi soya)
     litPass(0, 0, s, cell, 'liquid', y0, clip);
     ctx.restore();
     if (chip) { brickShape(x0, y0, s, cell); ctx.strokeStyle = L.glassEdge || 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke(); }
@@ -2746,7 +2745,7 @@
 
   function draw() {
     ensureCaches();
-    sprBudget = 10;   // bir kadrda chiziladigan yangi g'isht spraytlari soni
+    sprBudget = 4;   // bir kadrda qayta chiziladigan spraytlar "narxi" (qolgani keyingi kadrlarda, eskisi ko'rinib turadi)
     FX_BUSY = phase === 'fire' && flying.length > 60;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 0.6, (Math.random() - 0.5) * shake * 0.6);
