@@ -100,6 +100,7 @@
   .layers li { padding: 4px 0; }
   .center { text-align: center; }
   #toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #16222e;
+           width: max-content; max-width: calc(100vw - 32px); text-align: center;
            color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 600; opacity: 0;
            transition: opacity .25s; pointer-events: none; z-index: 20; }
   #toast.show { opacity: 1; }
@@ -1563,11 +1564,14 @@
   function turnSteps() {
     if (fast) return 3;
     const many = game.balls >= 60, t2 = 60 * (many ? 3 : 6), t3 = 60 * (many ? 6 : 12);
+    // 100+ to'pda (to'plar oqimi uzun): tezlashish ertaroq boshlanadi va 4× gacha boradi — yurish ~4 soniyada tugaydi
+    const huge = game.balls >= 100;
     if (shotsLeft === 0 && turnTime > 120) {   // deyarli hammasi qo'ngan — qolganlarini tez kutamiz
       let n = 0, d = 0;
       for (const b of flying) if (!b.temp) { n++; if (b.s === 'done' || b.s === 'gone') d++; }
-      if (n && d >= n * 0.9) return 3;
+      if (n && d >= n * 0.9) return huge && turnTime > 300 ? 4 : 3;
     }
+    if (huge) return turnTime > 300 ? 4 : turnTime > 120 ? 3 : turnTime > 60 ? 2 : 1;
     return turnTime > t3 ? 3 : turnTime > t2 ? 2 : 1;
   }
 
@@ -2167,15 +2171,15 @@
       ctx.drawImage(laserHalo(), -len - 16, -24, (len + 16) * 2, 48);
       ctx.globalAlpha = a;
     }
-    ctx.fillStyle = 'rgba(255,246,190,.8)'; roundRect(-len, -9, len * 2, 18, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,243,176,.86)'; roundRect(-len, -9, len * 2, 18, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(206,140,10,.75)'; ctx.lineWidth = 1.4; ctx.stroke();
     // chaqmoq har 5 tikda yangi shaklda
     const sd = Math.floor(tick / 5) * 13 + Math.floor(cell.ph * 100);
     ctx.beginPath(); ctx.moveTo(-len + 5, 0);
     for (let k = 1; k <= 5; k++) ctx.lineTo(-len + 5 + k * (len * 2 - 10) / 6, (hash01(sd + k) - 0.5) * 11);
     ctx.lineTo(len - 5, 0);
-    ctx.lineJoin = 'round'; ctx.strokeStyle = '#f0a000'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = '#fffbe0'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#f29400'; ctx.lineWidth = 3.6; ctx.stroke();
+    ctx.strokeStyle = '#fffdf0'; ctx.lineWidth = 1.4; ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(-len + 9, -5); ctx.lineTo(len - 9, -5); ctx.stroke();
     for (const sg of [-1, 1]) {   // metall qopqoqlar va nur yo'nalishi uchburchaklari
@@ -2643,24 +2647,26 @@
   }
   function show(id) { $(id).classList.add('show'); }
   function hide(id) { $(id).classList.remove('show'); }
-  // Qisqa xabarlar navbat bilan: bir vaqtda kelgan xabarlar (yutuq, vazifa, ob-havo...) bir-birini yo'qotmaydi
+  // Qisqa xabarlar: yangisi darhol ko'rinadi; endigina chiqqan (hali o'qilmagan) xabar navbatga qaytadi va keyin ko'rsatiladi —
+  // bir vaqtda kelgan xabarlar (yutuq, vazifa, ob-havo...) bir-birini yo'qotmaydi, tugma javobi esa kechikmaydi
   const TOASTQ = [];
+  let toastCur = null;   // { msg, t0 }
   function toast(msg) {
-    if (TOASTQ.includes(msg)) return;
-    TOASTQ.push(msg);
-    if (TOASTQ.length > 4) TOASTQ.splice(1, 1);   // juda ko'p bo'lsa eng eskisi tashlanadi
-    if (TOASTQ.length === 1) toastNext();
+    if ((toastCur && toastCur.msg === msg) || TOASTQ.includes(msg)) return;
+    if (toastCur && performance.now() - toastCur.t0 < 700) TOASTQ.unshift(toastCur.msg);
+    if (TOASTQ.length > 3) TOASTQ.length = 3;
+    toastShow(msg);
   }
-  function toastNext() {
+  function toastShow(msg) {
     const t = $('toast');
-    if (!TOASTQ.length) return;
-    t.textContent = TOASTQ[0]; t.classList.add('show');
+    toastCur = { msg, t0: performance.now() };
+    t.textContent = msg; t.classList.add('show');
     clearTimeout(toast.h);
     toast.h = setTimeout(() => {
-      TOASTQ.shift();
+      toastCur = null;
       t.classList.remove('show');
-      if (TOASTQ.length) toast.h = setTimeout(toastNext, 260);
-    }, TOASTQ.length > 1 ? 1400 : 1700);
+      if (TOASTQ.length) toast.h = setTimeout(() => toastShow(TOASTQ.shift()), 260);
+    }, TOASTQ.length ? 1300 : 1700);
   }
 
   function persist() {
