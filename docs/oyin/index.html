@@ -4703,19 +4703,16 @@
   function showBanner(text, sub) { banner = { text, sub, life: 150 }; }
 
   // ---------- Effektlar ----------
-  // Material rangi (sinish bo'laklari uchun)
+  // Material rangi (sinish bo'laklari uchun) — g'ishtning ekrandagi joriy rangi bilan bir xil
   function styleRGB(st, cell) {
-    const t = cell.m / Math.max(1, game.level * ZONES[game.zone].hpK);
-    if (st === 'liquid') return liquidRGB(t).split(',').map(Number);
-    if (st === 'soil') return tint(t, [168, 120, 76], [116, 76, 44], [84, 52, 34]);
-    if (st === 'stone') return tint(t, [128, 122, 136], [92, 86, 102], [72, 60, 96]);
-    if (st === 'cloud') return tint(t, [255, 255, 255], [214, 222, 234], [150, 160, 182]);
-    return tint(t, [150, 138, 128], [112, 100, 92], [96, 72, 110]);
+    const t = cell.tv ?? tOf(cell), c = tint(t, palOf(st, cell));
+    return st === 'cloud' && t > 1 ? mix(c, STORM_RGB, Math.min(1, (t - 1) * 2)) : c;
   }
   const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   // Rangni faqat yorug'ligi bo'yicha o'zgartiradi (tusi saqlanadi)
   const jit = (c, k) => { const d = (Math.random() - 0.5) * k; return c.map(v => Math.max(0, Math.min(255, Math.round(v + d)))); };
-  function pushFx(e) { effects.push(e); if (effects.length > 900) effects.splice(0, effects.length - 900); }
+  // Effektlar soni cheklangan — ko'p to'p bilan ham kadr tezligi tushmaydi
+  function pushFx(e) { effects.push(e); if (effects.length > 600) effects.splice(0, effects.length - 600); }
 
   // Shovqinli "qarsillash" ovozi — uvalanish va sinish uchun
   let noiseBuf = null;
@@ -4737,9 +4734,21 @@
     } catch {}
   }
 
+  // Zarba nuqtasidagi chaqnash rangi (material bo'yicha); bir vaqtda 12 tadan ko'p chaqnash bo'lmaydi
+  const HIT_TINT = { liquid: '191,232,255', soil: '255,226,176', stone: '200,182,255', cloud: '255,255,255', rock: '255,179,71' };
+  let hitAlive = 0;
   // Har zarbada urilgan joydan mayda zarrachalar sachraydi (shikast oshgan sari ko'proq)
   function hitFx(hx, hy, cell, cx, cy) {
     const st = curStyle(), col = styleRGB(st, cell), d = dmgOf(cell);
+    cell.fl = 1;   // g'isht bir lahza oqarib chaqnaydi (litPass)
+    if (hitAlive < 12) {
+      hitAlive++;
+      if (st === 'liquid' && cell.bid === undefined) {
+        // suyuqlikda — sath ustida to'lqin halqasi
+        const s = CELL - GAP * 2, x0 = cx - s / 2, y0 = cy - s / 2, lvl = Math.max(0, Math.min(1, cell.hp / cell.m));
+        pushFx({ k: 'ripple', x: Math.max(x0 + 12, Math.min(x0 + s - 12, hx)), y: y0 + s * (1 - (0.22 + 0.78 * lvl)), life: 12 });
+      } else pushFx({ k: 'hit', x: hx, y: hy, life: 7, tint: HIT_TINT[st] || '255,255,255' });
+    }
     const n = 1 + Math.round(d * 4);
     for (let i = 0; i < n; i++) {
       let a = Math.atan2(hy - cy, hx - cx) + (Math.random() - 0.5) * 1.6;
@@ -4776,6 +4785,7 @@
   // G'ishtni haqiqiy siniq bo'laklarga parchalash (bo'laklar aylanib uchadi, yerga tushib sakraydi)
   function shatter(cx, cy, size, col, opt = {}) {
     const N = size > 150 ? 4 : 3, s = size - GAP * 2, x0 = cx - s / 2, y0 = cy - s / 2, st = s / N;
+    const glass = opt.glass ? mix([225, 242, 255], col, 0.15) : null;   // shisha bo'laklari suyuqlik rangida biroz bo'yalgan
     const P = [];
     for (let i = 0; i <= N; i++) {
       P.push([]);
@@ -4794,14 +4804,17 @@
           k: 'shard', x: gx, y: gy, pts: tri.map(([px, py]) => [px - gx, py - gy]),
           vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2.5 - Math.random() * 2.5,
           rot: 0, vr: (Math.random() - 0.5) * 0.35, life: 55 + rnd(25), max: 80,
-          color: opt.glass ? `rgba(225,242,255,${0.45 + Math.random() * 0.25})` : rgb(jit(col, 36)),
-          edge: opt.glass ? 'rgba(255,255,255,.95)' : rgb(col.map(v => v * 0.6)),
+          color: glass ? rgb(glass, 0.45 + Math.random() * 0.25) : rgb(jit(col, 36)),
+          edge: glass ? 'rgba(255,255,255,.95)' : rgb(col.map(v => Math.round(v * 0.6))),
         });
       }
     }
-    pushFx({ k: 'flash', x: cx, y: cy, size: s, life: 8 });
+    // sinish chaqnashi: yorug' to'lqin va material rangidagi zarba halqasi
+    pushFx({ k: 'burst', x: cx, y: cy, size: s, life: 10, max: 10, col: rgb(col) });
   }
 
+  // Sinishdagi uchqunlar: tosh kristali davrga qarab rang oladi
+  const SPARK_RGB = { rock: [[255, 179, 71]], stone: [[[180, 155, 255], [127, 232, 255]], [[79, 227, 160]], [[255, 90, 122]], [[255, 208, 96]]] };
   function breakFx(x, y, cell, size = CELL) {
     const st = curStyle(), col = styleRGB(st, cell), big = size > 150;
     if (st === 'liquid') {
@@ -4816,7 +4829,7 @@
         const a = Math.random() * Math.PI * 2, sp = 0.5 + Math.random() * 1.8;
         pushFx({ k: 'c', x: x + (Math.random() - 0.5) * size * 0.6, y: y + (Math.random() - 0.5) * size * 0.5, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 40 + rnd(15), size: 10 + Math.random() * 14 });
       }
-      if (cell.m / Math.max(1, game.level * ZONES[game.zone].hpK) > 1) {   // yomg'ir buluti — tomchilar to'kiladi
+      if ((cell.tv ?? tOf(cell)) > 1 || cell.dbl) {   // yomg'ir buluti — tomchilar to'kiladi
         for (let i = 0; i < 12; i++) pushFx({ k: 'd', x: x + (Math.random() - 0.5) * size * 0.7, y, vx: 0, vy: 2 + Math.random() * 3, life: 35, color: 'rgba(90,140,210,.8)', size: 1.8 });
       }
       crunch(0.3, 0.04, 400);
@@ -4826,10 +4839,14 @@
       for (let i = 0; i < (big ? 14 : 7); i++) {
         pushFx({ k: 'dust', x: x + (Math.random() - 0.5) * size * 0.7, y: y + (Math.random() - 0.3) * size * 0.5, vx: (Math.random() - 0.5) * 1.2, vy: -0.3 - Math.random() * 0.6, life: 45 + rnd(20), max: 65, size: 8 + Math.random() * 12, color: dust });
       }
+      const sparks = st === 'rock' ? SPARK_RGB.rock : st === 'stone' ? SPARK_RGB.stone[Math.min(3, cell.tr | 0)] : null;
       for (let i = 0; i < (big ? 30 : 14); i++) {
         const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 5;
-        const spark = st === 'rock' ? '#ffb347' : st === 'stone' ? (Math.random() < 0.5 ? '#b49bff' : '#7fe8ff') : rgb(jit(col, 50));
-        pushFx({ k: 'p', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, life: 30, color: (st === 'soil' || Math.random() < 0.6) ? rgb(jit(col, 50)) : spark, size: 2 + Math.random() * 3 });
+        const c = sparks && Math.random() >= 0.6 ? sparks[rnd(sparks.length)] : jit(col, 50);
+        const e = { k: 'p', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, life: 30, color: rgb(c), size: 2 + Math.random() * 3 };
+        // tosh va asteroid bo'laklari aylanib uchadi: yorug' va soyali tomoni almashib ko'rinadi
+        if (st !== 'soil') { e.rot = Math.random() * 6.28; e.vr = Math.random() < 0.5 ? -0.3 : 0.3; e.color2 = rgb(c.map(v => Math.round(v * 0.7))); e.size += 1.5; }
+        pushFx(e);
       }
       crunch(st === 'soil' ? 0.22 : 0.16, 0.09, st === 'soil' ? 350 : st === 'stone' ? 900 : 700);
       beep(st === 'soil' ? 120 : 200, 0.08, 0.04, 'triangle');
@@ -4844,21 +4861,254 @@
     return ZONES[z].style;
   }
   function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
-  function tint(t, lo, hi, dbl) { return t <= 1 ? mix(lo, hi, Math.max(0, t)) : mix(hi, dbl, Math.min(1, t - 1)); }
-  function liquidRGB(t) { return tint(t, [255, 160, 95], [255, 60, 95], [190, 40, 150]).join(','); }
+  // Rang shkalasi uch bosqichli: lo (oz jon) → mid (yarmi) → hi (to'la); undan yuqorisi → dbl (ikki barobar).
+  // tint(t, palitra) yoki eski ko'rinishda tint(t, lo, hi, dbl, mid)
+  function tint(t, lo, hi, dbl, mid) {
+    if (lo && !Array.isArray(lo)) ({ lo, hi, dbl, mid } = lo);
+    if (t > 1) return mix(hi, dbl, Math.min(1, t - 1));
+    t = Math.max(0, t);
+    if (!mid) return mix(lo, hi, t);
+    return t <= 0.5 ? mix(lo, mid, t * 2) : mix(mid, hi, t * 2 - 1);
+  }
+  // Material davrlari: har 25 levelda yangi qatorlar yangi rangda (cell.tr = 0..3)
+  const mkPal = (lo, hi, dbl, mid) => ({ lo, hi, dbl, mid: mid || mix(lo, hi, 0.5) });
+  const PAL = {
+    liquid: [
+      mkPal([255, 200, 115], [232, 44, 92], [176, 40, 150], [255, 120, 92]),   // o'rik → marjon → olcha
+      mkPal([153, 207, 81], [40, 190, 120], [20, 120, 150]),                   // laym va firuza
+      mkPal([108, 171, 230], [70, 90, 240], [120, 50, 200]),                   // ko'k meva
+      mkPal([230, 198, 81], [245, 160, 20], [200, 90, 10]),                    // limon va asal
+    ],
+    soil: [
+      mkPal([196, 150, 98], [116, 76, 44], [84, 52, 34]),
+      mkPal([196, 110, 72], [150, 62, 40], [110, 40, 30]),     // qizil loy
+      mkPal([110, 90, 70], [70, 55, 45], [50, 40, 40]),        // qora tuproq, oq zamburug' iplari bilan
+      mkPal([214, 152, 74], [160, 96, 40], [112, 58, 30]),     // qahrabo, toshqotgan chig'anoq bilan
+    ],
+    stone: [
+      mkPal([156, 150, 166], [92, 86, 102], [72, 60, 96]),
+      mkPal([90, 95, 100], [60, 64, 70], [40, 44, 56]),        // bazalt, zumrad kristall
+      mkPal([70, 60, 80], [40, 32, 50], [30, 20, 40]),         // obsidian, yoqut
+      mkPal([138, 130, 122], [90, 84, 78], [66, 56, 62]),      // oltin tomirli tosh
+    ],
+    cloud: [
+      mkPal([255, 255, 255], [214, 222, 234], [150, 160, 182]),
+      mkPal([255, 236, 240], [240, 200, 215], [190, 150, 190]),   // shom pushti
+      mkPal([225, 230, 240], [170, 180, 200], [110, 120, 150]),   // momaqaldiroq kulrangi
+      mkPal([235, 255, 248], [190, 240, 225], [120, 190, 190]),   // qutb yog'dusi yalpizi
+    ],
+    rock: [
+      mkPal([176, 166, 154], [112, 100, 92], [96, 72, 110], [150, 138, 128]),
+      mkPal([190, 120, 90], [150, 80, 60], [110, 50, 50]),        // Mars qizili
+      mkPal([200, 225, 245], [140, 170, 210], [100, 110, 190]),   // muzli kometa
+      mkPal([170, 170, 180], [120, 125, 140], [90, 80, 120]),     // temir-nikel
+    ],
+  };
+  // Turlarga (variant) xos palitralar
+  const tweakPal = (P, c, k) => mkPal(mix(P.lo, c, k), mix(P.hi, c, k), P.dbl, mix(P.mid, c, k));
+  const HONEY_PAL = mkPal([255, 214, 120], [214, 128, 24], [150, 70, 20], [244, 170, 50]);
+  const STORM_RGB = [138, 147, 168];
+  const SANDY_PAL = PAL.soil.map(P => tweakPal(P, [214, 190, 140], 0.35));
+  const MARBLE_PAL = PAL.stone.map(P => tweakPal(P, [222, 218, 214], 0.45));
+  const IRON_PAL = PAL.rock.map(P => tweakPal(P, [92, 100, 116], 0.5));
+  const ICY_PAL = PAL.rock.map(P => tweakPal(P, [200, 226, 250], 0.45));
+  const BASALT_PAL = PAL.rock.map(P => tweakPal(P, [52, 48, 52], 0.6));
+  function palOf(st, cell) {
+    const tr = Math.max(0, Math.min(3, cell.tr | 0)), v = cell.v | 0;
+    if (st === 'liquid' && v === 4) return HONEY_PAL;
+    if (st === 'soil' && v === 2) return SANDY_PAL[tr];
+    if (st === 'stone' && v === 3) return MARBLE_PAL[tr];
+    if (st === 'rock' && v) return (v === 1 ? IRON_PAL : v === 2 ? ICY_PAL : BASALT_PAL)[tr];
+    return (PAL[st] || PAL.rock)[tr];
+  }
+  function liquidRGB(t, cell) { return tint(t, cell ? palOf('liquid', cell) : PAL.liquid[0]).join(','); }
 
-  function roundRect(x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  // Har 10 levelda yangi g'isht turi ochiladi (faqat ko'rinish; jon va to'qnashuv o'zgarmaydi)
+  const BRICK_VARIANTS = {
+    liquid: ['sharbat', 'gazli', 'mevali', 'muzli', 'asal'],
+    soil: ['tuproq', 'loy', 'qumli', 'toshli', "chig'anoqli"],
+    stone: ['oddiy', 'granit', 'slanets', 'marmar', 'geoda'],
+    cloud: ["to'p", 'qatlam', 'patli', 'momiq'],
+    rock: ['xondrit', 'temir', 'muz kometa', 'bazalt'],
+  };
+  // Eng yangi ochilgan tur 35% ehtimol bilan chiqadi, qolganlari teng bo'lishadi
+  function pickVariant(style, lv) {
+    const list = BRICK_VARIANTS[style] || [''], top = Math.min(list.length - 1, Math.min(4, Math.floor(lv / 10)));
+    if (top <= 0) return 0;
+    return Math.random() < 0.35 ? top : rnd(top);
   }
 
+  // ---------- Yagona yorug'lik ----------
+  // LIGHT — joriy qatlam va kun vaqti uchun bitta yorug'lik manbai: lx, ly — nur yo'nalishi (birlik vektor),
+  // len — soya uzunligi, a — soya quyuqligi, src — quyosh yoki oy joyi. G'isht, soya, to'p va effektlar shundan oladi.
+  let LIGHT = { z: null, dkey: null, key: '', lx: 0.6, ly: 0.8, len: 8, a: 0.15, col: '0,0,0', src: null, moon: false, golden: false, night: false,
+    rimEdges: [0, 3], rimCol: 'rgba(255,255,255,.55)', bevelCol: 'rgba(0,0,0,.14)', amb: null, ambLiq: null, ambCloud: null, warm: null, under: null,
+    shadowCore: 'rgba(0,0,0,.11)', shadowPen: 'rgba(0,0,0,.07)', envSky: '#9fc4e8', envGround: '#5aa83c' };
+  function computeLight(z) {
+    const sky = z === 0 || z === 1;
+    let lx, ly, len, a, col = '0,0,0', src = null, moon = false, rim = 'rgba(255,255,255,.5)';
+    if (sky) {
+      let s = null;
+      try { if (typeof skyLight === 'function') s = skyLight(z); } catch { s = null; }
+      if (!s || !isFinite(s.x) || !isFinite(s.y)) {   // A paketisiz: eski quyosh va oy yo'li
+        if (DAY.sun !== null) {
+          const p = DAY.sun, base = z === 1 ? H * 0.55 : H * 0.62;
+          s = { x: W * (0.08 + 0.84 * p), y: base - Math.sin(Math.PI * p) * (base - 110), low: 1 - Math.sin(Math.PI * p), moon: false };
+        } else s = { x: z === 1 ? W * 0.2 : W * 0.8, y: 150, low: 0, moon: true };
+      }
+      src = { x: s.x, y: s.y }; moon = !!s.moon;
+      const dx = W / 2 - s.x, dy = H * 0.42 - s.y, d = Math.hypot(dx, dy) || 1;
+      lx = dx / d; ly = Math.max(0.3, dy / d);
+      if (moon) { len = 7; a = 0.08; col = '6,10,30'; rim = 'rgba(190,210,255,.55)'; }
+      else {
+        const elev = 1 - Math.max(0, Math.min(1, s.low || 0));
+        len = 5 + 9 * (1 - elev); a = 0.13 + 0.05 * elev;   // tong va shomda soya uzun
+        col = DAY.golden ? '80,60,120' : '40,70,110';
+        rim = DAY.golden ? 'rgba(255,214,160,.8)' : 'rgba(255,255,255,.55)';
+      }
+      if (z === 1) { len *= 1.3; a *= 0.7; }
+    } else if (z === -1) { lx = 0.25; ly = 0.97; len = 8; a = 0.28; col = '25,12,0'; rim = 'rgba(255,232,196,.34)'; }
+    else if (z === -2) { lx = 0.15; ly = -0.99; len = 6; a = 0.32; col = '14,6,2'; rim = 'rgba(255,150,70,.6)'; }   // lava pastdan yoritadi
+    else { lx = 0.55; ly = 0.83; len = 9; a = 0.5; col = '0,0,0'; rim = 'rgba(225,235,255,.5)'; }
+    const d = Math.hypot(lx, ly); lx /= d; ly /= d;
+    // nurga qaragan qirralar: 0 — tepa, 1 — o'ng, 2 — past, 3 — chap
+    const rimEdges = [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([nx, ny], i) => -(nx * lx + ny * ly) > 0.25 ? i : -1).filter(i => i >= 0);
+    const darkA = sky ? 0.42 * DAY.darkK / 0.62 : 0;
+    let under = null;
+    if (z === -2 || z === 2) {   // pastdan yoritish: lava (to'q sariq) yoki Yer aksi (ko'kish)
+      under = ctx.createLinearGradient(0, 94, 0, z === -2 ? 94 * 0.66 : 94 * 0.72);
+      const c = z === -2 ? '255,120,40' : '110,170,255';
+      under.addColorStop(0, `rgba(${c},1)`); under.addColorStop(1, `rgba(${c},0)`);
+    }
+    const grass = { summer: '#5aa83c', spring: '#68b443', autumn: '#8a8a3a', winter: '#dce6f0' }[DAY.season] || '#5aa83c';
+    const nt = c => (typeof nat === 'function' ? nat(c) : c);
+    const env = z === 0 ? [DAY.top, nt(grass)] : z === 1 ? [typeof skyTop === 'function' ? skyTop() : DAY.top, nt('#ffffff')]
+      : z === 2 ? ['#0a1230', '#5aa2ee'] : z === -1 ? ['#4a3628', '#6b4a2e'] : ['#2f2a36', '#ff8a3a'];
+    return {
+      z, dkey: DAY.key, key: z + '|' + (sky ? DAY.key : ''), lx, ly, len, a, col, src, moon,
+      golden: sky && !moon && DAY.golden, night: sky && (moon || DAY.darkK > 0.3),
+      rimEdges, rimCol: rim, bevelCol: 'rgba(0,0,0,.14)',
+      amb: darkA > 0 ? `rgba(18,26,58,${darkA.toFixed(3)})` : null,
+      ambLiq: darkA > 0 ? `rgba(18,26,58,${(darkA * 0.75).toFixed(3)})` : null,
+      ambCloud: darkA > 0 ? `rgba(18,26,58,${(darkA * 0.6).toFixed(3)})` : null,
+      warm: sky && !moon && DAY.golden ? 'rgba(255,140,70,.10)' : null,
+      under, shadowCore: `rgba(${col},${(a * 0.75).toFixed(3)})`, shadowPen: `rgba(${col},${(a * 0.45).toFixed(3)})`,
+      envSky: env[0], envGround: env[1],
+      glassEdge: darkA > 0.2 ? 'rgba(196,210,240,.72)' : darkA > 0 ? 'rgba(235,240,255,.82)' : 'rgba(255,255,255,.9)',
+    };
+  }
+
+  // Keshlarni tekshirish: o'lcham (scale) yoki yorug'lik o'zgarsa spraytlar qayta chiziladi (resize ilgagi kerak emas)
+  let SPR_SCALE = 0, SKIN_COL = '#5aa5f5', sprBudget = 0;
+  let FX_BUSY = false;   // juda ko'p to'p uchayotganda (60+) mayda jonli bezaklar o'tkazib yuboriladi
+  function ensureCaches() {
+    if (scale !== SPR_SCALE) {
+      SPR_SCALE = scale; SPR.clear(); BALL_SPR.clear(); BOSS_HALO = null; CRYSTAL_SPR = {}; LIQ_SPR = {}; LIQ_CACHE.clear();
+      crystalSpr('#9b7bff', 0); crystalSpr('#5fe0ff', 0);
+    }
+    const lz = zoneAnim && zoneAnim.t < 0.5 ? zoneAnim.from : game.zone;
+    if (LIGHT.z !== lz || LIGHT.dkey !== DAY.key) {
+      const old = LIGHT.key, next = LIGHT_NEXT;
+      LIGHT = next && next.z === lz && next.dkey === DAY.key ? next : computeLight(lz);
+      LIGHT_NEXT = null;
+      LIQ_CACHE.clear();
+      // oldindan tayyorlangan (prewarm) spraytlar saqlanadi — eskilari LRU navbatida o'z-o'zidan chiqib ketadi
+      if (LIGHT.key !== old) { if (LIGHT !== next) SPR.clear(); BALL_SPR.clear(); }
+    }
+    SKIN_COL = (SKINS.find(q => q.id === profile.skin) || SKINS[0]).color;
+  }
+  // Qatlam almashinuvining birinchi yarmida yangi qatlam g'ishtlarining spraytlari har kadrda 2 tadan
+  // oldindan chiziladi — o'rtada (uslub almashganda) hammasi bir kadrda chizilib, o'yin qotib qolmaydi.
+  let LIGHT_NEXT = null;
+  function prewarm() {
+    if (!zoneAnim || zoneAnim.t >= 0.5) return;
+    const to = zoneAnim.to, st = ZONES[to].style;
+    if (!LIGHT_NEXT || LIGHT_NEXT.z !== to || LIGHT_NEXT.dkey !== DAY.key) LIGHT_NEXT = computeLight(to);
+    const keep = LIGHT, keepB = sprBudget;
+    LIGHT = LIGHT_NEXT; sprBudget = 1e9;
+    let n = 2;
+    for (let r = 0; r < ROWS && n > 0; r++) for (let c = 0; c < COLS && n > 0; c++) {
+      const cell = game.grid[r][c];
+      if (!cell || (cell.t === 'boss' && (cell.dx || cell.dy))) continue;
+      const o = cell.t === 'boss' ? cell.ref : cell.t === 'brick' && cell.k !== 'chest' ? cell : null;
+      if (!o) continue;
+      const sz = cell.t === 'boss' ? CELL * 2 : CELL, t = st === 'liquid' ? 0 : o.tv ?? tOf(o);
+      if (SPR.has(sprKey(st, o, t, sz))) continue;
+      brickSprite(st, o, t, sz); n--;
+      const s = sz - GAP * 2, ink = CRACK_INK[st];
+      if (ink) crackLayer(st, o, s, ink[0], ink[1]);
+      if (LIGHT.under) underSpr(o, st, s);
+    }
+    LIGHT = keep; sprBudget = keepB;
+  }
+
+  // G'ishtning rang darajasi joriy levelga nisbatan: 0.08 — sinish arafasida, 1 — to'la, 1..2 — ikki barobar.
+  // Eski qatorlar va urilgan g'ishtlar boshqa rangda — maydon bir xil bo'lib qolmaydi.
+  function tOf(cell) {
+    const z = game.zone, k = ZONES[z].hpK, lv = game.level, hp = cell.hp;
+    const top = Math.max(1, typeof baseHp === 'function' ? baseHp(lv, z) : lv * k);
+    const lo = Math.max(0, (lv - 7) * k * 0.5);
+    if (hp > top) return 1 + Math.min(1, (hp - top) / top);
+    return Math.max(0.08, Math.min(1, (hp - lo) / Math.max(1e-6, top - lo)));
+  }
+  // Har tikda: silkinish so'nadi, rang silliq oqaradi, chaqnash o'chadi, raqam pastga "aylanib" tushadi
+  function tickCells() {
+    for (const row of game.grid) for (const cell of row) {
+      if (!cell) continue;
+      let o = cell;
+      if (cell.t === 'boss') {
+        if (cell.dx || cell.dy) continue;   // boss bitta — chap-yuqori qismida hisoblanadi
+        o = cell.ref;
+        const tv = 1 + 0.6 * o.hp / o.m;
+        o.tv = o.tv === undefined ? tv : o.tv + (tv - o.tv) * 0.15;
+      } else if (cell.t === 'brick') {
+        const tv = tOf(o);
+        o.tv = o.tv === undefined ? tv : o.tv + (tv - o.tv) * 0.15;
+      } else { if (o.wob) o.wob = Math.max(0, o.wob - 0.05); continue; }
+      if (o.wob) o.wob = Math.max(0, o.wob - 0.05);
+      if (o.fl) o.fl = Math.max(0, o.fl - 0.2);
+      if (o.pulse) o.pulse = Math.max(0, o.pulse - 0.04);
+      if (o.dhp === undefined || Math.abs(o.hp - o.dhp) < 0.5) o.dhp = o.hp;
+      else o.dhp += (o.hp - o.dhp) * 0.35;
+    }
+  }
+
+  function rrPath(g, x, y, w, h, r) {
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  function roundRect(x, y, w, h, r) { ctx.beginPath(); rrPath(ctx, x, y, w, h, r); }
+  function roundRectG(g, x, y, w, h, r) { g.beginPath(); rrPath(g, x, y, w, h, r); }
+
+  // Raqamlar: qalin chegara bilan, yorug'lik tomonidan yumshoq soya; zarbada biroz kattalashadi
   let NUMK = 1;   // boss raqami kattaroq chiziladi
-  function number(n, x, y, color, shadow = 'rgba(0,0,0,.35)') {
-    const fs = (n >= 1000 ? 30 : n >= 100 ? 36 : 42) * NUMK;
-    ctx.font = `800 ${fs}px Roboto, Arial, sans-serif`;
-    ctx.fillStyle = shadow; ctx.fillText(n, x + 1.5, y + 3.5);
-    ctx.fillStyle = color; ctx.fillText(n, x, y + 2);
+  const NUM_FONT = {};
+  const NUM_INK = {
+    soil: { fill: '#fff4e0', edge: 'rgba(52,30,14,.85)', hl: true },
+    stone: { fill: '#fff', edge: 'rgba(28,22,36,.85)', hl: true },
+    rock: { fill: '#fff', edge: 'rgba(18,14,12,.85)', hl: true },
+    cloudDay: { fill: '#2f4a70', edge: 'rgba(255,255,255,.9)' },
+    cloudNight: { fill: '#fff', edge: 'rgba(30,40,80,.8)' },
+  };
+  const INK_TMP = { fill: '#fff', edge: 'rgba(0,0,0,.6)' };
+  function number(n, x, y, ink, cell) {
+    if (!ink || typeof ink === 'string') { INK_TMP.fill = ink || '#fff'; ink = INK_TMP; }
+    if (!cell || typeof cell !== 'object') cell = null;
+    const v = cell && cell.dhp !== undefined ? Math.round(cell.dhp) : n;
+    const fs = (v >= 1000 ? 30 : v >= 100 ? 36 : 42) * NUMK;
+    ctx.font = NUM_FONT[fs] || (NUM_FONT[fs] = `900 ${fs}px Roboto, system-ui, Arial`);
+    const L = LIGHT, w = cell && cell.wob > 0.02 ? 1 + cell.wob * 0.14 : 1;
+    let px = x, py = y + 2;
+    if (w !== 1) { ctx.save(); ctx.translate(px, py); ctx.scale(w, w); px = 0; py = 0; }
+    const ga = ctx.globalAlpha;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 6 * NUMK;
+    ctx.globalAlpha = ga * 0.22; ctx.strokeStyle = '#000';
+    ctx.strokeText(v, px + L.lx * 2 * NUMK, py + L.ly * 2 * NUMK);
+    ctx.globalAlpha = ga;
+    ctx.strokeStyle = ink.edge; ctx.strokeText(v, px, py);
+    ctx.fillStyle = ink.fill; ctx.fillText(v, px, py);
+    if (ink.hl) { ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillText(v, px - L.lx, py - L.ly); }
+    if (w !== 1) ctx.restore();
   }
 
   // ---------- Shikastlanish ko'rinishi ----------
@@ -4872,54 +5122,117 @@
     return j;
   }
 
-  // G'isht shakli: jonining yarmidan kami qolganda burchak va qirralaridan bo'laklar ko'chadi.
-  // Tasodifiy sonlar har doim bir xil tartibda olinadi — shakl kadrdan kadrga sakramaydi.
-  function brickShape(x0, y0, s, cell) {
-    const chip = Math.max(0, dmgOf(cell) - 0.45) / 0.55;
-    if (chip <= 0) { roundRect(x0, y0, s, s, BR); return; }
-    const rand = prng(cell.s + 313), x1 = x0 + s, y1 = y0 + s, B = 0.62;
-    const C = [], N = [];
-    for (let k = 0; k < 4; k++) C.push({ on: rand() < 0.3 + chip * 0.7, a: s * (0.06 + rand() * 0.14) * chip, b: s * (0.06 + rand() * 0.14) * chip });
-    for (let k = 0; k < 4; k++) N.push({ on: rand() < chip * 0.9 - 0.15, pos: 0.3 + rand() * 0.4, w: s * (0.04 + rand() * 0.05), d: s * (0.05 + rand() * 0.08) * chip });
-    ctx.beginPath();
-    if (C[0].on) { ctx.moveTo(x0, y0 + C[0].a); ctx.lineTo(x0 + C[0].b * B, y0 + C[0].a * B); ctx.lineTo(x0 + C[0].b, y0); } else ctx.moveTo(x0, y0);
-    if (N[0].on) { const nx = x0 + s * N[0].pos; ctx.lineTo(nx - N[0].w, y0); ctx.lineTo(nx, y0 + N[0].d); ctx.lineTo(nx + N[0].w, y0); }
-    if (C[1].on) { ctx.lineTo(x1 - C[1].b, y0); ctx.lineTo(x1 - C[1].b * B, y0 + C[1].a * B); ctx.lineTo(x1, y0 + C[1].a); } else ctx.lineTo(x1, y0);
-    if (N[1].on) { const ny = y0 + s * N[1].pos; ctx.lineTo(x1, ny - N[1].w); ctx.lineTo(x1 - N[1].d, ny); ctx.lineTo(x1, ny + N[1].w); }
-    if (C[2].on) { ctx.lineTo(x1, y1 - C[2].a); ctx.lineTo(x1 - C[2].b * B, y1 - C[2].a * B); ctx.lineTo(x1 - C[2].b, y1); } else ctx.lineTo(x1, y1);
-    if (N[2].on) { const nx = x0 + s * N[2].pos; ctx.lineTo(nx + N[2].w, y1); ctx.lineTo(nx, y1 - N[2].d); ctx.lineTo(nx - N[2].w, y1); }
-    if (C[3].on) { ctx.lineTo(x0 + C[3].b, y1); ctx.lineTo(x0 + C[3].b * B, y1 - C[3].a * B); ctx.lineTo(x0, y1 - C[3].a); } else ctx.lineTo(x0, y1);
-    if (N[3].on) { const ny = y0 + s * N[3].pos; ctx.lineTo(x0, ny + N[3].w); ctx.lineTo(x0 + N[3].d, ny); ctx.lineTo(x0, ny - N[3].w); }
-    ctx.closePath();
+  // G'isht silueti: tuproq — har burchagi har xil yumaloq, tosh — 45° qirqilgan, asteroid — qirralari biroz botiq,
+  // shisha va bulut — bir xil yumaloq. Faqat ko'rinish: to'qnashuv cellRect bo'yicha.
+  const SHAPE_CACHE = new WeakMap();
+  const CORN = [[0, 0, 0, -1, 1, 0], [1, 0, 1, 0, 0, 1], [1, 1, 0, 1, -1, 0], [0, 1, -1, 0, 0, -1]];   // burchak, kiruvchi va chiquvchi yo'nalish
+  function shapeOf(cell, st, s) {
+    let o = SHAPE_CACHE.get(cell);
+    if (o && o.st === st && o.sz === s && o.seed === cell.s) return o;
+    const rand = prng((cell.s | 0) + 5), k = Math.min(1.6, s / 94), cr = [], push = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      if (st === 'soil') cr.push({ r: (6 + rand() * 8) * k, c: 0 });
+      else if (st === 'stone') cr.push({ r: 0, c: (5 + rand() * 4) * k });
+      else if (st === 'rock') cr.push({ r: 4 * k, c: 0 });
+      else cr.push({ r: BR, c: 0 });
+    }
+    if (st === 'rock') for (let i = 0; i < 4; i++) push[i] = rand() * 3 * k;
+    o = { st, sz: s, seed: cell.s, cr, push };
+    SHAPE_CACHE.set(cell, o);
+    return o;
   }
+  function cornerTo(g, px, py, ix, iy, ox, oy, q, e) {
+    if (q.c) { const c = q.c + e * 0.41; g.lineTo(px - ix * c, py - iy * c); g.lineTo(px + ox * c, py + oy * c); }
+    else if (q.r) { const r = q.r + e; g.lineTo(px - ix * r, py - iy * r); g.arcTo(px, py, px + ox * r, py + oy * r, r); }
+    else g.lineTo(px, py);
+  }
+  // full — siniqlarsiz to'liq shakl (spraytlar uchun), e — shaklni tashqariga kengaytirish (px)
+  function brickPath(g, x0, y0, s, cell, st, full, e = 0, noBegin) {
+    const sp = shapeOf(cell, st, s), chip = full ? 0 : Math.max(0, dmgOf(cell) - 0.45) / 0.55;
+    x0 -= e; y0 -= e;
+    const S = s + e * 2, x1 = x0 + S, y1 = y0 + S;
+    if (!noBegin) g.beginPath();
+    if (chip <= 0) {
+      const q0 = sp.cr[0], k0 = q0.c ? q0.c + e * 0.41 : q0.r ? q0.r + e : 0;
+      g.moveTo(x0, y0 + k0);
+      for (let i = 0; i < 4; i++) {
+        const C = CORN[i], px = C[0] ? x1 : x0, py = C[1] ? y1 : y0;
+        cornerTo(g, px, py, C[2], C[3], C[4], C[5], sp.cr[i], e);
+        const pu = sp.push[i];
+        if (pu > 0.3) {   // qirra o'rtasi ichkariga botgan (asteroid)
+          const N = CORN[(i + 1) % 4], qx = N[0] ? x1 : x0, qy = N[1] ? y1 : y0, qn = sp.cr[(i + 1) % 4];
+          const kn = qn.c ? qn.c + e * 0.41 : qn.r ? qn.r + e : 0, ex = qx - N[2] * kn, ey = qy - N[3] * kn;
+          g.quadraticCurveTo((px + qx) / 2 - C[5] * pu * 2, (py + qy) / 2 + C[4] * pu * 2, ex, ey);
+        }
+      }
+      g.closePath();
+      return;
+    }
+    // Jonining yarmidan kami qolganda burchak va qirralaridan bo'laklar ko'chadi.
+    // Tasodifiy sonlar har doim bir xil tartibda olinadi — shakl kadrdan kadrga sakramaydi.
+    const rand = prng(cell.s + 313), B = 0.62, Cc = [], Nn = [];
+    for (let k = 0; k < 4; k++) Cc.push({ on: rand() < 0.3 + chip * 0.7, a: S * (0.06 + rand() * 0.14) * chip, b: S * (0.06 + rand() * 0.14) * chip });
+    for (let k = 0; k < 4; k++) Nn.push({ on: rand() < chip * 0.9 - 0.15, pos: 0.3 + rand() * 0.4, w: S * (0.04 + rand() * 0.05), d: S * (0.05 + rand() * 0.08) * chip });
+    for (let i = 0; i < 4; i++) {
+      const C = CORN[i], px = C[0] ? x1 : x0, py = C[1] ? y1 : y0, ix = C[2], iy = C[3], ox = C[4], oy = C[5], ch = Cc[i];
+      if (ch.on) {   // ko'chgan burchak (gorizontal bo'yi — b, tik bo'yi — a)
+        const li = ix ? ch.b : ch.a, lo = ox ? ch.b : ch.a;
+        const sx = px - ix * li, sy = py - iy * li;
+        if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy);
+        g.lineTo(px + (-ix * li + ox * lo) * B, py + (-iy * li + oy * lo) * B);
+        g.lineTo(px + ox * lo, py + oy * lo);
+      } else {   // butun burchak o'z yumaloqligi yoki qirqimini saqlaydi
+        const q = sp.cr[i], kq = q.c ? q.c + e * 0.41 : q.r ? q.r + e : 0;
+        if (i === 0) g.moveTo(px - ix * kq, py - iy * kq);
+        cornerTo(g, px, py, ix, iy, ox, oy, q, e);
+      }
+      const n = Nn[i];
+      if (n.on) {   // qirradagi o'yiq
+        const mx = px + ox * S * n.pos, my = py + oy * S * n.pos, nx = -oy, ny = ox;
+        g.lineTo(mx - ox * n.w, my - oy * n.w); g.lineTo(mx + nx * n.d, my + ny * n.d); g.lineTo(mx + ox * n.w, my + oy * n.w);
+      }
+    }
+    g.closePath();
+  }
+  function brickShape(x0, y0, s, cell) { brickPath(ctx, x0, y0, s, cell, curStyle()); }
 
   // Yoriqlar: zarba markazidan tarqaladi, shikast oshgan sari ko'payadi, uzayadi va tarmoqlanadi.
-  function cracks(x0, y0, s, cell, col, hl) {
-    const dmg = dmgOf(cell);
+  // Barcha nurlar bitta yo'lga yig'iladi (har rang uchun bittadan chizish) va g'isht ichida to'xtaydi —
+  // butun g'ishtni kesib (clip) chizish shart emas.
+  function cracks(x0, y0, s, cell, col, hl) { crackPaint(ctx, x0, y0, s, cell, col, hl, dmgOf(cell)); }
+  // g — chiziladigan kontekst (ekran yoki kesh kanvasi), dmg — shikast darajasi (keshda bosqichlarga bo'lingan)
+  function crackPaint(ctx, x0, y0, s, cell, col, hl, dmg) {
     if (dmg < 0.12) return;
-    const rand = prng(cell.s + 99), n = 7, prog = (dmg - 0.12) / 0.88 * n;
-    const ix = x0 + s * (0.3 + rand() * 0.4), iy = y0 + s * (0.3 + rand() * 0.4);
-    const k0 = s / 94;
+    const n = 7, prog = (dmg - 0.12) / 0.88 * n, k0 = s / 94, w = (1.1 + dmg * 1.7) * k0, e = 3 * k0;
+    const xa = x0 + e, xb = x0 + s - e, ya = y0 + e, yb = y0 + s - e;
+    let ix = 0, iy = 0;
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    for (let k = 0; k < n; k++) {
-      let a = k / n * Math.PI * 2 + rand() * 0.8, px = ix, py = iy;
-      const len = s * (0.3 + rand() * 0.45), segs = 6, pts = [[px, py]];
-      for (let j = 1; j <= segs; j++) { a += (rand() - 0.5) * 0.9; px += Math.cos(a) * len / segs; py += Math.sin(a) * len / segs; pts.push([px, py]); }
-      const bj = 2 + Math.floor(rand() * 2), ba = (rand() < 0.5 ? -1 : 1) * (0.6 + rand() * 0.5), bl = 0.3 + rand() * 0.3;
-      const grow = Math.min(1, prog - k + 0.35);
-      if (grow <= 0) continue;
-      const m = Math.max(1, Math.round(segs * grow));
-      const w = (1.1 + dmg * 1.7) * k0;
-      for (const [c, lw, o] of [[hl, w + 1.2 * k0, 1.2 * k0], [col, w, 0]]) {
-        ctx.strokeStyle = c; ctx.lineWidth = lw;
-        ctx.beginPath(); ctx.moveTo(pts[0][0] + o, pts[0][1] + o);
-        for (let j = 1; j <= m; j++) ctx.lineTo(pts[j][0] + o, pts[j][1] + o);
-        if (dmg > 0.5 && m > bj) {   // tarmoq
-          const [bx, by] = pts[bj], aa = Math.atan2(pts[bj][1] - pts[bj - 1][1], pts[bj][0] - pts[bj - 1][0]) + ba;
-          ctx.moveTo(bx + o, by + o); ctx.lineTo(bx + Math.cos(aa) * len * bl * (dmg - 0.4) + o, by + Math.sin(aa) * len * bl * (dmg - 0.4) + o);
+    for (const [c, lw, o] of [[hl, w + 1.2 * k0, 1.2 * k0], [col, w, 0]]) {
+      const rand = prng(cell.s + 99);
+      ix = x0 + s * (0.3 + rand() * 0.4); iy = y0 + s * (0.3 + rand() * 0.4);
+      ctx.beginPath();
+      for (let k = 0; k < n; k++) {
+        let a = k / n * Math.PI * 2 + rand() * 0.8, px = ix, py = iy, cut = 99;
+        const len = s * (0.3 + rand() * 0.45), segs = 6;
+        const pts = [px, py];
+        for (let j = 1; j <= segs; j++) {
+          a += (rand() - 0.5) * 0.9; px += Math.cos(a) * len / segs; py += Math.sin(a) * len / segs;
+          if (cut > j && (px < xa || px > xb || py < ya || py > yb)) cut = j;   // chetga yetdi — shu yerda tugaydi
+          pts.push(cut <= j ? Math.max(xa, Math.min(xb, px)) : px, cut <= j ? Math.max(ya, Math.min(yb, py)) : py);
         }
-        ctx.stroke();
+        const bj = 2 + Math.floor(rand() * 2), ba = (rand() < 0.5 ? -1 : 1) * (0.6 + rand() * 0.5), bl = 0.3 + rand() * 0.3;
+        const grow = Math.min(1, prog - k + 0.35);
+        if (grow <= 0) continue;
+        const m = Math.min(cut, Math.max(1, Math.round(segs * grow)));
+        ctx.moveTo(pts[0] + o, pts[1] + o);
+        for (let j = 1; j <= m; j++) ctx.lineTo(pts[j * 2] + o, pts[j * 2 + 1] + o);
+        if (dmg > 0.5 && m > bj) {   // tarmoq
+          const bx = pts[bj * 2], by = pts[bj * 2 + 1], aa = Math.atan2(by - pts[bj * 2 - 1], bx - pts[bj * 2 - 2]) + ba;
+          const ex = Math.max(xa, Math.min(xb, bx + Math.cos(aa) * len * bl * (dmg - 0.4))), ey = Math.max(ya, Math.min(yb, by + Math.sin(aa) * len * bl * (dmg - 0.4)));
+          ctx.moveTo(bx + o, by + o); ctx.lineTo(ex + o, ey + o);
+        }
       }
+      ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.stroke();
     }
     if (dmg > 0.3) {   // zarba nuqtasidagi chuqurcha
       ctx.fillStyle = col; ctx.globalAlpha *= 0.6;
@@ -4928,147 +5241,721 @@
     }
   }
 
-  // Yer usti: shaffof shisha idish ichida chayqalayotgan suyuqlik. Suyuqlik sathi = qolgan zarbalar.
-  function drawLiquid(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, sh = jitter(cell), x0 = x + GAP + sh, y0 = y + GAP;
-    const col = liquidRGB(t), wob = cell.wob || 0;
-    ctx.save();
-    brickShape(x0, y0, s, cell);
-    ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fill();
-    ctx.clip();
-    const lvl = Math.min(1, cell.hp / cell.m);
-    const top = y0 + s * (1 - (0.22 + 0.78 * lvl));
-    const amp = 2.5 + wob * 7;
-    ctx.beginPath(); ctx.moveTo(x0, y0 + s);
-    for (let i = 0; i <= 12; i++) ctx.lineTo(x0 + s * i / 12, top + Math.sin(i * 0.9 + tick * 0.08 + cell.s) * amp);
-    ctx.lineTo(x0 + s, y0 + s); ctx.closePath();
-    const lg = ctx.createLinearGradient(0, top, 0, y0 + s);
-    lg.addColorStop(0, `rgba(${col},.55)`); lg.addColorStop(1, `rgba(${col},.85)`);
-    ctx.fillStyle = lg; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i <= 12; i++) ctx.lineTo(x0 + s * i / 12, top + Math.sin(i * 0.9 + tick * 0.08 + cell.s) * amp);
-    ctx.stroke();
-    const depth = y0 + s - top;
-    for (let i = 0; i < 3; i++) {
-      const bx = x0 + 14 + ((cell.s * 7 + i * 31) % (s - 28));
-      const by = y0 + s - 6 - ((tick * 0.45 + i * depth / 3 + cell.s) % Math.max(10, depth - 8));
-      ctx.fillStyle = 'rgba(255,255,255,.5)';
-      ctx.beginPath(); ctx.arc(bx, by, 2 + (i % 2), 0, Math.PI * 2); ctx.fill();
+  // Yoriqlar keshi (tuproq, tosh, asteroid): har g'isht uchun alohida shaffof kanvas, faqat shikast bosqichi
+  // (1/24 qadam) o'zgarganda qayta chiziladi. Har kadrda yoriq chiziqlari o'rniga bitta drawImage.
+  const CRACK_SPR = new WeakMap();
+  // yoriq ranglari: [chiziq, yoritilgan qirrasi]
+  const CRACK_INK = { soil: ['rgba(35,18,6,.8)', 'rgba(255,225,180,.22)'], stone: ['rgba(20,16,26,.85)', 'rgba(255,255,255,.18)'], rock: ['rgba(20,14,10,.8)', 'rgba(255,255,255,.12)'] };
+  const CRACK_STEPS = 24;
+  function crackLayer(st, cell, s, col, hl) {
+    const d = dmgOf(cell);
+    if (d < 0.12) return null;
+    const b = Math.round(d * CRACK_STEPS), key = `${st}|${b}|${s}|${cell.s | 0}|${SPR_SCALE}`;
+    let o = CRACK_SPR.get(cell);
+    if (o && o.key === key) return o.c;
+    if (o && sprBudget <= 0 && o.st === st && o.s === s) return o.c;   // bu kadr navbati tugagan — eskisi qoladi
+    sprBudget -= st === 'rock' ? 0.5 : 0.25;
+    const px = Math.ceil((s + 8) * scale), c = o ? o.c : document.createElement('canvas');
+    const g = c.getContext('2d'), dq = b / CRACK_STEPS;
+    if (c.width !== px) c.width = c.height = px; else { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, px, px); }
+    g.setTransform(scale, 0, 0, scale, 4 * scale, 4 * scale);
+    crackPaint(g, 0, 0, s, cell, col, hl, dq);
+    if (st === 'rock' && dq > 0.4) {   // yoriqlar ichidan issiq yadro porlaydi (yorug'lik qo'shiladi)
+      g.globalCompositeOperation = 'lighter'; g.globalAlpha = Math.min(1, (dq - 0.4) * 1.2);
+      crackPaint(g, 0, 0, s, cell, 'rgb(255,140,60)', 'rgba(255,90,20,.35)', dq);
+      g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
     }
-    const gl = ctx.createLinearGradient(0, y0, 0, y0 + s * 0.45);
-    gl.addColorStop(0, 'rgba(255,255,255,.55)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gl; roundRect(x0 + 6, y0 + 4, s - 12, s * 0.4, 6); ctx.fill();
-    cracks(x0, y0, s, cell, 'rgba(255,255,255,.9)', 'rgba(20,60,100,.28)');   // shisha yoriqlari
-    ctx.restore();
-    brickShape(x0, y0, s, cell);
-    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke();
-    brickShape(x0 - 1.5, y0 - 1.5, s + 3, cell);
-    ctx.strokeStyle = 'rgba(20,60,100,.2)'; ctx.lineWidth = 1; ctx.stroke();
-    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#fff', `rgba(${col},.6)`);
+    CRACK_SPR.set(cell, { key, c, st, s });
+    return c;
   }
 
-  // Yer osti: tuproq bo'lagi — mayda toshlar, ildizlar; zarba olgan sari yoriladi va uvalanadi.
-  function drawSoil(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, sh = jitter(cell);
-    const x0 = x + GAP + sh, y0 = y + GAP, rand = prng(cell.s + 7);
-    const base = tint(t, [168, 120, 76], [116, 76, 44], [84, 52, 34]);
-    const gr = ctx.createLinearGradient(0, y0, 0, y0 + s);
-    gr.addColorStop(0, `rgb(${mix(base, [255, 230, 190], 0.15)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.2)})`);
-    ctx.save(); brickShape(x0, y0, s, cell); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
-    for (let i = 0; i < 14; i++) {
-      ctx.fillStyle = rand() < 0.5 ? 'rgba(50,28,12,.4)' : 'rgba(230,200,160,.3)';
-      ctx.beginPath(); ctx.ellipse(x0 + rand() * s, y0 + rand() * s, 1.5 + rand() * 3, 1 + rand() * 2.5, rand() * 3, 0, Math.PI * 2); ctx.fill();
-    }
-    for (let i = 0; i < 2; i++) {
-      ctx.fillStyle = '#9d9184';
-      ctx.beginPath(); ctx.ellipse(x0 + 12 + rand() * (s - 24), y0 + 12 + rand() * (s - 24), 4 + rand() * 3, 3 + rand() * 2, rand() * 3, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.strokeStyle = 'rgba(70,40,18,.55)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); let rx = x0 + rand() * s; ctx.moveTo(rx, y0);
-    for (let j = 1; j < 4; j++) ctx.lineTo(rx + (rand() - 0.5) * 16, y0 + j * 9); ctx.stroke();
-    cracks(x0, y0, s, cell, 'rgba(35,18,6,.8)', 'rgba(255,225,180,.22)');
-    ctx.fillStyle = 'rgba(255,230,190,.18)'; ctx.fillRect(x0, y0, s, 5);
-    ctx.restore();
-    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#fff4e0');
+  // Spraytni qurilma pikseliga tekislab, o'z o'lchamida chizish: masshtablash va filtrlash bo'lmaydi —
+  // brauzer uni tez "nusxa ko'chirish" yo'li bilan chizadi. x, y — spraytning chap-yuqori burchagi (CSS birlikda).
+  const snap = v => Math.round(v * scale) / scale;
+  function blit(img, x, y) { ctx.drawImage(img, snap(x), snap(y), img.width / scale, img.height / scale); }
+
+  // Pastdan yoritish (lava / Yer aksi) har g'isht shakli uchun bir marta chiziladi (pastki 40% tasma):
+  // har kadrda gradiyent emas, faqat shaffofligi o'zgaradigan bitta tez drawImage.
+  const UNDER_SPR = new WeakMap();
+  function underSpr(cell, st, s) {
+    const key = `${LIGHT.z}|${st}|${s}|${cell.s | 0}|${SPR_SCALE}`;
+    let o = UNDER_SPR.get(cell);
+    if (o && o.key === key) return o;
+    const y1 = Math.floor(s * 0.6), c = o ? o.c : document.createElement('canvas');
+    c.width = Math.ceil((s + 8) * scale); c.height = Math.ceil((s - y1 + 4) * scale);
+    const g = c.getContext('2d'), q = s / 94, z = LIGHT.z, col = z === -2 ? '255,120,40' : '110,170,255';
+    g.setTransform(scale, 0, 0, scale, 4 * scale, -y1 * scale);
+    brickPath(g, 0, 0, s, cell, st, true);
+    const gr = g.createLinearGradient(0, 94 * q, 0, (z === -2 ? 0.66 : 0.72) * 94 * q);
+    gr.addColorStop(0, `rgba(${col},1)`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.fill();
+    o = { key, c, y1 };
+    UNDER_SPR.set(cell, o);
+    return o;
   }
 
-  // Chuqurlik: to'rtburchak tosh, ichida porlayotgan kristallar.
-  function drawStone(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, sh = jitter(cell);
-    const x0 = x + GAP + sh, y0 = y + GAP, rand = prng(cell.s + 3);
-    const base = tint(t, [128, 122, 136], [92, 86, 102], [72, 60, 96]);
-    const gr = ctx.createLinearGradient(x0, y0, x0 + s, y0 + s);
-    gr.addColorStop(0, `rgb(${mix(base, [255, 255, 255], 0.15)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.25)})`);
-    ctx.save(); brickShape(x0, y0, s, cell); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
-    for (let i = 0; i < 5; i++) {
-      ctx.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.14)';
-      ctx.beginPath(); ctx.ellipse(x0 + rand() * s, y0 + rand() * s, 6 + rand() * 10, 4 + rand() * 7, rand() * 3, 0, Math.PI * 2); ctx.fill();
+  // Yorug'lik qatlami: pastdan yoritish (lava / Yer aksi), zarba chaqnashi, tiklanish nuri.
+  // Tungi qorong'ilik va oltin soat iliqligi spraytga "pishirilgan". inClip — g'isht shakli bilan kesilgan bo'lsa
+  // to'rtburchak chiziladi, aks holda g'isht shaklining o'zi bo'yaladi (kesish shart emas).
+  function litPass(x0, y0, s, cell, st, ay = y0, inClip = true) {
+    const L = LIGHT, ga = ctx.globalAlpha;
+    let shaped = inClip;
+    const fillShape = () => {
+      if (inClip) { ctx.fillRect(x0 - 2, y0 - 2, s + 4, s + 4); return; }
+      if (!shaped) { brickPath(ctx, x0, y0, s, cell, st); shaped = true; }
+      ctx.fill();
+    };
+    if (L.under) {   // tasma — keshlangan sprayt (siniq g'ishtda kesish yo'li uni shaklga moslaydi)
+      const rowK = Math.max(0, Math.min(1, (ay + s) / H)), u = underSpr(cell, st, s);
+      const a = L.z === -2 ? (0.12 + 0.5 * rowK) * (0.8 + 0.2 * Math.sin(tick / 30)) : 0.1 + 0.35 * rowK;
+      ctx.globalAlpha = ga * Math.min(1, a);
+      blit(u.c, x0 - 4, y0 + u.y1);
+      ctx.globalAlpha = ga;
     }
-    const cc = rand() < 0.5 ? '#9b7bff' : '#5fe0ff';
-    crystal(ctx, x0 + 18 + rand() * (s - 36), y0 + s - 8, 0.55, cc, rand);
-    cracks(x0, y0, s, cell, 'rgba(20,16,26,.85)', 'rgba(255,255,255,.18)');
-    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x0, y0, s, 4);
-    ctx.restore();
-    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#ffffff');
+    if (cell.fl > 0.01) { ctx.globalAlpha = ga * cell.fl * 0.3; ctx.fillStyle = '#fff'; fillShape(); ctx.globalAlpha = ga; }
+    if (cell.pulse > 0.01) {
+      ctx.globalAlpha = ga * Math.min(1, cell.pulse); ctx.strokeStyle = 'rgb(80,220,90)'; ctx.lineWidth = 6;
+      brickPath(ctx, x0, y0, s, cell, st); ctx.stroke(); ctx.globalAlpha = ga;
+    }
   }
 
-  // Osmon: to'rtburchak bulut bo'lagi. Zarba olgan sari siyraklashib, chetlari titilib ketadi.
-  function drawCloud(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
-    const k = (cell.wob || 0) * 3, sh = jitter(cell) - Math.sin(tick * 1.7) * (cell.wob || 0) * 3;
-    const x0 = x + GAP - k / 2 + sh, y0 = y + GAP + bob - k / 2, w = s + k;
-    const dmg = dmgOf(cell);
-    const base = tint(t, [255, 255, 255], [214, 222, 234], [150, 160, 182]);
-    const shade = mix(base, [60, 80, 110], 0.22);
-    const gr = ctx.createLinearGradient(0, y0, 0, y0 + w);
-    gr.addColorStop(0, `rgb(${base})`); gr.addColorStop(1, `rgb(${shade})`);
-    ctx.save(); ctx.globalAlpha = 1 - dmg * 0.4;
-    brickShape(x0, y0, w, cell); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
-    [[0.25, 0.3, 26], [0.62, 0.22, 30], [0.85, 0.5, 22], [0.4, 0.62, 28], [0.15, 0.78, 20], [0.72, 0.82, 24]]
-      .forEach(([fx, fy, r], i) => puff(ctx, x0 + fx * w, y0 + fy * w, r * w / 94, `rgba(${mix(base, [255, 255, 255], 0.5)},${i < 2 ? 0.55 : 0.3})`));
-    // siyraklashgan joylar — bulut orqali osmon ko'rinadi
-    const rand = prng(cell.s + 21);
-    for (let i = 0; i < 4; i++) {
-      const hx = x0 + w * (0.2 + rand() * 0.6), hy = y0 + w * (0.2 + rand() * 0.6), hr = w * (0.08 + rand() * 0.08) * Math.max(0, dmg - 0.25 * i) * 1.6;
-      if (hr > 0.5) puff(ctx, hx, hy, hr, 'rgba(120,180,240,.35)');
+  // ---------- G'isht spraytlari (statik qatlamlar bir marta chiziladi) ----------
+  // SPR — LRU kesh: kalit → kanvas. Har kadrda faqat bir nechta yangi sprayt chiziladi (qolgani keyingi kadrda).
+  const SPR = new Map(), LAST_SPR = new WeakMap();
+  // shisha yoriqlari shisha old qatlami bilan birga pishiriladi: cb — shikast bosqichi (boshqa materiallarda 0)
+  function glassCb(st, cell) { const dm = st === 'liquid' ? dmgOf(cell) : 0; return dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS); }
+  function sprKey(st, cell, t, sz) {
+    const tb = Math.round(Math.min(2, Math.max(0, t)) * 8);
+    return `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${glassCb(st, cell)}`;
+  }
+  function brickSprite(st, cell, t, sz) {
+    const s = sz - GAP * 2, key = sprKey(st, cell, t, sz), cb = glassCb(st, cell);
+    let c = SPR.get(key);
+    if (c) { SPR.delete(key); SPR.set(key, c); LAST_SPR.set(cell, c); return c; }
+    if (sprBudget <= 0) {   // bu kadrda chizish navbati tugagan — eski spraytni vaqtincha ishlatamiz
+      const last = LAST_SPR.get(cell);
+      if (last && last._owner === cell && last._st === st && last._sz === sz) return last;
     }
-    ctx.restore();
-    ctx.globalAlpha = 1 - dmg * 0.4;
-    brickShape(x0, y0, w, cell);
-    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (t > 1) {
-      ctx.strokeStyle = 'rgba(90,140,210,.7)'; ctx.lineWidth = 2;
-      for (let i = 0; i < 3; i++) {
-        const dy = (tick * 1.5 + i * 13) % 14;
-        const rx = x0 + w * (0.25 + i * 0.25);
-        ctx.beginPath(); ctx.moveTo(rx, y0 + w - 18 + dy); ctx.lineTo(rx - 2, y0 + w - 12 + dy); ctx.stroke();
+    sprBudget -= st === 'rock' ? 2 : 1;   // asteroid spraytini chizish ikki barobar qimmat
+    let reuse = null;
+    if (SPR.size >= 160) { const k0 = SPR.keys().next().value; reuse = SPR.get(k0); SPR.delete(k0); }
+    const px = Math.ceil((s + 8) * scale);
+    c = reuse || document.createElement('canvas');
+    c.width = c.height = px;
+    c._owner = cell; c._st = st; c._sz = sz;
+    const g = c.getContext('2d'), L = LIGHT;
+    g.setTransform(scale, 0, 0, scale, 4 * scale, 4 * scale);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    // butun (siniqsiz) g'isht shakli spraytga kesib olinadi — chizishda kesish (clip) kerak emas
+    g.save(); brickPath(g, 0, 0, s, cell, st, true); g.clip();
+    (SPR_BUILD[st] || SPR_BUILD.rock)(g, s, cell, t);
+    // tungi qorong'ilik va oltin soat iliqligi (yer usti va osmonda)
+    const amb = st === 'liquid' ? L.ambLiq : st === 'cloud' ? L.ambCloud : L.amb;
+    if (amb) { g.fillStyle = amb; g.fillRect(-4, -4, s + 8, s + 8); }
+    if (L.warm) { g.fillStyle = L.warm; g.fillRect(-4, -4, s + 8, s + 8); }
+    if (cb) crackPaint(g, 0, 0, s, cell, 'rgba(255,255,255,.9)', 'rgba(20,60,100,.28)', cb / CRACK_STEPS);
+    if (SPR_EDGE[st]) { brickPath(g, 0, 0, s, cell, st, true); g.strokeStyle = SPR_EDGE[st]; g.lineWidth = 2; g.stroke(); }   // ichki chegara
+    g.restore();
+    // tashqi chet: shisha — oq qirra, bulut — ingichka yorug' chiziq
+    if (st === 'liquid') {
+      brickPath(g, 0, 0, s, cell, st, true, 1.6); g.strokeStyle = 'rgba(20,60,100,.2)'; g.lineWidth = 1; g.stroke();
+      brickPath(g, 0, 0, s, cell, st, true); g.strokeStyle = L.glassEdge || 'rgba(255,255,255,.9)'; g.lineWidth = 2.5; g.stroke();
+    } else if (st === 'cloud') {
+      brickPath(g, 0, 0, s, cell, st, true); g.strokeStyle = L.night ? 'rgba(150,165,210,.5)' : 'rgba(255,255,255,.65)'; g.lineWidth = 2; g.stroke();
+    }
+    SPR.set(key, c); LAST_SPR.set(cell, c);
+    return c;
+  }
+  const SPR_EDGE = { soil: 'rgba(40,22,8,.45)', stone: 'rgba(14,10,20,.5)', rock: 'rgba(150,190,255,.35)' };
+
+  // Donador tekstura: 128x128 ikki oktavali qiymat shovqini (shaffoflik 0..38), har material uchun bir marta
+  const GRAIN_CV = {};
+  function makeGrain(st) {
+    const N = 128, c = document.createElement('canvas');
+    c.width = c.height = N;
+    const g = c.getContext('2d'), img = g.createImageData(N, N), d = img.data;
+    const rand = prng(({ liquid: 3, soil: 7, stone: 11, cloud: 13, rock: 17 }[st] || 5) * 1013);
+    const lat = n => { const a = new Float32Array(n * n); for (let i = 0; i < a.length; i++) a[i] = rand(); return a; };
+    const sm = t => t * t * (3 - 2 * t);
+    const val = (a, n, x, y) => {
+      const cs = N / n, fx = x / cs, fy = y / cs, ix = Math.floor(fx), iy = Math.floor(fy), tx = sm(fx - ix), ty = sm(fy - iy);
+      const i0 = ix % n, i1 = (ix + 1) % n, j0 = iy % n, j1 = (iy + 1) % n;
+      const top = a[j0 * n + i0] + (a[j0 * n + i1] - a[j0 * n + i0]) * tx, bot = a[j1 * n + i0] + (a[j1 * n + i1] - a[j1 * n + i0]) * tx;
+      return top + (bot - top) * ty;
+    };
+    const A = lat(8), B = lat(32);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const v = (0.6 * val(A, 8, x, y) + 0.4 * val(B, 32, x, y) - 0.5) * 2, p = (y * N + x) * 4;
+      d[p] = d[p + 1] = d[p + 2] = v > 0 ? 255 : 0;
+      d[p + 3] = Math.min(38, Math.abs(v) * 60);
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+  // Donadorlik ekran pikseliga 1:1 chiziladi (kattalashtirilganda katakchalar ko'rinmasin)
+  function grainFill(g, s, st, cell, a) {
+    const pat = g.createPattern(GRAIN_CV[st] || (GRAIN_CV[st] = makeGrain(st)), 'repeat');
+    const ox = ((cell.s | 0) * 13) % 128, oy = ((cell.s | 0) * 7) % 128;
+    g.save(); g.setTransform(1, 0, 0, 1, -ox, -oy); g.globalAlpha = a; g.fillStyle = pat;
+    g.fillRect(ox, oy, g.canvas.width, g.canvas.height); g.restore();
+  }
+  // Yorug'lik tomondan (−L) soya tomonga (+L) gradiyent
+  function litGrad(g, s, lit, dark) {
+    const L = LIGHT, h = s * 0.62, gr = g.createLinearGradient(s / 2 - L.lx * h, s / 2 - L.ly * h, s / 2 + L.lx * h, s / 2 + L.ly * h);
+    gr.addColorStop(0, `rgb(${lit})`); gr.addColorStop(1, `rgb(${dark})`);
+    return gr;
+  }
+  // Chet yorug'i: nurga qaragan qirralar yorqin (rimCol), qarama-qarshi qirralar xira (bevelCol)
+  function rimStroke(g, s, cell, st, rim, bevel, lw) {
+    const L = LIGHT, h = s * 0.5;
+    const gr = g.createLinearGradient(s / 2 + L.lx * h, s / 2 + L.ly * h, s / 2 - L.lx * h, s / 2 - L.ly * h);
+    gr.addColorStop(0, bevel || L.bevelCol); gr.addColorStop(0.38, 'rgba(0,0,0,0)');
+    gr.addColorStop(0.6, 'rgba(255,255,255,0)'); gr.addColorStop(0.84, rim || L.rimCol); gr.addColorStop(1, rim || L.rimCol);
+    brickPath(g, 0, 0, s, cell, st, true);
+    g.strokeStyle = gr; g.lineWidth = lw || 5; g.stroke();
+  }
+  // Bezak uchun nuqta: raqam turadigan markaziy (56x44) maydondan tashqarida
+  function decoPos(rand, s, m) {
+    const c = s / 2, hx = s > 150 ? 44 : 30, hy = s > 150 ? 34 : 24;
+    let x = m + rand() * (s - 2 * m), y = m + rand() * (s - 2 * m);
+    if (Math.abs(x - c) < hx && Math.abs(y - c) < hy) {
+      if (rand() < 0.5) y = y < c ? Math.max(m, c - hy - rand() * (c - hy - m)) : Math.min(s - m, c + hy + rand() * (c - hy - m));
+      else x = x < c ? Math.max(m, c - hx - rand() * (c - hx - m)) : Math.min(s - m, c + hx + rand() * (c - hx - m));
+    }
+    return [x, y];
+  }
+  // Yorug'lik tomonga qaragan hajmli tosh (soyasi bilan)
+  function litPebble(g, x, y, rx, ry, rot, c) {
+    const L = LIGHT;
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(x + L.lx * 1.6, y + L.ly * 1.6, rx, ry, rot, 0, Math.PI * 2); g.fill();
+    const gr = g.createRadialGradient(x - L.lx * rx * 0.4, y - L.ly * ry * 0.4, 0, x, y, Math.max(rx, ry) * 1.1);
+    gr.addColorStop(0, `rgb(${mix(c, [255, 255, 255], 0.35)})`); gr.addColorStop(1, `rgb(${mix(c, [0, 0, 0], 0.3)})`);
+    g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); g.fill();
+  }
+  // Ko'pburchakni to'g'ri chiziq bilan kesish: a*x + b*y + c >= 0 tomoni qoladi
+  function halfPoly(pts, a, b, c) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length], dp = a * p[0] + b * p[1] + c, dq = a * q[0] + b * q[1] + c;
+      if (dp >= 0) out.push(p);
+      if ((dp >= 0) !== (dq >= 0)) { const t = dp / (dp - dq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+    }
+    return out;
+  }
+  function spiralPath(g, k, turns) {
+    g.beginPath();
+    for (let a = 0; a < turns; a += 0.3) { const r = 1.2 * k * Math.exp(0.17 * a); g.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+  }
+  // Kristall spraytlari: rang × 4 shakl, bir marta chiziladi (shadowBlur faqat shu yerda — ekrandan tashqarida)
+  let CRYSTAL_SPR = {};
+  function crystalSpr(col, shape) {
+    let a = CRYSTAL_SPR[col];
+    if (!a) {
+      a = CRYSTAL_SPR[col] = [];
+      for (let i = 0; i < 4; i++) {
+        const c = document.createElement('canvas');
+        c.width = c.height = Math.ceil(64 * scale);
+        const g = c.getContext('2d');
+        g.setTransform(scale, 0, 0, scale, 0, 0);
+        crystal(g, 32, 56, 0.95, col, prng(17 + i * 31));
+        a.push(c);
       }
     }
-    number(cell.hp, x + sz / 2 + sh, y + sz / 2 + bob, t > 1.2 ? '#ffffff' : '#3d5476', 'rgba(255,255,255,.35)');
+    return a[shape & 3];
+  }
+  const CLOUD_PUFFS = [[0.25, 0.3, 26], [0.62, 0.22, 30], [0.85, 0.5, 22], [0.4, 0.62, 28], [0.15, 0.78, 20], [0.72, 0.82, 24]];
+  const CLOUD_EXTRA = [[0.08, 0.15, 14], [0.5, 0.06, 15], [0.95, 0.2, 13], [0.94, 0.88, 14], [0.06, 0.48, 13]];
+  function cloudPuffs(g, s, list, lit, base) {
+    const L = LIGHT, k = s / 94;
+    for (const [fx, fy, r0] of list) {
+      const r = r0 * k * 1.15, px = fx * s, py = fy * s, gr = g.createRadialGradient(px - L.lx * r * 0.4, py - L.ly * r * 0.4, 0, px, py, r);
+      gr.addColorStop(0, `rgba(${lit},.95)`); gr.addColorStop(0.55, `rgba(${lit},.45)`); gr.addColorStop(1, `rgba(${base},0)`);
+      g.fillStyle = gr; g.fillRect(px - r, py - r, r * 2, r * 2);
+    }
   }
 
-  // Koinot: to'rtburchak asteroid bo'lagi — kraterlar bilan.
-  function drawRock(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, sh = jitter(cell);
-    const x0 = x + GAP + sh, y0 = y + GAP, cx = x0 + s / 2, cy = y0 + s / 2, rand = prng(cell.s + 11);
-    const base = tint(t, [150, 138, 128], [112, 100, 92], [96, 72, 110]);
-    const gr = ctx.createRadialGradient(cx - 18, cy - 20, 6, cx, cy, 66 * s / 94);
-    gr.addColorStop(0, `rgb(${mix(base, [255, 255, 255], 0.25)})`); gr.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.35)})`);
-    ctx.save(); brickShape(x0, y0, s, cell); ctx.fillStyle = gr; ctx.fill(); ctx.clip();
-    for (let i = 0; i < 5; i++) {
-      const px = x0 + 10 + rand() * (s - 20), py = y0 + 10 + rand() * (s - 20), r = 4 + rand() * 7;
-      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px + 1, py + 1, r, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke();
+  // Har material uchun statik qatlamlar (lokal koordinatalar 0..s, chetida 4 px zaxira)
+  const SPR_BUILD = {
+    // Shisha old qatlami: qalinlik, yaltiroq, yon nur. Suyuqlik o'zi jonli chiziladi.
+    liquid(g, s, cell) {
+      const L = LIGHT, k = s / 94, honey = (cell.v | 0) === 4;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.28)'; roundRectG(g, 4, 4, s - 8, s - 8, BR - 3); g.stroke();
+      g.lineWidth = 1; g.strokeStyle = 'rgba(20,60,100,.10)'; roundRectG(g, 6, 6, s - 12, s - 12, BR - 4); g.stroke();
+      const gl = g.createLinearGradient(0, 2, 0, s * 0.45);
+      gl.addColorStop(0, honey ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.5)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gl; roundRectG(g, 6 - L.lx * 3 * k, 4, s - 12, s * 0.4, 6); g.fill();
+      g.fillStyle = honey ? 'rgba(255,255,255,.38)' : 'rgba(255,255,255,.2)';
+      roundRectG(g, L.lx >= 0 ? 8 * k : s - 11 * k, 14 * k, 3 * k, s - 38 * k, 1.5); g.fill();
+      rimStroke(g, s, cell, 'liquid');
+    },
+    soil(g, s, cell, t) {
+      const k = s / 94, v = cell.v | 0, tr = cell.tr | 0, rand = prng((cell.s | 0) + 7), base = tint(t, palOf('soil', cell));
+      g.fillStyle = litGrad(g, s, mix(base, [255, 230, 190], 0.16), mix(base, [0, 0, 0], 0.24)); g.fillRect(-4, -4, s + 8, s + 8);
+      for (let i = 0; i < 14; i++) {   // mayda zarralar
+        g.fillStyle = rand() < 0.5 ? 'rgba(50,28,12,.32)' : 'rgba(230,200,160,.26)';
+        g.beginPath(); g.ellipse(rand() * s, rand() * s, (1.5 + rand() * 3) * k, (1 + rand() * 2.5) * k, rand() * 3, 0, Math.PI * 2); g.fill();
+      }
+      for (let i = 0; i < 2; i++) { const [px, py] = decoPos(rand, s, 12 * k); litPebble(g, px, py, (4 + rand() * 3) * k, (3 + rand() * 2) * k, rand() * 3, [157, 145, 132]); }
+      g.strokeStyle = 'rgba(70,40,18,.45)'; g.lineWidth = 1.5 * k;   // ildizcha
+      g.beginPath(); const rx = rand() * s; g.moveTo(rx, -4); for (let j = 1; j < 4; j++) g.lineTo(rx + (rand() - 0.5) * 16 * k, j * 9 * k); g.stroke();
+      if (v === 1) {   // loy: silliq yaltiroq chiziqlar
+        for (let i = 0; i < 2; i++) {
+          const y = s * (0.17 + i * 0.64) + (rand() - 0.5) * 6 * k;
+          g.strokeStyle = 'rgba(255,236,214,.24)'; g.lineWidth = (2.5 + rand() * 1.5) * k;
+          g.beginPath(); g.moveTo(s * 0.1, y + 4 * k); g.quadraticCurveTo(s * 0.5, y - 6 * k, s * 0.9, y + 2 * k); g.stroke();
+        }
+      } else if (v === 2) {   // qumli: mayda donalar
+        for (let i = 0; i < 40; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(255,244,214,.33)' : 'rgba(90,62,32,.3)'; const r = (0.8 + rand() * 0.9) * k; g.fillRect(rand() * s, rand() * s, r, r); }
+      } else if (v === 3) {   // toshli: yorug'lik tomonga qaragan 4 ta tosh
+        for (let i = 0; i < 4; i++) { const [px, py] = decoPos(rand, s, 10 * k); litPebble(g, px, py, (3.5 + rand() * 3) * k, (2.8 + rand() * 2) * k, rand() * 3, rand() < 0.5 ? [150, 146, 140] : [120, 110, 104]); }
+      } else if (v === 4) {   // chig'anoqli: chig'anoq spirali yoki barg izi
+        const [px, py] = decoPos(rand, s, 17 * k);
+        g.save(); g.translate(px, py); g.rotate(rand() * 6.28);
+        if ((cell.s | 0) % 2) {
+          spiralPath(g, k, 12.5); g.strokeStyle = 'rgba(255,240,215,.45)'; g.lineWidth = 1.4 * k; g.stroke();
+          g.strokeStyle = 'rgba(70,40,18,.3)'; g.lineWidth = 0.8 * k; g.beginPath();
+          for (let a = 6.5; a < 12.5; a += 0.7) { const r1 = 1.2 * k * Math.exp(0.17 * a), r2 = 1.2 * k * Math.exp(0.17 * (a - 6.28)); g.moveTo(Math.cos(a) * r1, Math.sin(a) * r1); g.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); }
+          g.stroke();
+        } else {
+          g.fillStyle = 'rgba(60,35,15,.24)'; g.beginPath(); g.moveTo(-11 * k, 0); g.quadraticCurveTo(0, -7 * k, 11 * k, 0); g.quadraticCurveTo(0, 7 * k, -11 * k, 0); g.fill();
+          g.strokeStyle = 'rgba(255,236,210,.32)'; g.lineWidth = 0.8 * k; g.beginPath(); g.moveTo(-12 * k, 0); g.lineTo(11 * k, 0);
+          for (let i = -2; i <= 1; i++) { g.moveTo(i * 4 * k, 0); g.lineTo(i * 4 * k + 3 * k, -4 * k); g.moveTo(i * 4 * k, 0); g.lineTo(i * 4 * k + 3 * k, 4 * k); }
+          g.stroke();
+        }
+        g.restore();
+      }
+      if (tr === 2) {   // qora tuproq: ingichka oq zamburug' iplari
+        g.strokeStyle = 'rgba(255,255,255,.3)'; g.lineWidth = 0.8 * k;
+        for (let i = 0; i < 2; i++) {
+          let x = rand() * s, y = i ? s + 2 : -2, a = i ? -Math.PI / 2 : Math.PI / 2;
+          g.beginPath(); g.moveTo(x, y);
+          for (let j = 0; j < 9; j++) {
+            a += (rand() - 0.5) * 0.9; x += Math.cos(a) * 7 * k; y += Math.sin(a) * 7 * k; g.lineTo(x, y);
+            if (rand() < 0.35) { g.lineTo(x + (rand() - 0.5) * 10 * k, y + (rand() - 0.5) * 10 * k); g.moveTo(x, y); }
+          }
+          g.stroke();
+        }
+      } else if (tr === 3) {   // qahrabo: toshqotgan spiral va yaltiroq nuqtalar
+        const [px, py] = decoPos(rand, s, 15 * k);
+        g.save(); g.translate(px, py); g.rotate(rand() * 6.28);
+        spiralPath(g, k, 11.5); g.strokeStyle = 'rgba(255,226,150,.5)'; g.lineWidth = 1.6 * k; g.stroke();
+        g.restore();
+        for (let i = 0; i < 3; i++) { const [gx, gy] = decoPos(rand, s, 8 * k); g.fillStyle = 'rgba(255,240,190,.5)'; g.fillRect(gx, gy, 1.6 * k, 1.6 * k); }
+      }
+      grainFill(g, s, 'soil', cell, 1);
+      rimStroke(g, s, cell, 'soil');
+    },
+    stone(g, s, cell, t) {
+      const L = LIGHT, k = s / 94, v = cell.v | 0, tr = cell.tr | 0, rand = prng((cell.s | 0) + 3), base = tint(t, palOf('stone', cell));
+      g.fillStyle = litGrad(g, s, mix(base, [255, 255, 255], 0.15), mix(base, [0, 0, 0], 0.28)); g.fillRect(-4, -4, s + 8, s + 8);
+      // qirralar: ikki kesik, har bo'lak yorug'likka qarab yorug' yoki xira (0.88 + 0.28·n·(−L))
+      const SQ = [[-4, -4], [s + 4, -4], [s + 4, s + 4], [-4, s + 4]];
+      for (let cut = 0; cut < 2; cut++) {
+        let ax, ay, bx, by;
+        if (cut === 0) { ax = s * (0.2 + rand() * 0.6); ay = -4; bx = s * (0.2 + rand() * 0.6); by = s + 4; }
+        else { ax = -4; ay = s * (0.25 + rand() * 0.5); bx = s + 4; by = s * (0.25 + rand() * 0.5); }
+        const a = by - ay, b = ax - bx, c = -(a * ax + b * ay);
+        for (const sg of [1, -1]) {
+          const th = rand() * 6.283, m = 0.25 + rand() * 0.35, nx = Math.cos(th) * m, ny = Math.sin(th) * m;
+          const kk = (0.88 + 0.28 * (-nx * L.lx - ny * L.ly)) / 0.88, poly = halfPoly(SQ, a * sg, b * sg, c * sg);
+          if (poly.length < 3) continue;
+          g.fillStyle = kk >= 1 ? `rgba(255,255,255,${Math.min(0.3, (kk - 1) * 1.3).toFixed(3)})` : `rgba(0,0,0,${Math.min(0.3, (1 - kk) * 1.3).toFixed(3)})`;
+          g.beginPath(); poly.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill();
+        }
+        g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+        g.strokeStyle = 'rgba(0,0,0,.16)'; g.beginPath(); g.moveTo(ax + L.lx, ay + L.ly); g.lineTo(bx + L.lx, by + L.ly); g.stroke();
+      }
+      for (let i = 0; i < 5; i++) {   // dog'lar
+        g.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.1)';
+        g.beginPath(); g.ellipse(rand() * s, rand() * s, (6 + rand() * 10) * k, (4 + rand() * 7) * k, rand() * 3, 0, Math.PI * 2); g.fill();
+      }
+      if (v === 1) {   // granit: qora, oq va pushti donachalar
+        for (let i = 0; i < 70; i++) { g.fillStyle = ['rgba(20,20,26,.35)', 'rgba(255,255,255,.32)', 'rgba(232,160,172,.35)'][i % 3]; const r = (0.7 + rand() * 1.1) * k; g.fillRect(rand() * s, rand() * s, r, r); }
+      } else if (v === 2) {   // slanets: qiya qatlam chiziqlari
+        const ang = (rand() - 0.5) * 0.5, ca = Math.cos(ang), sa = Math.sin(ang);
+        for (let i = 0; i < 6; i++) {
+          const off = (i + 0.5) / 6 * s * 1.1 - s * 0.05;
+          g.strokeStyle = i % 2 ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.22)'; g.lineWidth = (i % 2 ? 1 : 1.3) * k;
+          g.beginPath(); g.moveTo(s / 2 - ca * s, off - sa * s); g.lineTo(s / 2 + ca * s, off + sa * s); g.stroke();
+        }
+      } else if (v === 3) {   // marmar: kulrang tomirlar
+        for (let i = 0; i < 2; i++) {
+          g.strokeStyle = 'rgba(90,88,104,.3)'; g.lineWidth = (1.6 - i * 0.7) * k;
+          const y0 = rand() * s; g.beginPath(); g.moveTo(-4, y0);
+          g.bezierCurveTo(s * 0.3, y0 + (rand() - 0.5) * 50 * k, s * 0.7, rand() * s, s + 4, rand() * s); g.stroke();
+        }
+      }
+      if (tr === 3) {   // oltin tomirlar (chetlar bo'ylab)
+        for (const yb of [10 * k, s - 10 * k]) {
+          g.beginPath(); let x = -4, y = yb + (rand() - 0.5) * 6 * k; g.moveTo(x, y);
+          while (x < s + 4) { x += (6 + rand() * 6) * k; y = yb + (rand() - 0.5) * 9 * k; g.lineTo(x, y); }
+          g.strokeStyle = 'rgba(200,140,30,.8)'; g.lineWidth = 2 * k; g.stroke();
+          g.strokeStyle = 'rgba(255,236,150,.75)'; g.lineWidth = 0.8 * k; g.stroke();
+        }
+      }
+      // kristall: atrofini yorituvchi nur havzasi, rangli tomirlar va kristall sprayti
+      const cc = tr === 1 ? '#4fe3a0' : tr === 2 ? '#ff5a7a' : tr === 3 ? '#ffd060' : rand() < 0.5 ? '#9b7bff' : '#5fe0ff';
+      const ccr = [1, 3, 5].map(i => parseInt(cc.slice(i, i + 2), 16)).join(',');
+      const left = rand() < 0.5, bx = left ? (13 + rand() * 6) * k : s - (13 + rand() * 6) * k, by = s - 5 * k, pr = 26 * k;
+      const pg = g.createRadialGradient(bx, by - 8 * k, 0, bx, by - 8 * k, pr);
+      pg.addColorStop(0, `rgba(${ccr},.3)`); pg.addColorStop(1, `rgba(${ccr},0)`);
+      g.fillStyle = pg; g.fillRect(bx - pr, by - 8 * k - pr, pr * 2, pr * 2);
+      const dir = left ? 1 : -1;
+      g.strokeStyle = `rgba(${ccr},.5)`; g.lineWidth = 1.2 * k; g.beginPath();
+      g.moveTo(bx, by - 3 * k); g.quadraticCurveTo(bx + dir * 22 * k, by - 12 * k, bx + dir * (40 + rand() * 12) * k, s - 3 * k);
+      g.moveTo(bx - dir * 2 * k, by - 10 * k); g.quadraticCurveTo(bx - dir * 6 * k, s * 0.55, bx - dir * (3 + rand() * 4) * k, s * 0.3);
+      g.stroke();
+      const q = (0.64 + rand() * 0.16) * k / 0.95;
+      g.drawImage(crystalSpr(cc, (cell.s | 0) & 3), bx - 32 * q, by - 56 * q, 64 * q, 64 * q);
+      if (v === 4) {   // geoda: burchakdagi ametist bo'shliq
+        const gx = left ? s - 15 * k : 15 * k, gy = 14 * k, gr = 12 * k;
+        const cg = g.createRadialGradient(gx, gy, 0, gx, gy, gr);
+        cg.addColorStop(0, '#24103a'); cg.addColorStop(0.65, '#47286a'); cg.addColorStop(1, 'rgba(170,140,210,.95)');
+        g.fillStyle = cg; g.beginPath(); g.ellipse(gx, gy, gr, gr * 0.85, 0, 0, Math.PI * 2); g.fill();
+        for (let i = 0; i < 9; i++) {
+          const a = i / 9 * 6.283 + rand() * 0.3, r1 = gr * 0.95, r2 = gr * (0.3 + rand() * 0.25);
+          g.fillStyle = i % 2 ? '#b48cff' : '#8a5ae0'; g.beginPath();
+          g.moveTo(gx + Math.cos(a - 0.26) * r1, gy + Math.sin(a - 0.26) * r1 * 0.85); g.lineTo(gx + Math.cos(a) * r2, gy + Math.sin(a) * r2 * 0.85);
+          g.lineTo(gx + Math.cos(a + 0.26) * r1, gy + Math.sin(a + 0.26) * r1 * 0.85); g.fill();
+        }
+        g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1; g.beginPath(); g.ellipse(gx, gy, gr, gr * 0.85, 0, 0, Math.PI * 2); g.stroke();
+      }
+      grainFill(g, s, 'stone', cell, 0.45);
+      rimStroke(g, s, cell, 'stone');
+    },
+    cloud(g, s, cell, t) {
+      const L = LIGHT, k = s / 94, v = cell.v | 0;
+      let base = tint(t, palOf('cloud', cell));
+      if (t > 1) base = mix(base, STORM_RGB, Math.min(1, (t - 1) * 2));   // yomg'ir buluti
+      if (L.night) base = mix(base, [105, 120, 160], 0.55);
+      let lit = mix(base, [255, 255, 255], 0.6), dark = mix(base, [95, 115, 150], 0.35);
+      if (L.golden) { lit = mix(lit, [255, 214, 184], 0.65); dark = mix(dark, [184, 143, 182], 0.55); }
+      const bs = base.join(','), ls = lit.join(',');
+      g.fillStyle = litGrad(g, s, mix(base, lit, 0.3), dark); g.fillRect(-4, -4, s + 8, s + 8);
+      // soya tomondagi bo'laklar (+L), keyin yoritilgan bo'laklar (−L)
+      g.fillStyle = `rgba(${dark.join(',')},.28)`; g.beginPath();
+      for (const [fx, fy, r0] of CLOUD_PUFFS) { const x = fx * s + L.lx * 5 * k, y = fy * s + L.ly * 5 * k; g.moveTo(x + r0 * k, y); g.arc(x, y, r0 * k, 0, Math.PI * 2); }
+      g.fill();
+      cloudPuffs(g, s, CLOUD_PUFFS, ls, bs);
+      if (v === 3) cloudPuffs(g, s, CLOUD_EXTRA, ls, bs);   // momiq: qo'shimcha bo'laklar
+      if (v === 1) {   // qatlam: uchta yumshoq yo'l (yorug' ustki va soyali pastki qavat); o'rtadagisi raqam ortida xira
+        for (let i = 0; i < 3; i++) {
+          const yy = s * (0.2 + i * 0.3), mid = i === 1;
+          g.fillStyle = `rgba(${dark.join(',')},${mid ? 0.16 : 0.26})`; g.beginPath(); g.ellipse(s / 2, yy + 5 * k, s * 0.66, 6 * k, 0, 0, Math.PI * 2); g.fill();
+          g.fillStyle = `rgba(${ls},${mid ? 0.3 : 0.6})`; g.beginPath(); g.ellipse(s / 2, yy, s * 0.62, 5 * k, 0, 0, Math.PI * 2); g.fill();
+        }
+      } else if (v === 2) {   // patli: ingichka par tolalari
+        for (const [dy, c, lw] of [[3 * k, `rgba(${dark.join(',')},.22)`, 1.2], [0, 'rgba(255,255,255,.6)', 2]]) {
+          const rand = prng((cell.s | 0) + 29);
+          g.strokeStyle = c; g.lineWidth = lw * k; g.beginPath();
+          // tolalar raqam turadigan o'rta qismdan tashqarida (tepada va pastda)
+          for (let i = 0; i < 4; i++) { const y = s * [0.1, 0.24, 0.8, 0.93][i] + rand() * 4 * k + dy, x = rand() * s * 0.3; g.moveTo(x, y + 6 * k); g.quadraticCurveTo(x + s * 0.3, y - 6 * k, x + s * (0.55 + rand() * 0.2), y - 2 * k); }
+          g.stroke();
+        }
+      }
+      const fb = g.createLinearGradient(0, s * 0.65, 0, s);   // bulut tagi tekis va xiraroq
+      fb.addColorStop(0, 'rgba(70,90,130,0)'); fb.addColorStop(1, L.night ? 'rgba(20,28,60,.25)' : 'rgba(70,90,130,.2)');
+      g.fillStyle = fb; g.fillRect(-4, s * 0.65, s + 8, s * 0.35 + 4);
+      grainFill(g, s, 'cloud', cell, 0.16);
+      // kumush hoshiya: hamma chet xira, nurga qaragan chet yorqin
+      brickPath(g, 0, 0, s, cell, 'cloud', true);
+      g.lineWidth = 3; g.strokeStyle = L.night ? 'rgba(120,135,180,.45)' : 'rgba(150,170,205,.45)'; g.stroke();
+      rimStroke(g, s, cell, 'cloud', L.night ? 'rgba(210,225,255,.7)' : L.golden ? 'rgba(255,226,190,.95)' : 'rgba(255,255,255,.95)', 'rgba(0,0,0,0)', 5);
+    },
+    rock(g, s, cell, t) {
+      const L = LIGHT, k = s / 94, v = cell.v | 0, tr = cell.tr | 0, rand = prng((cell.s | 0) + 11), base = tint(t, palOf('rock', cell));
+      const bg = g.createRadialGradient(s / 2 - L.lx * s * 0.25, s / 2 - L.ly * s * 0.25, 6 * k, s / 2, s / 2, 72 * k);
+      bg.addColorStop(0, `rgb(${mix(base, [255, 255, 255], 0.25)})`); bg.addColorStop(1, `rgb(${mix(base, [0, 0, 0], 0.35)})`);
+      g.fillStyle = bg; g.fillRect(-4, -4, s + 8, s + 8);
+      if (v === 1 || tr === 3) {   // temir: Widmanshtetten chiziqlari
+        g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1; g.beginPath();
+        for (let i = -3; i <= 3; i++) { const o = s / 2 + i * 14 * k; g.moveTo(o - s, -s * 0.6); g.lineTo(o + s, s * 1.6); g.moveTo(o + s, -s * 0.6); g.lineTo(o - s, s * 1.6); }
+        g.stroke();
+      }
+      // kraterlar: daraja qonuni — 1 katta, 2 o'rta, 4 kichik
+      const la = Math.atan2(L.ly, L.lx);
+      for (const [n, r0, r1] of [[1, 10, 14], [2, 6, 8], [4, 2.5, 4]]) for (let i = 0; i < n; i++) {
+        const r = (r0 + rand() * (r1 - r0)) * k, px = r + 4 + rand() * (s - 2 * r - 8), py = r + 4 + rand() * (s - 2 * r - 8);
+        const sq = 0.75 + rand() * 0.25, ang = rand() * Math.PI;
+        g.save(); g.translate(px, py); g.rotate(ang); g.scale(1, sq); g.rotate(-ang);
+        g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.arc(L.lx * r * 0.25, L.ly * r * 0.25, r, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1.5; g.beginPath(); g.arc(0, 0, r * 0.9, la - Math.PI * 0.45, la + Math.PI * 0.45); g.stroke();
+        if (r > 4) { g.strokeStyle = 'rgba(255,255,255,.15)'; g.lineWidth = 1; g.beginPath(); g.arc(0, 0, r + 1.3, la + Math.PI * 0.6, la + Math.PI * 1.4); g.stroke(); }
+        g.restore();
+      }
+      if (v === 2 || tr === 2) {   // muz kometa: qirov nuqtalari
+        g.fillStyle = 'rgba(255,255,255,.5)';
+        for (let i = 0; i < 24; i++) { const [px, py] = decoPos(rand, s, 5 * k); const r = (0.6 + rand() * 0.9) * k; g.fillRect(px, py, r, r); }
+      }
+      if (v === 3) {   // bazalt: ichidan porlayotgan to'q sariq tomirlar (chetlar bo'ylab, raqamdan uzoqda)
+        g.globalCompositeOperation = 'lighter';
+        const side = rand() < 0.5;
+        for (const [bx0, by0, hor] of [[0, (8 + rand() * 6) * k, true], [side ? (9 + rand() * 5) * k : s - (9 + rand() * 5) * k, 0, false]]) {
+          g.beginPath();
+          let u = -4, w = hor ? by0 : bx0;
+          g.moveTo(hor ? u : w, hor ? w : u);
+          while (u < s + 4) {
+            u += (5 + rand() * 7) * k; w = (hor ? by0 : bx0) + (rand() - 0.5) * 8 * k;
+            g.lineTo(hor ? u : w, hor ? w : u);
+            if (rand() < 0.25) { const bu = u + (rand() - 0.3) * 8 * k, bw = w + (rand() - 0.5) * 12 * k; g.lineTo(hor ? bu : bw, hor ? bw : bu); g.moveTo(hor ? u : w, hor ? w : u); }
+          }
+          g.strokeStyle = 'rgba(255,100,25,.55)'; g.lineWidth = 2.6 * k; g.stroke();
+          g.strokeStyle = 'rgba(255,214,140,.55)'; g.lineWidth = 0.9 * k; g.stroke();
+        }
+        g.globalCompositeOperation = 'source-over';
+      }
+      if (v === 1 || tr === 3) {   // metall: yorug'lik tomonidagi yaltiroq chiziq
+        g.save(); g.translate(s / 2 - L.lx * s * 0.24, s / 2 - L.ly * s * 0.24); g.rotate(la + Math.PI / 2);
+        g.fillStyle = 'rgba(255,255,255,.24)'; g.beginPath(); g.ellipse(0, 0, 30 * k, 4 * k, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(0, 0, 14 * k, 1.5 * k, 0, 0, Math.PI * 2); g.fill();
+        g.restore();
+      }
+      // terminator: soya tomoni qorong'iroq
+      const tg = g.createLinearGradient(s / 2 - L.lx * s * 0.5, s / 2 - L.ly * s * 0.5, s / 2 + L.lx * s * 0.5, s / 2 + L.ly * s * 0.5);
+      tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(0.55, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,.35)');
+      g.fillStyle = tg; g.fillRect(-4, -4, s + 8, s + 8);
+      grainFill(g, s, 'rock', cell, 1);
+      rimStroke(g, s, cell, 'rock');
+    },
+  };
+
+  // Suyuqlik rangi keshi: har kadrda rang satrlari va gradiyent yasalmaydi
+  const LIQ_CACHE = new Map();
+  function liqInfo(cell, t, s) {
+    const tr = Math.max(0, Math.min(3, cell.tr | 0)), b = Math.round(Math.min(2, Math.max(0, t)) * 16);
+    const key = ((tr * 2 + ((cell.v | 0) === 4 ? 1 : 0)) * 64 + b) * 1000 + s;
+    let o = LIQ_CACHE.get(key);
+    if (o) return o;
+    const c = tint(b / 16, palOf('liquid', cell)), cs = c.join(','), ed = c.map(v => Math.round(v * 0.45)).join(',');
+    const g = ctx.createLinearGradient(0, 0, 0, s);
+    g.addColorStop(0, `rgba(${cs},.5)`); g.addColorStop(1, `rgba(${cs},.86)`);
+    o = { s: cs, g, dark: `rgba(${c.map(v => Math.round(v * 0.7)).join(',')},.35)`, ink: { fill: '#fff', edge: `rgba(${ed},.85)` },
+      sh: `rgba(${cs},${(LIGHT.a * 1.1).toFixed(3)})` };
+    if (LIQ_CACHE.size > 96) LIQ_CACHE.clear();   // xotira cheklovi (tana spraytlari)
+    LIQ_CACHE.set(key, o);
+    return o;
+  }
+  // Pufakchalar (gazlida ko'proq): yon ustunlarda ko'tariladi — markazdagi raqamga xalal bermaydi
+  const BUBBLES = new WeakMap();
+  function bubblesOf(cell, s, soda) {
+    let b = BUBBLES.get(cell);
+    if (b && b.s === s && b.soda === soda) return b;
+    const rand = prng((cell.s | 0) + 41), k = s / 94, n = soda ? 8 + (rand() * 5 | 0) : 4 + (rand() * 3 | 0), a = [];
+    for (let i = 0; i < n; i++) {
+      const off = (5 + rand() * 12) * k;
+      a.push({ x: i % 2 ? s - off : off, r: (soda ? 1.2 + rand() * 1.8 : 1.5 + rand() * 2.5) * k, sp: 0.6 + rand() * 0.8, ph: rand() * 300 });
     }
-    // yoriqlar ichidan issiq yadro porlaydi
-    if (dmgOf(cell) > 0.4) cracks(x0, y0, s, cell, `rgba(255,140,60,${(dmgOf(cell) - 0.4) * 1.4})`, 'rgba(255,90,20,.25)');
-    cracks(x0, y0, s, cell, 'rgba(20,14,10,.8)', 'rgba(255,255,255,.12)');
+    b = { s, soda, a };
+    BUBBLES.set(cell, b);
+    return b;
+  }
+  // Suyuqlikning mayda jonli qismlari uchun spraytlar: pufakcha halqasi va tubdagi kaustika tasmasi.
+  // Har kadrda chiziq (stroke) o'rniga bitta drawImage — rasterlash ancha arzon.
+  let LIQ_SPR = {};
+  function bubbleSpr() {
+    let c = LIQ_SPR.bub;
+    if (c) return c;
+    c = LIQ_SPR.bub = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 4;
+    g.beginPath(); g.arc(16, 16, 13.5, 0, Math.PI * 2); g.stroke();
+    return c;
+  }
+  // Kaustika: ikki siniq yorug' chiziq, gorizontal takrorlanadi (davr P = 6 qadam); oyna tasma bo'ylab suriladi
+  function causticSpr(s) {
+    const key = 'c' + s;
+    let o = LIQ_SPR[key];
+    if (o) return o;
+    const k = s / 94, d = s * 0.88 / 7, P = d * 6, y0 = s * 0.84 - 3 * k - 3, h = s * 0.09 + 6 * k + 6, wid = d * 13;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(wid * scale) + 2; c.height = Math.ceil(h * scale);
+    const g = c.getContext('2d');
+    g.setTransform(scale, 0, 0, scale, 0, 0);
+    g.lineJoin = 'bevel'; g.lineCap = 'butt'; g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2;
+    g.beginPath();
+    for (let n = 0; n < 2; n++) {
+      const yb = s * (0.84 + n * 0.09) - y0;
+      for (let j = 0; j <= 13; j++) {
+        const px = j * d, py = yb + Math.sin(j * Math.PI / 3 + n * 2.1) * 3 * k;
+        if (j) g.lineTo(px, py); else g.moveTo(px, py);
+      }
+    }
+    g.stroke();
+    return (LIQ_SPR[key] = { c, d, P, y0, h });
+  }
+  // Suyuqlik tanasi (pastki yumaloq burchaklari bilan, gradiyentli) — rang bosqichi bo'yicha bir marta chiziladi
+  function liqBody(li, s) {
+    if (li.body) return li.body;
+    const c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = c.height = Math.ceil((s + 8) * scale);
+    g.setTransform(scale, 0, 0, scale, 4 * scale, 4 * scale);
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(s, 0); g.lineTo(s, s - BR); g.arcTo(s, s, s - BR, s, BR); g.lineTo(BR, s); g.arcTo(0, s, 0, s - BR, BR); g.closePath();
+    const gr = g.createLinearGradient(0, 0, 0, s);
+    gr.addColorStop(0, `rgba(${li.s},.5)`); gr.addColorStop(1, `rgba(${li.s},.86)`);
+    g.fillStyle = gr; g.fill();
+    return (li.body = c);
+  }
+  const WAVE_P = new Float32Array(34);
+  function wavePath(off) {
+    ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1] + off);
+    for (let i = 1; i <= 16; i++) ctx.lineTo(WAVE_P[i * 2], WAVE_P[i * 2 + 1] + off);
+  }
+  // Suv sathidagi narsa (meva bo'lagi, muz) uchun sath balandligi va qiyaligi
+  function waveAt(px, s) {
+    const f = Math.max(0, Math.min(15.999, px / s * 16)), i = Math.floor(f), u = f - i;
+    const y0 = WAVE_P[i * 2 + 1], y1 = WAVE_P[i * 2 + 3];
+    return [y0 + (y1 - y0) * u, Math.atan2(y1 - y0, s / 16)];
+  }
+
+  // Yer usti: shaffof shisha idish ichida chayqalayotgan suyuqlik. Suyuqlik sathi = qolgan zarbalar.
+  // Butun shishada kesish (clip) kerak emas: suyuqlik shakli shisha tagidagi yumaloq burchaklarni o'zi takrorlaydi.
+  function drawLiquid(x, y, cell, t, sz = CELL) {
+    // spraytning chap-yuqori burchagi (x0 - 4) qurilma pikseliga tushadi
+    const s = sz - GAP * 2, sh = jitter(cell), x0 = snap(x + GAP + sh - 4) + 4, y0 = snap(y + GAP - 4) + 4, k = s / 94;
+    const L = LIGHT, li = liqInfo(cell, t, s), wob = cell.wob || 0, v = cell.v | 0, spr = brickSprite('liquid', cell, 0, sz);
+    let sun = 0;   // quyosh orqada bo'lsa sharbat yorishib ko'rinadi
+    if (L.src && !L.moon && (L.z === 0 || L.z === 1)) { const d = Math.hypot(x0 + s / 2 - L.src.x, y0 + s / 2 - L.src.y); if (d < 140) sun = 1 - d / 140; }
+    const chip = dmgOf(cell) > 0.45, clip = chip || sun > 0;
+    ctx.save();
+    ctx.translate(x0, y0);
+    brickShape(0, 0, s, cell);
+    ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fill();
+    if (clip) ctx.clip();
+    const lvl = Math.max(0, Math.min(1, (cell.dhp ?? cell.hp) / cell.m));
+    const top = s * (1 - (0.22 + 0.78 * lvl)), amp = (2.5 + wob * 7) * (v === 4 ? 0.4 : 1) * k, ph = tick * 0.08 + cell.s;
+    let low = 0;
+    for (let i = 0; i <= 16; i++) {   // to'lqin + devor yonida menisk (shisha ustki burchaklaridan chiqmaydi)
+      const px = s * i / 16, d = Math.min(px, s - px);
+      const py = top + Math.sin(i * 0.675 + ph) * amp - (d < 8 ? 4 * (1 - d / 8) : 0);
+      WAVE_P[i * 2] = px;
+      low = Math.max(low, WAVE_P[i * 2 + 1] = Math.max(py, d < BR ? BR - Math.sqrt(BR * BR - (BR - d) * (BR - d)) + 1.5 : 1.5));
+    }
+    // Suyuqlik: to'lqin cho'qqisidan pastki qismi keshlangan spraytdan (gradiyent har kadrda hisoblanmaydi),
+    // ustidagi ingichka to'lqinli qism — jonli. Chegara qurilma piksel chizig'ida: ulanish izi ko'rinmaydi.
+    const body = liqBody(li, s), sy = Math.min(body.height - 1, Math.ceil((low + 4) * scale)), ty = sy / scale - 4;
+    ctx.drawImage(body, 0, sy, body.width, body.height - sy, -4, ty, body.width / scale, (body.height - sy) / scale);
+    ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1]);
+    for (let i = 1; i <= 16; i++) ctx.lineTo(WAVE_P[i * 2], WAVE_P[i * 2 + 1]);
+    ctx.lineTo(s, ty); ctx.lineTo(0, ty); ctx.closePath();
+    ctx.fillStyle = li.g; ctx.fill();
+    ctx.lineJoin = 'bevel'; ctx.lineCap = 'butt';
+    if (!FX_BUSY) {   // tubdagi yorug' to'rlar (kaustika) — siljiyotgan tasma; to'p juda ko'p uchganda mayda bezaklar chizilmaydi
+      const cs = causticSpr(s), off = (tick * 0.56 * k + (cell.s | 0) * 13) % cs.P;
+      ctx.drawImage(cs.c, off * scale, 0, cs.d * 7 * scale, cs.h * scale, s * 0.06, cs.y0, cs.d * 7, cs.h);
+    }
+    // sath ostidagi quyuqroq qatlam (to'lqin bo'ylab 1..7 px chuqurlikdagi yo'l), gazlida ko'pik, so'ng sath chizig'i
+    ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1] + 1);
+    for (let i = 1; i <= 16; i++) ctx.lineTo(WAVE_P[i * 2], WAVE_P[i * 2 + 1] + 1);
+    for (let i = 16; i >= 0; i--) ctx.lineTo(WAVE_P[i * 2], WAVE_P[i * 2 + 1] + 7);
+    ctx.fillStyle = li.dark; ctx.fill();
+    ctx.lineJoin = 'round';
+    if (v === 1) { wavePath(3); ctx.strokeStyle = 'rgba(255,255,255,.32)'; ctx.lineWidth = 5; ctx.stroke(); }
+    wavePath(0); ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.lineCap = 'round';
+    if (!FX_BUSY) {
+      // to'lqin cho'qqisidagi yaltiroq (yorug'lik tomonida)
+      let ci = L.lx >= 0 ? 2 : 10;
+      for (let i = ci + 1; i < ci + 5; i++) if (WAVE_P[i * 2 + 1] < WAVE_P[ci * 2 + 1]) ci = i;
+      ctx.beginPath(); ctx.moveTo(WAVE_P[ci * 2 - 2], WAVE_P[ci * 2 - 1]); ctx.lineTo(WAVE_P[ci * 2], WAVE_P[ci * 2 + 1]); ctx.lineTo(WAVE_P[ci * 2 + 2], WAVE_P[ci * 2 + 3]);
+      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke();
+      // pufakchalar (halqa ko'rinishida)
+      const bub = bubblesOf(cell, s, v === 1), range = Math.max(10, s - top - 10 * k), bs = bubbleSpr();
+      for (let i = 0; i < bub.a.length; i++) {
+        const b = bub.a[i], by = s - 6 * k - ((tick * 0.45 * b.sp + b.ph) % range);
+        if (by - b.r < top + 3) continue;
+        const bx = b.x + Math.sin(tick * 0.1 + i) * 1.5, h = b.r * 1.185;   // halqa — keshlangan sprayt
+        ctx.drawImage(bs, bx - h, by - h, h * 2, h * 2);
+      }
+    }
+    if (v === 2) {   // mevali: to'lqinda chayqalayotgan limon bo'lagi
+      const fx = (L.lx >= 0 ? 0.15 : 0.85) * s, [fy, fa] = waveAt(fx, s), r = 8 * k;
+      ctx.save(); ctx.translate(fx, Math.max(r + 2, fy + 1.5 * k)); ctx.rotate(fa);
+      ctx.fillStyle = '#f5c542'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,240,160,.95)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let j = 0; j < 6; j++) { const a = j * Math.PI / 3; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78); }
+      ctx.stroke(); ctx.restore();
+    } else if (v === 3) {   // muzli: sathda suzayotgan muz bo'laklari
+      for (let j = 0; j < 1 + ((cell.s | 0) % 2); j++) {
+        const fx = (j ? 0.84 : 0.16) * s, [fy, fa] = waveAt(fx, s), r = 6 * k;
+        ctx.save(); ctx.translate(fx, Math.max(r * 1.45 + 2, fy + 2 * k)); ctx.rotate(fa + (j ? 0.3 : -0.2));
+        ctx.fillStyle = 'rgba(255,255,255,.35)'; roundRect(-r, -r, r * 2, r * 2, 2.5 * k); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if (sun > 0) {
+      const ga = ctx.globalAlpha; ctx.globalAlpha = ga * 0.4 * sun;
+      ctx.drawImage(fxGlow('255,230,150'), L.src.x - x0 - 140, L.src.y - y0 - 140, 280, 280);
+      ctx.globalAlpha = ga;
+    }
+    ctx.drawImage(spr, -4, -4, spr.width / scale, spr.height / scale);   // shisha old qatlami (qirra, yaltiroq, tungi soya)
+    litPass(0, 0, s, cell, 'liquid', y0, clip);
     ctx.restore();
-    brickShape(x0, y0, s, cell);
-    ctx.strokeStyle = 'rgba(150,190,255,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
-    number(cell.hp, x + sz / 2 + sh, y + sz / 2, '#ffffff');
+    if (chip) { brickShape(x0, y0, s, cell); ctx.strokeStyle = L.glassEdge || 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke(); }
+    number(cell.hp, x + sz / 2 + sh, y + sz / 2, li.ink, cell);
+  }
+
+  // Tuproq, tosh va asteroid: statik qatlam spraytdan, yoriqlar va yorug'lik jonli.
+  // Faqat siniq (burchagi ko'chgan) g'isht kesib chiziladi.
+  function drawSolid(st, x, y, cell, t, sz, cc, ch, edge) {
+    const s = sz - GAP * 2, sh = jitter(cell), x0 = x + GAP + sh, y0 = y + GAP;
+    const spr = brickSprite(st, cell, t, sz), d = dmgOf(cell), chip = d > 0.45;
+    if (chip) {
+      ctx.save();
+      brickShape(x0, y0, s, cell); ctx.clip();
+      blit(spr, x0 - 4, y0 - 4);
+      ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.stroke();   // siniq chetlar bo'ylab ichki chegara
+    } else blit(spr, x0 - 4, y0 - 4);
+    const cl = crackLayer(st, cell, s, cc, ch);   // yoriqlar (rock — ichidan porlashi bilan) keshdan
+    if (cl) blit(cl, x0 - 4, y0 - 4);
+    litPass(x0, y0, s, cell, st, y0, chip);
+    if (chip) ctx.restore();
+    number(cell.hp, x + sz / 2 + sh, y + sz / 2, NUM_INK[st], cell);
+  }
+  // Yer osti: tuproq bo'lagi — mayda toshlar, ildizlar; zarba olgan sari yoriladi va uvalanadi.
+  function drawSoil(x, y, cell, t, sz = CELL) { drawSolid('soil', x, y, cell, t, sz, CRACK_INK.soil[0], CRACK_INK.soil[1], SPR_EDGE.soil); }
+  // Chuqurlik: qirrali tosh, ichida porlayotgan kristallar.
+  function drawStone(x, y, cell, t, sz = CELL) { drawSolid('stone', x, y, cell, t, sz, CRACK_INK.stone[0], CRACK_INK.stone[1], SPR_EDGE.stone); }
+  // Koinot: asteroid bo'lagi — yorug'lik tomondan yoritilgan kraterlar bilan.
+  function drawRock(x, y, cell, t, sz = CELL) { drawSolid('rock', x, y, cell, t, sz, CRACK_INK.rock[0], CRACK_INK.rock[1], SPR_EDGE.rock); }
+
+  // Osmon: bulut bo'lagi — yorug' va soya tomoni, tekis tagi, kumush hoshiyasi. Zarba olgan sari siyraklashadi.
+  function drawCloud(x, y, cell, t, sz = CELL) {
+    const s = sz - GAP * 2, h = s / 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
+    const wob = cell.wob || 0, k = wob * 3, sh = jitter(cell) - Math.sin(tick * 1.7) * wob * 3;
+    const cx = snap(x + sz / 2 + sh - h - 4) + h + 4, cy = snap(y + sz / 2 + bob - h - 4) + h + 4, dmg = dmgOf(cell), L = LIGHT, chip = dmg > 0.45;
+    const spr = brickSprite('cloud', cell, t, sz);
+    ctx.save();
+    ctx.globalAlpha = 1 - dmg * 0.4;
+    ctx.translate(cx, cy); if (k) ctx.scale((s + k) / s, (s + k) / s);
+    if (chip) {
+      brickShape(-h, -h, s, cell);
+      ctx.strokeStyle = L.night ? 'rgba(150,165,210,.5)' : 'rgba(255,255,255,.65)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.clip();
+    }
+    ctx.drawImage(spr, -h - 4, -h - 4, spr.width / scale, spr.height / scale);
+    if (dmg > 0.25) {   // siyraklashgan joylar — bulut orqali osmon ko'rinadi
+      const rand = prng(cell.s + 21);
+      ctx.fillStyle = L.night ? 'rgba(30,40,80,.35)' : 'rgba(120,180,240,.35)'; ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const hx = -h + s * (0.2 + rand() * 0.6), hy = -h + s * (0.2 + rand() * 0.6), hr = s * (0.08 + rand() * 0.08) * Math.max(0, dmg - 0.25 * i) * 1.6;
+        if (hr > 0.5) { ctx.moveTo(hx + hr, hy); ctx.arc(hx, hy, hr, 0, Math.PI * 2); }
+      }
+      ctx.fill();
+    }
+    if (t > 1) {   // yomg'ir buluti: tomchilar va vaqti-vaqti bilan chaqmoq
+      ctx.strokeStyle = 'rgba(90,140,210,.7)'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let i = 0; i < 3; i++) { const dy = (tick * 1.5 + i * 13) % 14, rx = -h + s * (0.25 + i * 0.25); ctx.moveTo(rx, h - 18 + dy); ctx.lineTo(rx - 2, h - 12 + dy); }
+      ctx.stroke();
+      if ((tick + (cell.s | 0) * 7) % 240 < 4) {
+        ctx.fillStyle = 'rgba(255,255,235,.35)';
+        if (chip) ctx.fillRect(-h, -h, s, s); else { brickShape(-h, -h, s, cell); ctx.fill(); }
+      }
+    }
+    litPass(-h, -h, s, cell, 'cloud', y + GAP, chip);
+    ctx.restore();
+    number(cell.hp, cx, cy, L.night || t > 1.2 ? NUM_INK.cloudNight : NUM_INK.cloudDay, cell);
   }
 
   const DRAW = { liquid: drawLiquid, soil: drawSoil, stone: drawStone, cloud: drawCloud, rock: drawRock };
@@ -5135,22 +6022,43 @@
   }
 
   // Boss: 2x2 katak, joriy qatlam uslubida, toj va jon chizig'i bilan
+  // Qizil nur halqasi bir marta chiziladi (shadowBlur faqat shu spraytda), har kadrda faqat shaffofligi o'zgaradi
+  let BOSS_HALO = null;
+  const HALO_PAD = 34;
+  function bossHalo() {
+    if (BOSS_HALO) return BOSS_HALO;
+    const sz = CELL * 2, c = document.createElement('canvas');
+    c.width = c.height = Math.ceil((sz + HALO_PAD * 2) * scale);
+    const g = c.getContext('2d');
+    g.setTransform(scale, 0, 0, scale, 0, 0);
+    // shakl kanvasdan tashqarida chiziladi — faqat to'liq kuchli soyasi (nur) kanvasga tushadi
+    g.shadowColor = 'rgba(255,60,60,.7)'; g.shadowBlur = 16 * scale; g.shadowOffsetX = 3000 * scale;
+    g.fillStyle = '#000';
+    roundRectG(g, HALO_PAD + GAP - 3000, HALO_PAD + GAP, sz - GAP * 2, sz - GAP * 2, BR); g.fill();
+    g.shadowColor = 'rgba(0,0,0,0)'; g.shadowBlur = 0; g.shadowOffsetX = 0;
+    g.fillStyle = 'rgba(255,80,80,.25)';
+    roundRectG(g, HALO_PAD + GAP, HALO_PAD + GAP, sz - GAP * 2, sz - GAP * 2, BR); g.fill();
+    return (BOSS_HALO = c);
+  }
   function drawBoss(r, c, ref, off, draw1) {
     const x = c * CELL, y = r * CELL + off, sz = CELL * 2;
-    ctx.save();
-    ctx.shadowColor = 'rgba(255,60,60,.8)'; ctx.shadowBlur = 14 + Math.sin(tick / 10) * 8;
-    roundRect(x + GAP, y + GAP, sz - GAP * 2, sz - GAP * 2, BR); ctx.fillStyle = 'rgba(255,80,80,.25)'; ctx.fill();
-    ctx.restore();
-    NUMK = 1.5; draw1(x, y, ref, 1.6, sz); NUMK = 1;
-    // toj
+    const ga = ctx.globalAlpha;
+    ctx.globalAlpha = ga * (0.6 + 0.4 * Math.sin(tick / 10));
+    ctx.drawImage(bossHalo(), x - HALO_PAD, y - HALO_PAD, sz + HALO_PAD * 2, sz + HALO_PAD * 2);
+    ctx.globalAlpha = ga;
+    NUMK = 1.5; draw1(x, y, ref, ref.tv ?? (1 + 0.6 * ref.hp / ref.m), sz); NUMK = 1;
+    // toj (yoki boss turiga xos bezak — E1 paketi): cx — boss o'rtasi, cy — toj joyi (tepadan 34 px)
     const cx = x + sz / 2, cy = y + 34;
-    ctx.fillStyle = '#ffcf3a'; ctx.strokeStyle = '#b07800'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(cx - 22, cy + 10); ctx.lineTo(cx - 22, cy - 6); ctx.lineTo(cx - 11, cy + 2); ctx.lineTo(cx, cy - 12);
-    ctx.lineTo(cx + 11, cy + 2); ctx.lineTo(cx + 22, cy - 6); ctx.lineTo(cx + 22, cy + 10); ctx.closePath(); ctx.fill(); ctx.stroke();
-    // jon chizig'i
+    if (typeof drawBossDeco === 'function') drawBossDeco(cx, cy, sz, ref);
+    else {
+      ctx.fillStyle = '#ffcf3a'; ctx.strokeStyle = '#b07800'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx - 22, cy + 10); ctx.lineTo(cx - 22, cy - 6); ctx.lineTo(cx - 11, cy + 2); ctx.lineTo(cx, cy - 12);
+      ctx.lineTo(cx + 11, cy + 2); ctx.lineTo(cx + 22, cy - 6); ctx.lineTo(cx + 22, cy + 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    // jon chizig'i (qalqon bo'lsa — havorang)
     const bw = sz - 40, bx = x + 20, by = y + sz - 26;
     ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(bx, by, bw, 10, 5); ctx.fill();
-    ctx.fillStyle = '#ff4155'; roundRect(bx, by, Math.max(4, bw * ref.hp / ref.m), 10, 5); ctx.fill();
+    ctx.fillStyle = ref.shield ? '#5fe0ff' : '#ff4155'; roundRect(bx, by, Math.max(4, bw * ref.hp / ref.m), 10, 5); ctx.fill();
   }
 
   function ballColor(i) {
@@ -5162,6 +6070,10 @@
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
   function draw() {
+    ensureCaches();
+    prewarm();
+    sprBudget = 4;   // bir kadrda qayta chiziladigan spraytlar "narxi" (qolgani keyingi kadrlarda, eskisi ko'rinib turadi)
+    FX_BUSY = phase === 'fire' && flying.length > 60;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 0.6, (Math.random() - 0.5) * shake * 0.6);
 
@@ -5174,6 +6086,7 @@
       }
     } else {
       ctx.drawImage(bgCache[game.zone], 0, 0, W, H);
+      if (!zoneAnim && typeof drawBgFade === 'function') drawBgFade();
       liveBg(game.zone);
     }
 
@@ -5188,24 +6101,44 @@
     }
 
     const off = phase === 'shift' ? Math.min(1, shiftAnim) * CELL : 0;
-    const refHp = Math.max(1, game.level * ZONES[game.zone].hpK), draw1 = DRAW[curStyle()];
+    const st = curStyle(), draw1 = DRAW[st], grid = game.grid, L = LIGHT;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // G'ishtlar soyasi — chuqurlik hissi uchun (yorug'lik yuqori-chapdan)
-    const shadowCol = { liquid: 'rgba(40,70,110,.12)', cloud: 'rgba(40,70,120,.13)', soil: 'rgba(25,12,0,.28)', stone: 'rgba(0,0,0,.35)', rock: 'rgba(0,0,0,.45)' }[curStyle()];
-    ctx.fillStyle = shadowCol;
+
+    // Soyalar: yorug'lik manbaidan teskari tomonga tushadi (tong/shomda uzun). Blur yo'q —
+    // ikki qavat: kengroq xira yarim soya va quyuqroq o'zak. Shisha soyasi suyuqlik rangida.
+    const pdx = L.lx * L.len * 1.3, pdy = L.ly * L.len * 1.3, cdx = L.lx * L.len * 0.75, cdy = L.ly * L.len * 0.75;
+    ctx.beginPath();
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      const cell = game.grid[r][c];
-      if (!isSolid(cell)) continue;
-      const [x0, y0, x1, y1] = cellRect(r, c, cell);
-      roundRect(x0 + 5, y0 + 7 + off, x1 - x0, y1 - y0, BR); ctx.fill();
+      const cell = grid[r][c];
+      if (!isSolid(cell) || (cell.t === 'boss' && (cell.dx || cell.dy))) continue;
+      const s = cell.t === 'boss' ? CELL * 2 - GAP * 2 : CELL - GAP * 2;
+      rrPath(ctx, c * CELL + GAP + pdx - 2.5, r * CELL + GAP + off + pdy - 2.5, s + 5, s + 5, BR + 2.5);
     }
+    ctx.fillStyle = L.shadowPen; ctx.fill();
+    const tinted = st === 'liquid';
+    ctx.beginPath();
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = grid[r][c];
+      if (!isSolid(cell) || (cell.t === 'boss' && (cell.dx || cell.dy))) continue;
+      const ref = cell.t === 'boss' ? cell.ref : cell, s = cell.t === 'boss' ? CELL * 2 - GAP * 2 : CELL - GAP * 2;
+      const x0 = c * CELL + GAP + cdx, y0 = r * CELL + GAP + off + cdy;
+      if (tinted) ctx.beginPath();   // shisha: har biri o'z suyuqligi rangida
+      if (dmgOf(ref) > 0.45) brickPath(ctx, x0, y0, s, ref, st, false, 0, true);
+      else rrPath(ctx, x0, y0, s, s, BR);
+      if (tinted) { ctx.fillStyle = ref.k === 'chest' ? L.shadowCore : liqInfo(ref, ref.tv ?? tOf(ref), s).sh; ctx.fill(); }
+    }
+    if (!tinted) { ctx.fillStyle = L.shadowCore; ctx.fill(); }
+
     const drawnBoss = new Set();
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      const cell = game.grid[r][c];
+      const cell = grid[r][c];
       if (!cell) continue;
       const x = c * CELL, y = r * CELL + off;
-      if (cell.t === 'brick') draw1(x, y, cell, cell.hp / refHp);
-      else if (cell.t === 'boss') {   // boss bir marta, o'zining yuqori-chap burchagidan chiziladi
+      if (cell.t === 'brick') {
+        if (cell.k === 'chest' && typeof drawChest === 'function') drawChest(x, y, cell);
+        else draw1(x, y, cell, cell.tv ?? tOf(cell));
+        if ((cell.k || cell.gold) && typeof drawKind === 'function') drawKind(x, y, cell);
+      } else if (cell.t === 'boss') {   // boss bir marta, o'zining yuqori-chap burchagidan chiziladi
         if (!drawnBoss.has(cell.ref)) { drawnBoss.add(cell.ref); drawBoss(r - cell.dy, c - cell.dx, cell.ref, off, draw1); }
       }
       else drawItem(x, y, cell);
@@ -5219,12 +6152,16 @@
     // To'plar
     const labelFont = '800 30px Roboto, Arial, sans-serif';
     if (phase === 'aim' || phase === 'shift' || phase === 'zone' || (phase === 'fire' && shotsLeft > 0)) {
+      // turgan to'p ostidagi kontakt soyasi
+      ctx.fillStyle = L.moon ? 'rgba(0,0,0,.12)' : 'rgba(0,0,0,.25)';
+      ctx.beginPath(); ctx.ellipse(game.launchX, H - 1, R * 1.1, R * 0.3, 0, 0, Math.PI * 2); ctx.fill();
       drawBall(game.launchX, H - R, 0, armed ? { fire: armed === 'fire', heavy: armed === 'heavy' } : null);
       ctx.fillStyle = ballColor(0); ctx.font = labelFont;
       ctx.fillText('x' + (phase === 'fire' ? shotsLeft : game.balls), clampLabel(game.launchX), H - R * 2 - 22);
     }
     if (phase === 'fire') {
-      for (const b of flying) if (b.s !== 'gone') { if (b.s === 'fly') drawTrail(b); drawBall(b.x, b.y, b.i, b); }
+      drawTrails();
+      for (const b of flying) if (b.s !== 'gone') drawBall(b.x, b.y, b.i, b);
       if (firstLandX !== null && shotsLeft === 0) {
         const landed = flying.filter(b => b.s === 'done' && !b.temp).length;
         if (landed > 0) {
@@ -5234,45 +6171,7 @@
       }
     }
 
-    // Effektlar
-    for (const e of effects) {
-      if (e.k === 'p') {
-        ctx.globalAlpha = e.life / 32; ctx.fillStyle = e.color;
-        ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
-      } else if (e.k === 'd') {
-        ctx.globalAlpha = e.life / 34; puff(ctx, e.x, e.y, e.size, e.color);
-      } else if (e.k === 'shard') {
-        ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.rot);
-        ctx.globalAlpha = Math.min(1, e.life / 20);
-        ctx.beginPath(); ctx.moveTo(e.pts[0][0], e.pts[0][1]); ctx.lineTo(e.pts[1][0], e.pts[1][1]); ctx.lineTo(e.pts[2][0], e.pts[2][1]); ctx.closePath();
-        ctx.fillStyle = e.color; ctx.fill();
-        ctx.strokeStyle = e.edge; ctx.lineWidth = 1.2; ctx.stroke();
-        ctx.restore();
-      } else if (e.k === 'dust') {
-        ctx.globalAlpha = Math.min(1, e.life / 25) * 0.9; puff(ctx, e.x, e.y, e.size, e.color);
-      } else if (e.k === 'flash') {
-        ctx.globalAlpha = e.life / 8 * 0.7; ctx.fillStyle = '#ffffff';
-        roundRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size, BR); ctx.fill();
-      } else if (e.k === 'boom') {
-        const t = 1 - e.life / (e.big ? 30 : 24), rr = (e.big ? 200 : 150) * t;
-        ctx.globalAlpha = (1 - t) * 0.8;
-        const bg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, Math.max(1, rr));
-        bg.addColorStop(0, 'rgba(255,240,180,1)'); bg.addColorStop(0.5, 'rgba(255,140,40,.9)'); bg.addColorStop(1, 'rgba(255,60,20,0)');
-        ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, rr), 0, Math.PI * 2); ctx.fill();
-      } else if (e.k === 'beamH' || e.k === 'beamV') {
-        ctx.globalAlpha = e.life / 14;
-        ctx.save(); ctx.shadowColor = '#ffd23a'; ctx.shadowBlur = 20; ctx.fillStyle = '#fff6c0';
-        const th = 4 + e.life * 0.8;
-        if (e.k === 'beamH') ctx.fillRect(0, e.y - th / 2, W, th); else ctx.fillRect(e.x - th / 2, 0, th, H);
-        ctx.restore();
-      } else if (e.k === 'c') {
-        ctx.globalAlpha = e.life / 36 * 0.85; puff(ctx, e.x, e.y, e.size, '#ffffff');
-      } else {
-        ctx.globalAlpha = Math.min(1, e.life / 20); ctx.fillStyle = e.color;
-        ctx.font = '800 30px Roboto, Arial, sans-serif'; ctx.fillText(e.str, e.x, e.y);
-      }
-    }
-    ctx.globalAlpha = 1;
+    drawEffects();
 
     if (combo && phase === 'fire') {
       const pop = 1 + Math.max(0, combo.life - 55) / 15 * 0.4;
@@ -5298,35 +6197,232 @@
     }
   }
 
+  // Yumshoq yorug'lik dog'i spraytlari (zarba, portlash, olov, quyosh nuri) — gradiyent har kadrda yasalmaydi
+  const FX_GLOW = {};
+  function fxGlow(c0, c1 = c0) {
+    const key = c0 + '|' + c1;
+    let c = FX_GLOW[key];
+    if (c) return c;
+    c = document.createElement('canvas'); c.width = c.height = 96;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(48, 48, 0, 48, 48, 48);
+    gr.addColorStop(0, `rgba(${c0},1)`); gr.addColorStop(0.45, `rgba(${c1},.55)`); gr.addColorStop(1, `rgba(${c1},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 96, 96);
+    return (FX_GLOW[key] = c);
+  }
+
+  // Effektlarni chizish (zarrachalar, bo'laklar, chaqnashlar, nurlar, yozuvlar)
+  function drawEffects() {
+    let tags = 0;
+    for (const e of effects) {
+      const k = e.k;
+      if (k === 'p') {
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 32));
+        if (e.rot !== undefined) {   // aylanayotgan uchburchak bo'lak: yorug' va soyali tomoni almashadi
+          const r = e.size * 0.75, a = e.rot;
+          ctx.fillStyle = Math.sin(a * 1.7) > 0 ? e.color : (e.color2 || e.color);
+          ctx.beginPath();
+          ctx.moveTo(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r);
+          ctx.lineTo(e.x + Math.cos(a + 2.2) * r * 0.8, e.y + Math.sin(a + 2.2) * r * 0.8);
+          ctx.lineTo(e.x + Math.cos(a + 4.1) * r, e.y + Math.sin(a + 4.1) * r);
+          ctx.fill();
+        } else { ctx.fillStyle = e.color; ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size); }
+      } else if (k === 'd') {
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 34)); puff(ctx, e.x, e.y, e.size, e.color);
+      } else if (k === 'shard') {
+        const c = Math.cos(e.rot), s = Math.sin(e.rot), p = e.pts;
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 20));
+        ctx.beginPath();
+        ctx.moveTo(e.x + p[0][0] * c - p[0][1] * s, e.y + p[0][0] * s + p[0][1] * c);
+        ctx.lineTo(e.x + p[1][0] * c - p[1][1] * s, e.y + p[1][0] * s + p[1][1] * c);
+        ctx.lineTo(e.x + p[2][0] * c - p[2][1] * s, e.y + p[2][0] * s + p[2][1] * c);
+        ctx.closePath();
+        ctx.fillStyle = e.color; ctx.fill();
+        ctx.strokeStyle = e.edge; ctx.lineWidth = 1.2; ctx.stroke();
+      } else if (k === 'dust') {
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 25) * 0.9); puff(ctx, e.x, e.y, e.size, e.color);
+      } else if (k === 'hit') {   // zarba chaqnashi: oqdan material rangiga
+        const r = 6 + (7 - e.life) * 1.5;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 4));
+        ctx.drawImage(fxGlow('255,255,255', e.tint || '255,255,255'), e.x - r, e.y - r, r * 2, r * 2);
+        ctx.globalCompositeOperation = 'source-over';
+      } else if (k === 'ripple') {   // suyuqlik sathidagi halqa
+        const t = 1 - e.life / 12, rx = 6 + 14 * t;
+        ctx.globalAlpha = Math.max(0, (1 - t) * 0.8); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(e.x, e.y, rx, rx * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (k === 'burst') {   // sinish: yorug' to'lqin va zarba halqasi
+        const t = 1 - e.life / (e.max || 10), rr = e.size * (0.3 + 0.6 * t);
+        ctx.globalAlpha = Math.max(0, (1 - t) * 0.6);
+        ctx.drawImage(fxGlow('255,255,255'), e.x - rr, e.y - rr, rr * 2, rr * 2);
+        ctx.globalAlpha = Math.max(0, (1 - t) * 0.5);
+        ctx.strokeStyle = e.col || '#fff'; ctx.lineWidth = 6 - 5 * t;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.size * (0.35 + 0.45 * t), 0, Math.PI * 2); ctx.stroke();
+      } else if (k === 'flash') {
+        ctx.globalAlpha = Math.max(0, e.life / 8 * 0.7); ctx.fillStyle = '#ffffff';
+        roundRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size, BR); ctx.fill();
+      } else if (k === 'boom') {
+        const t = 1 - e.life / (e.big ? 30 : 24), rr = Math.max(1, (e.big ? 200 : 150) * t);
+        ctx.globalAlpha = Math.max(0, (1 - t) * 0.8);
+        ctx.drawImage(fxGlow('255,240,180', '255,140,40'), e.x - rr, e.y - rr, rr * 2, rr * 2);
+      } else if (k === 'beamH' || k === 'beamV') {   // nur: uch qavat to'rtburchak (blur o'rniga)
+        const a = Math.max(0, e.life / 14), th = 4 + e.life * 0.8;
+        for (const [w, al, col] of [[th * 3.2, 0.15, '#ffd23a'], [th * 1.8, 0.35, '#ffd23a'], [th, 1, '#fff6c0']]) {
+          ctx.globalAlpha = a * al; ctx.fillStyle = col;
+          if (k === 'beamH') ctx.fillRect(0, e.y - w / 2, W, w); else ctx.fillRect(e.x - w / 2, 0, w, H);
+        }
+      } else if (k === 'c') {
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 36 * 0.85)); puff(ctx, e.x, e.y, e.size, '#ffffff');
+      } else if (k === 'tag') {   // yuqoridagi yorliq (masalan, shakl nomi)
+        e.m0 = e.m0 || e.life;
+        const y = 30 + 44 * tags++;
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 15, (e.m0 - e.life) / 6 + 0.15));
+        ctx.font = '700 22px Roboto, system-ui, Arial';
+        if (!e.w) e.w = ctx.measureText(e.str).width + 28;
+        ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(W / 2 - e.w / 2, y - 17, e.w, 34, 17); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(e.str, W / 2, y + 1);
+      } else if (k === 'rk') {   // raketa: nishonga uchadi, ortidan tutun
+        const p = 1 - e.life / (e.max || 10), px = e.x + (e.tx - e.x) * p, py = e.y + (e.ty - e.y) * p;
+        const an = Math.atan2(e.ty - e.y, e.tx - e.x), ca = Math.cos(an), sa = Math.sin(an);
+        ctx.globalAlpha = 0.55; puff(ctx, px - ca * 15, py - sa * 15, 6, '#ffb347'); puff(ctx, px - ca * 24, py - sa * 24, 4, '#ffe08a');
+        ctx.globalAlpha = 1; ctx.lineCap = 'round';
+        ctx.strokeStyle = '#e8432e'; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(px - ca * 9, py - sa * 9); ctx.lineTo(px + ca * 9, py + sa * 9); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - ca * 6 - sa * 2, py - sa * 6 + ca * 2); ctx.lineTo(px + ca * 6 - sa * 2, py + sa * 6 + ca * 2); ctx.stroke();
+      } else if (k === 'bolt') {   // chaqmoq zanjiri
+        if (!e.pts || e.pts.length < 2) continue;
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 6)); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath(); e.pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]));
+        ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+      } else if (e.str !== undefined) {   // ko'tariluvchi yozuv (+1, +1 S, ...)
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.life / 20)); ctx.font = '800 30px Roboto, Arial, sans-serif';
+        ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.strokeText(e.str, e.x, e.y);
+        ctx.fillStyle = e.color || '#fff'; ctx.fillText(e.str, e.x, e.y);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Effektlarni yangilash (har tikda)
+  function updateEffects() {
+    let hits = 0;
+    for (const e of effects) {
+      e.life--;
+      const k = e.k;
+      if (k === 'p' || k === 'd') {
+        e.x += e.vx || 0; e.y += e.vy || 0; e.vy = (e.vy || 0) + 0.3;
+        if (e.rot !== undefined) e.rot += e.vr || 0;
+        if (e.y > H - 3) { e.y = H - 3; e.vy *= -0.25; e.vx = (e.vx || 0) * 0.7; if (e.vr) e.vr *= 0.6; }
+      }
+      else if (k === 'c') { e.size += 0.5; e.x += e.vx || 0; e.y += (e.vy || 0) - 0.3; if (e.vx) { e.vx *= 0.95; e.vy *= 0.95; } }
+      else if (k === 'shard') {
+        e.x += e.vx; e.y += e.vy; e.vy += 0.42; e.rot += e.vr;
+        if (e.y > H - 5 && e.vy > 0) { e.y = H - 5; e.vy *= -0.32; e.vx *= 0.6; e.vr *= 0.5; }   // yerga tushib sakraydi
+      }
+      else if (k === 'dust') { e.x += e.vx; e.y += e.vy; e.size += 0.35; e.vx *= 0.97; }
+      else if (k === 'hit' || k === 'ripple') hits++;
+      else if (k === 't' || (e.str !== undefined && k !== 'tag')) e.y -= 1.2;
+      // flash, burst, boom, beam, tag, rk, bolt — joyida turadi
+    }
+    effects = effects.filter(e => e.life > 0);
+    hitAlive = hits;
+  }
+
   function clampLabel(x) { return Math.max(30, Math.min(W - 30, x)); }
 
-  // Hajmli shar: asosiy rang + yorug'lik dog'i + qorong'i chet (har qanday rang bilan ishlaydi)
-  function drawBall(x, y, i, b) {
-    const fire = b && b.fire, heavy = b && b.heavy, r = heavy ? R + 2 : R;
-    if (fire) {   // olov yorug'i
-      const fl = 0.8 + Math.sin(tick * 0.9 + i) * 0.2;
-      const g0 = ctx.createRadialGradient(x, y, 2, x, y, r * 2.4 * fl);
-      g0.addColorStop(0, 'rgba(255,200,80,.7)'); g0.addColorStop(1, 'rgba(255,90,20,0)');
-      ctx.fillStyle = g0; ctx.beginPath(); ctx.arc(x, y, r * 2.4 * fl, 0, Math.PI * 2); ctx.fill();
+  // To'p spraytlari: rang bo'yicha bir marta chiziladi (yorug'lik tomondagi dog' va yaltiroq nuqta bilan).
+  // Kamalak rangi 12 ta tusga bo'lingan. Har to'p — bitta drawImage.
+  const BALL_SPR = new Map();
+  function ballSprite(colorKey, kind = 'n') {   // kind: 'n' — oddiy (colorKey rangida), 'fire', 'heavy'
+    const key = kind === 'n' ? colorKey : kind;
+    let c = BALL_SPR.get(key);
+    if (c) return c;
+    const heavy = key === 'heavy', fire = key === 'fire', r = heavy ? R + 2 : R, half = r + 3;
+    const px = Math.ceil(half * 2 * scale), q = px / (half * 2), L = LIGHT;
+    c = document.createElement('canvas'); c.width = c.height = px; c._r = r; c._half = half;
+    const g = c.getContext('2d');
+    g.setTransform(q, 0, 0, q, px / 2, px / 2);
+    const hx = -L.lx * r * 0.4, hy = -L.ly * r * 0.4;
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2);
+    if (heavy) {   // po'lat: atrof aksi (osmon → ufq → yer)
+      g.save(); g.clip();
+      const eg = g.createLinearGradient(0, -r, 0, r);
+      eg.addColorStop(0, L.envSky); eg.addColorStop(0.45, '#9aa8b8'); eg.addColorStop(0.5, '#2e3742'); eg.addColorStop(0.56, '#6a7480'); eg.addColorStop(1, L.envGround);
+      g.fillStyle = eg; g.fillRect(-r, -r, r * 2, r * 2);
+      g.restore();
+    } else {
+      g.fillStyle = fire ? '#ff7a1a' : key[0] === 'h' ? `hsl(${(+key.slice(1)) * 30},85%,58%)` : key; g.fill();
     }
-    ctx.fillStyle = fire ? '#ff7a1a' : heavy ? '#8d99a6' : ballColor(i);
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    const hl = ctx.createRadialGradient(x - r * 0.4, y - r * 0.45, 0.5, x - r * 0.2, y - r * 0.2, r * 1.05);
-    hl.addColorStop(0, 'rgba(255,255,255,.85)'); hl.addColorStop(0.35, 'rgba(255,255,255,.18)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = hl; ctx.fill();
-    const sh = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.5, x, y, r * 1.02);
+    if (fire) {   // olov yadrosi
+      const fg = g.createRadialGradient(hx * 0.5, hy * 0.5, 0, hx * 0.5, hy * 0.5, r * 0.6);
+      fg.addColorStop(0, 'rgba(255,244,190,.95)'); fg.addColorStop(1, 'rgba(255,200,90,0)');
+      g.fillStyle = fg; g.fill();
+    }
+    const hl = g.createRadialGradient(hx, hy, 0.5, hx * 0.5, hy * 0.5, r * 1.05);
+    hl.addColorStop(0, heavy ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.8)'); hl.addColorStop(0.35, 'rgba(255,255,255,.16)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = hl; g.fill();
+    const sh = g.createRadialGradient(hx * 0.75, hy * 0.75, r * 0.5, 0, 0, r * 1.02);
     sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(1, heavy ? 'rgba(20,30,40,.55)' : 'rgba(0,0,0,.32)');
-    ctx.fillStyle = sh; ctx.fill();
-    if (heavy) { ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, r * 0.62, -2.4, -0.9); ctx.stroke(); }
+    g.fillStyle = sh; g.fill();
+    if (heavy) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.2; g.beginPath(); g.arc(0, 0, r * 0.62, Math.atan2(-L.ly, -L.lx) - 0.75, Math.atan2(-L.ly, -L.lx) + 0.75); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.arc(-L.lx * r * 0.45, -L.ly * r * 0.5, r * 0.18, 0, Math.PI * 2); g.fill();
+    BALL_SPR.set(key, c);
+    return c;
   }
-  // Harakat izi: oddiy to'pda xira iz, olovlida alanga
+  // Hajmli shar — keshlangan sprayt; rr — radius (halqa ichidagi kichik to'p uchun)
+  function drawBall(x, y, i, b, rr = R) {
+    const fire = b && b.fire, heavy = b && b.heavy, r = heavy && rr === R ? R + 2 : rr;
+    if (fire) {   // olov yorug'i
+      const fl = 0.8 + Math.sin(tick * 0.9 + i) * 0.2, gr = r * 2.4 * fl, ga = ctx.globalAlpha;
+      ctx.globalAlpha = ga * 0.7; ctx.drawImage(fxGlow('255,200,80', '255,90,20'), x - gr, y - gr, gr * 2, gr * 2); ctx.globalAlpha = ga;
+    }
+    const ck = SKIN_COL === 'rainbow' ? 'h' + (Math.round(((i * 37 + tick * 3) % 360) / 30) % 12) : SKIN_COL;
+    const spr = ballSprite(ck, fire ? 'fire' : heavy ? 'heavy' : 'n'), hs = spr._half * r / spr._r;
+    if (r === spr._r) { const q = spr.width / scale / 2; ctx.drawImage(spr, snap(x - q), snap(y - q), q * 2, q * 2); }   // o'z o'lchamida — tez
+    else ctx.drawImage(spr, x - hs, y - hs, hs * 2, hs * 2);
+  }
+  // Harakat izi: uchidan boshiga kengayadigan bitta lenta (joriy yo'lga qo'shiladi)
+  const TRAIL_P = new Float32Array(40), TRAIL_N = new Float32Array(40);
+  function trailPath(b, maxPts) {
+    const t = b.tr, n = t.length >> 1, from = Math.max(0, n - (maxPts - 1));
+    let m = 0;
+    for (let k = from; k < n; k++) { TRAIL_P[m * 2] = t[k * 2]; TRAIL_P[m * 2 + 1] = t[k * 2 + 1]; m++; }
+    TRAIL_P[m * 2] = b.x; TRAIL_P[m * 2 + 1] = b.y; m++;
+    if (m < 2) return;
+    const hw = R * 0.8;
+    for (let k = 0; k < m; k++) {
+      const a = Math.max(0, k - 1), c = Math.min(m - 1, k + 1);
+      const dx = TRAIL_P[c * 2] - TRAIL_P[a * 2], dy = TRAIL_P[c * 2 + 1] - TRAIL_P[a * 2 + 1], d = Math.hypot(dx, dy) || 1, w = hw * k / (m - 1);
+      const nx = -dy / d * w, ny = dx / d * w;
+      TRAIL_N[k * 2] = nx; TRAIL_N[k * 2 + 1] = ny;
+      if (k) ctx.lineTo(TRAIL_P[k * 2] + nx, TRAIL_P[k * 2 + 1] + ny); else ctx.moveTo(TRAIL_P[0] + nx, TRAIL_P[1] + ny);
+    }
+    for (let k = m - 1; k >= 0; k--) ctx.lineTo(TRAIL_P[k * 2] - TRAIL_N[k * 2], TRAIL_P[k * 2 + 1] - TRAIL_N[k * 2 + 1]);
+    ctx.closePath();
+  }
   function drawTrail(b) {
-    const t = b.tr, n = t.length / 2;
-    for (let k = 0; k < n; k++) {
-      const f = (k + 1) / (n + 1);
-      ctx.globalAlpha = f * (b.fire ? 0.55 : 0.18);
-      ctx.fillStyle = b.fire ? (k % 2 ? '#ffb347' : '#ff6a1a') : b.heavy ? '#8d99a6' : ballColor(b.i);
-      ctx.beginPath(); ctx.arc(t[k * 2], t[k * 2 + 1], R * (0.35 + 0.6 * f) * (b.fire ? 1.15 : 1), 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); trailPath(b, 8);
+    ctx.globalAlpha = b.fire ? 0.5 : 0.22; ctx.fillStyle = b.fire ? '#ff8a2a' : b.heavy ? '#8d99a6' : ballColor(b.i); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  // Barcha izlar rang guruhlari bo'yicha bitta yo'lda; to'p ko'p bo'lsa — har ikkinchisi va qisqaroq
+  function drawTrails() {
+    const many = flying.length > 80, mp = many ? 4 : 8, rainbow = SKIN_COL === 'rainbow';
+    for (const grp of [0, 1, 2]) {   // 0 — oddiy, 1 — po'lat, 2 — olovli
+      if (grp === 0 && rainbow) {
+        ctx.globalAlpha = 0.22;
+        for (const b of flying) if (b.s === 'fly' && !b.fire && !b.heavy && (!many || b.i & 1)) { ctx.beginPath(); trailPath(b, mp); ctx.fillStyle = ballColor(b.i); ctx.fill(); }
+        continue;
+      }
+      ctx.beginPath();
+      let any = false;
+      for (const b of flying) {
+        if (b.s !== 'fly' || (many && !(b.i & 1))) continue;
+        const g = b.fire ? 2 : b.heavy ? 1 : 0;
+        if (g === grp) { trailPath(b, mp); any = true; }
+      }
+      if (!any) continue;
+      ctx.globalAlpha = grp === 2 ? 0.5 : 0.22;
+      ctx.fillStyle = grp === 2 ? '#ff8a2a' : grp === 1 ? '#8d99a6' : SKIN_COL;
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
@@ -5371,7 +6467,7 @@
       acc -= STEP_MS;
       tick++;
       if (phase === 'fire') {
-        const n = fast ? 3 : turnTime > 60 * 12 ? 3 : turnTime > 60 * 6 ? 2 : 1;
+        const n = typeof turnSteps === 'function' ? turnSteps() : fast ? 3 : turnTime > 60 * 12 ? 3 : turnTime > 60 * 6 ? 2 : 1;
         for (let k = 0; k < n && phase === 'fire'; k++) stepPhysics();
       } else if (phase === 'shift') {
         shiftAnim += 0.12;
@@ -5386,27 +6482,18 @@
       if (banner && --banner.life <= 0) banner = null;
       if (combo && --combo.life <= 0) combo = null;
       ambientCrumbs();
-      updateSeason();
-      if (tick % 30 === 0) Music.setTension(game.grid.some(row => row.some(c => c && c.t === 'boss')));
-      for (const w of walkers) {
-        w.x += w.v; w.ph += Math.abs(w.v) * 0.18;
-        if (w.x < -20) w.x = W + 20; if (w.x > W + 20) w.x = -20;
-      }
-      for (const row of game.grid) for (const cell of row) { const o = cell && cell.t === 'boss' ? cell.ref : cell; if (o && o.wob) o.wob = Math.max(0, o.wob - (cell.t === 'boss' ? 0.0125 : 0.05)); }
-      for (const e of effects) {
-        e.life--;
-        if (e.k === 'p' || e.k === 'd') { e.x += e.vx; e.y += e.vy; e.vy += 0.3; if (e.y > H - 3) { e.y = H - 3; e.vy *= -0.25; e.vx *= 0.7; } }
-        else if (e.k === 'c') { e.size += 0.5; e.x += e.vx || 0; e.y += (e.vy || 0) - 0.3; if (e.vx) { e.vx *= 0.95; e.vy *= 0.95; } }
-        else if (e.k === 'shard') {
-          e.x += e.vx; e.y += e.vy; e.vy += 0.42; e.rot += e.vr;
-          if (e.y > H - 5 && e.vy > 0) { e.y = H - 5; e.vy *= -0.32; e.vx *= 0.6; e.vr *= 0.5; }   // yerga tushib sakraydi
+      // Tirik olam (odamlar, qushlar, ob-havo) — C paketi; bo'lmasa eski fasl zarralari va yo'lovchilar
+      if (typeof updateLife === 'function') updateLife();
+      else {
+        updateSeason();
+        if (typeof walkers !== 'undefined') for (const w of walkers) {
+          w.x += w.v; w.ph += Math.abs(w.v) * 0.18;
+          if (w.x < -20) w.x = W + 20; if (w.x > W + 20) w.x = -20;
         }
-        else if (e.k === 'dust') { e.x += e.vx; e.y += e.vy; e.size += 0.35; e.vx *= 0.97; }
-        else if (e.k === 'flash') {}
-        else if (e.k === 'boom' || e.k === 'beamH' || e.k === 'beamV') {}
-        else e.y -= 1.2;
       }
-      effects = effects.filter(e => e.life > 0);
+      if (tick % 30 === 0) Music.setTension(game.grid.some(row => row.some(c => c && c.t === 'boss')));
+      tickCells();
+      updateEffects();
     }
     draw();
     requestAnimationFrame(loop);
