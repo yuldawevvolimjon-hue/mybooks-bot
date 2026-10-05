@@ -431,6 +431,11 @@
   const rgbHex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
   const lerpHex = (a, b, t) => rgbHex(hexRgb(a).map((v, i) => v + (hexRgb(b)[i] - v) * t));
   const lum = h => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
+  // Rangni ko'paytirish: k — son yoki [kr, kg, kb]; har kanal 0..255 oralig'ida qoladi
+  function mulHex(c, k) {
+    const m = Array.isArray(k) ? k : [k, k, k];
+    return rgbHex(hexRgb(c).map((v, i) => Math.max(0, Math.min(255, v * m[i]))));
+  }
   function dayInfo(d = new Date()) {
     const h = d.getHours() + d.getMinutes() / 60, mo = d.getMonth();
     let k = 0; while (k < SKY_KEYS.length - 2 && SKY_KEYS[k + 1][0] <= h) k++;
@@ -450,8 +455,26 @@
     };
   }
   let DAY = dayInfo();
-  // Tabiat rangini vaqtga moslash: tunda qorong'ilashtirish, oltin soatda iliq tus
-  const nat = c => { let r = c; if (DAY.golden) r = lerpHex(r, '#ff9a5c', 0.14); return DAY.darkK ? lerpHex(r, '#141c38', DAY.darkK) : r; };
+  // Tabiat rangi yorug'likka qarab: oltin soatda iliq ko'paytma, tunda tusni saqlaydigan oy nuri (ko'kish),
+  // uzoqlik (depth 0..1) bo'yicha ufq rangidagi havo pardasi
+  function shade(c, depth = 0) {
+    if (shade.d !== DAY) { shade.d = DAY; shade.m = new Map(); }   // natija vaqt o'zgarguncha eslab qolinadi
+    const key = c + '|' + depth, hit = shade.m.get(key);
+    if (hit) return hit;
+    const n = DAY.darkK / 0.62, gk = DAY.golden && DAY.sun !== null ? 1 - Math.sin(Math.PI * DAY.sun) : 0;
+    const l3 = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+    let col = mulHex(c, l3([1, 1, 1], [1, 0.86, 0.72], 0.6 * gk * (1 - n)));
+    col = mulHex(col, l3([1, 1, 1], [0.30, 0.37, 0.60], n));
+    // sariq/qizg'ish ranglar ham kulrang emas, oy nurida ko'kimtir bo'lsin
+    if (n > 0) col = lerpHex(col, mulHex('#5d74b0', lum(c) * 1.1), 0.4 * n);
+    const haze = n > 0 ? lerpHex(DAY.bot, '#6a78a8', 0.35) : DAY.bot;
+    col = lerpHex(col, haze, depth * (n ? 0.55 : 0.7));
+    col = mulHex(col, 1 - 0.25 * n * (1 - depth));
+    shade.m.set(key, col);
+    return col;
+  }
+  // Tabiat rangini vaqtga moslash (eng yaqin qatlam)
+  const nat = c => shade(c, 0);
   const skyTop = () => lerpHex(DAY.top, '#1d5fc4', DAY.dark ? 0.12 : 0.62);
 
   function applyZoneColors(z) {
@@ -468,8 +491,9 @@
     const nd = dayInfo();
     if (nd.key === DAY.key) return;
     DAY = nd;
-    bgCache[0] = renderBg(0); bgCache[1] = renderBg(1);
-    if (!zoneAnim && (game.zone === 0 || game.zone === 1)) applyZoneColors(game.zone);
+    buildCloudSprites();   // bulutlar ham yangi yorug'likda
+    bgCache[0] = renderBg(0); bgCache[1] = renderBg(1); bgCache[2] = renderBg(2);   // koinotdagi Yer ham kun/tunga ergashadi
+    if (!zoneAnim && game.zone >= 0) applyZoneColors(game.zone);
   }, 60000);
 
   // Fasl zarralari: kuzda barglar, qishda qor, bahorda gulbarglar, yozda (kechasi) yaltiroq qo'ng'izlar
@@ -517,14 +541,42 @@
   }
 
   // ---------- Fonlar (statik qism oldindan chiziladi) ----------
+  // Ufq chiziqlari: yer ustida tog' etagi, osmonda bulut dengizining tepasi
+  const HZ0 = H - 150, HZ1 = H - 130;
+  const BG_NAME = {}, bgBuiltV = {};   // har qatlam fonining nomi va qaysi manzara (variant) chizilgani
+  let bgPrev = null, bgFade = 0;       // manzara almashganda eski fon asta so'nadi
+  // Manzaradagi jonli effektlar uchun nuqtalar (mo'ri, eshik, sim, tom, hovuz, sharshara, chiroqlar)
+  let SCENE_ANCHORS = { smoke: null, door: null, wire: null, roof: null, pond: null, fall: null, lights: [] };
+  // Yer usti va osmonda har 10 levelda yangi manzara
+  function sceneIdx() {
+    const lv = game ? game.level : (saved.game && saved.game.level) || 1;
+    return Math.max(0, Math.floor((lv - 1) / 10));
+  }
+  // Yer usti/osmon — level bo'yicha; boshqa qatlamlar — necha marta kelinganiga qarab
+  function bgVariant(z) { return z === 0 || z === 1 ? sceneIdx() : ((profile.visits || {})[z] || 0); }
   function renderBg(z) {
     const c = document.createElement('canvas');
     c.width = canvas.width; c.height = canvas.height;
     const g = c.getContext('2d');
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    const rand = prng(1234 + z * 77);
-    ({ '-2': bgDeep, '-1': bgSoil, '0': bgSurface, '1': bgSky, '2': bgSpace })[z](g, rand);
+    // bulut spraytlari vaqt yoki o'lcham o'zgarganda qayta chiziladi
+    if ((z === 0 || z === 1) && CLOUD_KEY !== DAY.key + '|' + scale) buildCloudSprites();
+    const v = bgVariant(z), rand = prng(1234 + z * 77 + v * 1009);
+    const name = ({ '-2': bgDeep, '-1': bgSoil, '0': bgSurface, '1': bgSky, '2': bgSpace })[z](g, rand, v);
+    BG_NAME[z] = name || ''; bgBuiltV[z] = v;
     return c;
+  }
+  // Level 10 ga karrali chegarani kesib o'tganda: yangi manzara chiziladi, eskisi 1 soniyada so'nadi
+  function drawBgFade() {
+    if (tick % 30 === 0 && bgVariant(0) !== bgBuiltV[0]) {
+      const old = game.zone === 0 || game.zone === 1 ? bgCache[game.zone] : null;
+      bgCache[0] = renderBg(0); bgCache[1] = renderBg(1);
+      if (old) { bgPrev = old; bgFade = 60; toast('🌄 Yangi manzil: ' + BG_NAME[game.zone]); }
+    }
+    if (bgFade > 0 && bgPrev) {
+      if (game.zone === 0 || game.zone === 1) { ctx.globalAlpha = bgFade / 60; ctx.drawImage(bgPrev, 0, 0, W, H); ctx.globalAlpha = 1; }
+      if (--bgFade <= 0) bgPrev = null;
+    }
   }
 
   function vgrad(g, stops) {
@@ -548,84 +600,958 @@
     [[-26, 6, 18], [-8, -6, 24], [16, -2, 20], [32, 8, 14], [4, 10, 18]].forEach(([dx, dy, r]) => puff(g, x + dx * k, y + dy * k, r * k, col));
   }
 
-  function sunMoon(g, rand, sx, sy) {
-    if (DAY.sun !== null) {
-      const p = DAY.sun, x = W * (0.08 + 0.84 * p), y = sy - Math.sin(Math.PI * p) * (sy - 110);
-      const low = 1 - Math.sin(Math.PI * p);   // ufqqa yaqinligi
-      glow(g, x, y, 170, low > 0.6 ? 'rgba(255,170,90,.55)' : 'rgba(255,236,150,.55)');
-      puff(g, x, y, 34, lerpHex('#ffe27a', '#ff8a4a', Math.max(0, low - 0.35) * 1.4));
-    } else {
-      for (let i = 0; i < 90; i++) { g.globalAlpha = 0.3 + rand() * 0.7; puff(g, rand() * W, rand() * (H * 0.6), 0.5 + rand() * 1.3, '#ffffff'); }
-      g.globalAlpha = 1;
-      glow(g, sx, 150, 120, 'rgba(220,230,255,.25)');
-      g.save(); g.beginPath(); g.rect(0, 0, W, H); g.arc(sx + 11, 143, 23, 0, Math.PI * 2); g.clip('evenodd');
-      puff(g, sx, 150, 26, '#eef1ff');   // o'roqsimon oy
-      g.restore();
-    }
+  // ---------- Quyosh, Oy va yulduzlar ----------
+  // Oy fazasi: 0 — yangi oy, 0.5 — to'lin oy (2000-yil 6-yanvardagi yangi oydan hisoblanadi)
+  function moonPhase() {
+    const P = 29.530589;
+    return ((((Date.now() / 864e5) - 10962.76) % P) + P) % P / P;
   }
-  function tree(g, x, y, s, rand) {
-    const S = DAY.season;
-    g.fillStyle = nat('#7d5c3e'); g.fillRect(x - 2 * s, y - 16 * s, 4 * s, 16 * s);
-    if (S === 'winter') {   // yalang'och shoxlar va qor
-      g.strokeStyle = nat('#6e5440'); g.lineWidth = 1.6 * s; g.lineCap = 'round';
-      for (const [dx, dy] of [[-9, -30], [8, -32], [0, -36], [-5, -24], [6, -22]]) { g.beginPath(); g.moveTo(x, y - 14 * s); g.lineTo(x + dx * s, y + dy * s); g.stroke(); }
-      for (const [dx, dy] of [[-9, -30], [8, -32], [0, -36]]) puff(g, x + dx * s, y + dy * s, 2.5 * s, nat('#ffffff'));
+  // Yorug'lik manbai: kunduzi quyosh (low — ufqqa yaqinligi), tunda oy. Boshqa qismlar soya yo'nalishini shundan oladi.
+  function skyLight(z) {
+    if (DAY.sun !== null) {
+      const hz = z === 1 ? HZ1 : HZ0, p = DAY.sun, e = Math.sin(Math.PI * p), el = Math.max(0, e - 0.22) / 0.78;
+      // Tog'lar quyosh chiqishini kechiktiradi: tong va shomda quyosh cho'qqilar ortida yarim yashirin turadi
+      return { x: W * (0.1 + 0.8 * p), y: hz + 10 - el * (hz - 130), low: 1 - e, moon: false };
+    }
+    const p = Math.max(0, Math.min(1, ((DAY.h - 20.4 + 24) % 24) / 9.2)), x = W * (0.15 + 0.7 * p);
+    return { x: z === 1 ? W - x : x, y: 150 + 90 * (1 - Math.sin(Math.PI * p)), low: 0, moon: true, lit: 0.5 * (1 - Math.cos(2 * Math.PI * moonPhase())) };
+  }
+  // Oy: dog'lari (dengizlari) bilan; soya qismi osmon rangida — haqiqiy fazada
+  function drawMoon(g, x, y, r = 24, phase = moonPhase(), skyCol = '#0b1430') {
+    const k = Math.cos(2 * Math.PI * phase), lit = 0.5 * (1 - k);
+    glow(g, x, y, r * 4.2, `rgba(220,230,255,${(0.25 * lit).toFixed(3)})`);
+    const gr = g.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+    gr.addColorStop(0, '#f6f3e8'); gr.addColorStop(1, '#d9d6cb');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(140,140,155,.22)';
+    for (const [dx, dy, rx, ry, a] of [[-0.3, -0.28, 0.3, 0.2, 0.3], [0.22, -0.32, 0.22, 0.15, -0.2], [0.08, 0.14, 0.32, 0.2, 0.5], [-0.4, 0.26, 0.17, 0.13, 0], [0.42, 0.24, 0.14, 0.11, 0.4]]) {
+      g.beginPath(); g.ellipse(x + dx * r, y + dy * r, rx * r, ry * r, a, 0, Math.PI * 2); g.fill();
+    }
+    // soya: yarim doira + terminator ellipsi (o'sayotgan oyda chapda, kamayayotganda o'ngda)
+    g.save();
+    if (phase > 0.5) { g.translate(x, 0); g.scale(-1, 1); g.translate(-x, 0); }
+    g.beginPath(); g.arc(x, y, r + 0.6, Math.PI / 2, Math.PI * 1.5);
+    g.ellipse(x, y, (r + 0.6) * Math.abs(k), r + 0.6, 0, Math.PI * 1.5, Math.PI / 2, k < 0);
+    g.globalAlpha = 0.92; g.fillStyle = skyCol; g.fill();
+    g.restore();
+  }
+  // Quyosh (ufqda — keng iliq nur va nur tutamlari bilan) yoki tungi osmon (yulduzlar, Somon yo'li, Oy).
+  // Tog'lar va bulut dengizidan OLDIN chiziladi — past quyoshning pastki yarmini ufq yashiradi.
+  function sunMoon(g, rand, z) {
+    const L = skyLight(z), hz = z === 1 ? HZ1 : HZ0;
+    if (!L.moon) {
+      const { x, y, low } = L, r = 30 + 8 * low, warm = low > 0.5;
+      const cc = a => (warm ? 'rgba(255,170,100,' : 'rgba(255,250,220,') + a + ')';
+      glow(g, x, y, 340, cc(0.12)); glow(g, x, y, 150, cc(0.28)); glow(g, x, y, 60, cc(0.55));
+      if (low > 0.4) {   // ufq bo'ylab yoyilgan iliq nur
+        g.save(); g.translate(x, hz); g.scale(3.5, 0.7);
+        glow(g, 0, 0, 180, `rgba(255,140,80,${(0.5 * (low - 0.4) / 0.6).toFixed(3)})`);
+        g.restore();
+      }
+      if (low > 0.35 || z === 1) {   // nur tutamlari (osmonda tushda — pastga, bulutlar orasidan)
+        const up = low > 0.35, a0 = up ? 0.07 : 0.045;
+        g.save(); g.globalCompositeOperation = 'lighter';
+        const sg = g.createRadialGradient(x, y, 0, x, y, 700);
+        sg.addColorStop(0, `rgba(255,225,170,${up ? a0 : 0})`); sg.addColorStop(up ? 0.05 : 0.2, `rgba(255,225,170,${a0})`); sg.addColorStop(1, 'rgba(255,225,170,0)');
+        g.fillStyle = sg;
+        const n = 9 + Math.floor(rand() * 3);
+        for (let i = 0; i < n; i++) {
+          const a = (up ? -Math.PI / 2 : Math.PI / 2) + (rand() - 0.5) * 2.6, hw = 0.025 + rand() * 0.05;
+          g.beginPath(); g.moveTo(x, y);
+          g.lineTo(x + Math.cos(a - hw) * 1100, y + Math.sin(a - hw) * 1100);
+          g.lineTo(x + Math.cos(a + hw) * 1100, y + Math.sin(a + hw) * 1100);
+          g.closePath(); g.fill();
+        }
+        g.restore();
+      }
+      g.save(); g.translate(x, y); g.scale(1, 1 - 0.1 * low);
+      const dg = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      dg.addColorStop(0, lerpHex('#fffdf2', '#ffd9a0', low));
+      dg.addColorStop(0.6, lerpHex('#ffe680', '#ff9a4a', low));
+      dg.addColorStop(1, lerpHex('#ffd24a', '#ff5e3a', low));
+      g.fillStyle = dg; g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+      g.restore();
       return;
     }
-    const pal = S === 'autumn' ? ['#e8822c', '#f2b33d', '#c9512a', '#d99a2b'] : S === 'spring' ? ['#a9dd85'] : ['#86c264'];
-    const c = nat(pal[Math.floor(rand() * pal.length)]);
-    puff(g, x, y - 22 * s, 13 * s, c); puff(g, x - 7 * s, y - 16 * s, 9 * s, c); puff(g, x + 7 * s, y - 16 * s, 9 * s, c);
-    if (S === 'spring') for (let i = 0; i < 6; i++) puff(g, x + (rand() - 0.5) * 22 * s, y - 14 * s - rand() * 18 * s, 1.8 * s, nat('#ffb7cf'));
-  }
-  // Tepalikdagi kichik uy: tunda va shomda derazalarida chiroq yonadi
-  function house(g, x, y) {
-    const lit = DAY.night || DAY.h >= 18.6 || DAY.h < 6.6;
-    g.fillStyle = nat('#e8d7be'); g.fillRect(x - 22, y - 26, 44, 26);
-    g.fillStyle = nat(DAY.season === 'winter' ? '#f4f7fb' : '#b5523b');
-    g.beginPath(); g.moveTo(x - 27, y - 24); g.lineTo(x, y - 44); g.lineTo(x + 27, y - 24); g.closePath(); g.fill();
-    g.fillStyle = nat('#8a4a36'); g.fillRect(x + 10, y - 44, 6, 12);
-    for (const wx of [x - 13, x + 5]) {
-      if (lit) glow(g, wx + 4, y - 14, 22, 'rgba(255,200,90,.55)');
-      g.fillStyle = lit ? '#ffd36b' : nat('#7fa7c9'); g.fillRect(wx, y - 19, 9, 9);
+    // Somon yo'li: diagonal bo'ylab xira yorug'lik va mayda yulduz changi
+    const mx0 = -40, my0 = 50 + rand() * 70, mx1 = W + 40, my1 = 360 + rand() * 120;
+    for (let i = 0; i < 3; i++) { const t = 0.2 + i * 0.3; glow(g, mx0 + (mx1 - mx0) * t, my0 + (my1 - my0) * t, 120, 'rgba(190,200,255,.05)'); }
+    const len = Math.hypot(mx1 - mx0, my1 - my0), ux = (mx1 - mx0) / len, uy = (my1 - my0) / len;
+    g.globalAlpha = 0.15; g.fillStyle = '#e4e9ff'; g.beginPath();
+    for (let i = 0; i < 250; i++) {
+      const t = rand(), d = (rand() + rand() + rand() - 1.5) * 36;
+      g.rect(mx0 + (mx1 - mx0) * t - uy * d - 0.6, my0 + (my1 - my0) * t + ux * d - 0.6, 1.2, 1.2);
     }
+    g.fill();
+    // yulduzlar: 6 tasi to'rt nurli
+    for (let i = 0; i < 140; i++) {
+      const x = rand() * W, y = Math.pow(rand(), 1.6) * H * 0.65, big = i < 6;
+      const r = big ? 1.3 + rand() * 0.3 : 0.4 + rand() * 1.2, col = lerpHex('#cfe0ff', '#fff1d6', rand());
+      g.globalAlpha = big ? 1 : 0.35 + rand() * 0.6; g.fillStyle = col;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      if (big) {
+        g.globalAlpha = 0.55; g.strokeStyle = col; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x - 3.5, y); g.lineTo(x + 3.5, y); g.moveTo(x, y - 3.5); g.lineTo(x, y + 3.5); g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+    const skyAt = yy => z === 1 ? lerpHex(skyTop(), DAY.bot, Math.min(1, yy / (H * 0.65)) * 0.55) : lerpHex(DAY.top, DAY.bot, Math.min(1, yy / (H * 0.78)));
+    drawMoon(g, L.x, L.y, 24, moonPhase(), skyAt(L.y));
+  }
+
+  // ---------- Tog'lar, tepaliklar va tuman ----------
+  // Tepalik chizig'i nuqtalari: silliq (to'lqinsimon) yoki qirrali (tog') — uch oktava
+  function ridgePts(rand, base, amp, ridged, step = 6) {
+    const p1 = rand() * 9, p2 = rand() * 9, p3 = rand() * 9, out = [];
+    const o = ridged ? v => Math.pow(1 - Math.abs(Math.sin(v)), 1.4) : v => 0.5 + 0.5 * Math.sin(v);
+    let mx = 0;
+    for (let x = -10; ; x += step) {
+      const u = x / W, k = 0.55 * o(u * 2.1 + p1) + 0.3 * o(u * 4.7 + p2) + 0.15 * o(u * 11 + p3);
+      out.push([x, k]); if (k > mx) mx = k;
+      if (x >= W + 10) break;
+    }
+    // Qirrali tog'larda eng baland cho'qqi doim amp ning ~92% iga yetadi (qor ko'rinsin)
+    const nk = ridged && mx > 0 ? 0.92 / mx : 1;
+    for (const q of out) q[1] = base - amp * Math.min(1, q[1] * nk);
+    return out;
+  }
+  // Tepalikni bo'yash: cho'qqisi ochroq, etagi to'qroq; uzoqlik (depth) bo'yicha havo pardasi;
+  // cho'qqi bo'ylab quyosh tomondan yorug' chiziq. opt.snow — qor chizig'i, opt.fit — ufq rangidan farq chegarasi.
+  function ridge(g, pts, col, depth, rim, opt = {}) {
+    let y0 = H;
+    for (const p of pts) if (p[1] < y0) y0 = p[1];
+    let cTop = shade(mulHex(col, 1.08), depth), cBot = shade(mulHex(col, 0.9), depth);
+    const ref = lum(DAY.bot);
+    const fit = c => { for (let i = 0; i < 8 && opt.fit && Math.abs(lum(c) - ref) > opt.fit; i++) c = lerpHex(c, DAY.bot, 0.25); return c; };
+    cTop = fit(cTop); cBot = fit(cBot);
+    const path = new Path2D();
+    path.moveTo(pts[0][0], H + 2);
+    for (const [x, y] of pts) path.lineTo(x, y);
+    path.lineTo(pts[pts.length - 1][0], H + 2); path.closePath();
+    const gr = g.createLinearGradient(0, y0, 0, Math.min(H, y0 + 170));
+    gr.addColorStop(0, cTop); gr.addColorStop(1, cBot);
+    g.fillStyle = gr; g.fill(path);
+    if (opt.snow) {   // qor qoplami: tog' ichida, pastki cheti tishli
+      const r = opt.rand || Math.random;
+      g.save(); g.clip(path);
+      g.fillStyle = fit(shade('#f6f9ff', Math.min(0.9, depth * 0.53)));
+      g.beginPath(); g.moveTo(-12, 0);
+      for (let x = -12; x <= W + 12; x += 12) g.lineTo(x, opt.snow + 7 * Math.sin(x / 37) + (r() - 0.5) * 16);
+      g.lineTo(W + 12, 0); g.closePath(); g.fill();
+      g.restore();
+    }
+    if (rim) {
+      const L = skyLight(0);
+      let a, c;
+      if (L.moon) { a = 0.22; c = '170,190,255'; }
+      else { a = DAY.golden ? 0.55 : 0.3; c = DAY.golden ? '255,212,150' : '255,252,235'; }
+      if (depth > 0.5) a *= 1.25 - depth;   // uzoq tog'larda xiraroq
+      const far = L.x < W / 2 ? W + 10 : -10;
+      const lg = g.createLinearGradient(L.x, 0, far, 0);
+      lg.addColorStop(0, `rgba(${c},${a.toFixed(3)})`); lg.addColorStop(1, `rgba(${c},0)`);
+      g.strokeStyle = lg; g.lineWidth = 2; g.lineJoin = 'round';
+      g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y + 1) : g.moveTo(x, y + 1)); g.stroke();
+    }
+  }
+  // Vodiy tumani: yBase ustida 30 px xira parda (ertalab quyuqroq)
+  function valleyFog(g, yBase) {
+    const n = DAY.darkK / 0.62, [r, gg, b] = hexRgb(n > 0 ? lerpHex(DAY.bot, '#6a78a8', 0.35) : DAY.bot);
+    const a = DAY.night ? 0.15 : DAY.h < 10 ? 0.55 : 0.25;
+    const fg = g.createLinearGradient(0, yBase - 30, 0, yBase + 10);
+    fg.addColorStop(0, `rgba(${r},${gg},${b},0)`); fg.addColorStop(0.75, `rgba(${r},${gg},${b},${a})`); fg.addColorStop(1, `rgba(${r},${gg},${b},${a * 0.5})`);
+    g.fillStyle = fg; g.fillRect(0, yBase - 30, W, 40);
+  }
+
+  // ---------- Bulutlar: oldindan chizilgan spraytlar (bir xil shaffoflik, disklar ko'rinmaydi) ----------
+  let CLOUD_SPR = null, CLOUD_KEY = '';
+  function makeCloudSprite(rand, w, h, kind, pal) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(2, Math.ceil(w * scale)); c.height = Math.max(2, Math.ceil(h * scale));
+    const g = c.getContext('2d');
+    g.setTransform(c.width / w, 0, 0, c.height / h, 0, 0);
+    const ra = (hex, a) => 'rgba(' + hexRgb(hex).join(',') + ',' + a + ')';
+    if (kind === 'cirrus') {   // patli bulut: ingichka qiya ellipslar, bitta yo'lda
+      const p = new Path2D(), n = 6 + Math.floor(rand() * 3);
+      for (let i = 0; i < n; i++) {
+        const x = w * (0.2 + 0.6 * rand()), y = h * (0.3 + 0.4 * rand()), rx = w * (0.1 + 0.1 * rand());
+        p.moveTo(x + rx, y); p.ellipse(x, y, rx, h * (0.05 + 0.06 * rand()), -0.12 + (rand() - 0.5) * 0.3, 0, Math.PI * 2);
+      }
+      g.globalAlpha = 0.25; g.fillStyle = pal.lit; g.shadowColor = pal.lit; g.shadowBlur = 5 * scale; g.fill(p);
+      return c;
+    }
+    const strato = kind === 'strato', base = h * (strato ? 0.7 : 0.78), L = [];
+    const n = strato ? 12 + Math.floor(rand() * 4) : 9 + Math.floor(rand() * 6);
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1);
+      if (strato) {
+        const ry = h * (0.16 + 0.14 * Math.sin(Math.PI * u)) * (0.8 + 0.4 * rand());
+        L.push([w * (0.1 + 0.8 * u) + (rand() - 0.5) * 8, base - ry * 0.5, w * (0.06 + 0.03 * rand()), ry]);
+      } else {
+        const r = h * (0.14 + 0.24 * Math.sin(Math.PI * u)) * (0.8 + 0.4 * rand());
+        L.push([w * (0.12 + 0.76 * u) + (rand() - 0.5) * w * 0.04, base - r * 0.5, r, r]);
+      }
+    }
+    const p = new Path2D();
+    for (const [x, y, rx, ry] of L) { p.moveTo(x + rx, y); p.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); }
+    const bx0 = w * (strato ? 0.08 : 0.12), bh = h * (strato ? 0.16 : 0.14);
+    p.rect(bx0, base - bh, w - 2 * bx0, bh);
+    let top = h;
+    for (const l of L) top = Math.min(top, l[1] - l[3]);
+    const sd = skyLight(0).x < W / 2 ? -1 : 1;
+    // 1) yumshoq chet (faqat shu yerda — oldindan chizishda — xiralik ishlatiladi)
+    g.save(); g.globalAlpha = 0.35; g.fillStyle = pal.lit; g.shadowColor = pal.lit; g.shadowBlur = 8 * scale; g.fill(p); g.restore();
+    // 2) tepadan pastga: yorug' → o'rta → soya
+    const gr = g.createLinearGradient(0, top, 0, base + h * 0.06);
+    gr.addColorStop(0, pal.lit); gr.addColorStop(0.55, lerpHex(pal.lit, pal.shade, 0.45)); gr.addColorStop(1, pal.shade);
+    g.fillStyle = gr; g.fill(p);
+    // 3) har bo'lakda quyosh tomonga yorug' dog' va pastki soya
+    g.save(); g.clip(p);
+    for (const [x, y, rx, ry] of L) {
+      const hx = x + sd * rx * 0.3, hy = y - ry * 0.35, rr = Math.max(rx, ry) * 0.9;
+      const hg = g.createRadialGradient(hx, hy, 0, hx, hy, rr);
+      hg.addColorStop(0, ra(pal.lit, 0.5)); hg.addColorStop(1, ra(pal.lit, 0));
+      g.fillStyle = hg; g.fillRect(hx - rr, hy - rr, rr * 2, rr * 2);
+    }
+    const by = top + (base - top) * 0.65, sg = g.createLinearGradient(0, by, 0, base + h * 0.08);
+    sg.addColorStop(0, ra(pal.shade, 0)); sg.addColorStop(1, ra(pal.shade, 0.35));
+    g.fillStyle = sg; g.fillRect(0, by, w, h - by);
+    g.restore();
+    return c;
+  }
+  // Bulut spraytlari to'plami (vaqtga mos rangda): kumulus, qatlamli va patli
+  function buildCloudSprites() {
+    let lit = '#ffffff', shd = lerpHex(DAY.bot, '#9fb0c8', 0.6);
+    if (DAY.golden && DAY.sun !== null) {
+      if (skyLight(0).low > 0.8) { lit = '#b9a7c4'; shd = '#ffb08a'; }   // quyosh bulut ostida: tagi yorug'
+      else { lit = '#ffe0c4'; shd = '#9a8ab0'; }
+    }
+    const n = DAY.darkK / 0.62, pal = { lit: lerpHex(lit, '#c8d2ee', n), shade: lerpHex(shd, '#2e3a63', n) };
+    const r = prng(4242), mk = (w, h, k) => ({ c: makeCloudSprite(r, w, h, k, pal), w, h });
+    CLOUD_SPR = {
+      cumulus: [mk(220, 100, 'cumulus'), mk(160, 80, 'cumulus'), mk(120, 60, 'cumulus')],
+      strato: [mk(320, 70, 'strato')],
+      cirrus: [mk(300, 40, 'cirrus'), mk(300, 40, 'cirrus')],
+    };
+    CLOUD_KEY = DAY.key + '|' + scale;
+  }
+
+  // ---------- Daraxtlar ----------
+  // Qishki yalang'och shox (rekursiv): har chuqurlikdagi shoxlar bitta yo'lga yig'iladi (tez chizish uchun);
+  // deyarli gorizontal shoxlar ustida yupqa qor chizig'i
+  function branch(acc, rand, x, y, len, ang, w, d, spread, dMax = 5) {
+    const x1 = x + Math.cos(ang) * len, y1 = y + Math.sin(ang) * len;
+    const p = acc.seg[d] || (acc.seg[d] = new Path2D());
+    p.moveTo(x, y); p.lineTo(x1, y1); acc.w[d] = w;
+    if (d > 1 && d <= 3 && Math.abs(Math.sin(ang)) < 0.75) { acc.snow.moveTo(x, y - w * 0.45); acc.snow.lineTo(x1, y1 - w * 0.45); }
+    if (d >= dMax) return;
+    const n = rand() < 0.35 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const side = n === 2 ? (i ? 1 : -1) : i - 1;
+      const da = side * (spread ? spread * (0.7 + rand() * 0.6) : 0.35 + rand() * 0.25) + (rand() - 0.5) * 0.1;
+      branch(acc, rand, x1, y1, len * 0.72 * (0.85 + rand() * 0.3), ang + da, w * 0.68, d + 1, spread, dMax);
+    }
+  }
+  // Daraxt: 'terak' (ustunsimon), 'tut' (yumaloq), 'olma' (bahorda gullaydi, kuzda mevali), 'archa'.
+  // Ranglar uzoqlik (depth) bo'yicha havo pardasidan o'tadi; yorug' tomoni quyoshga qaragan.
+  function tree(g, x, y, s, rand, kind = 'tut', depth = 0) {
+    const S = DAY.season, sh = c => shade(c, depth), night = DAY.sun === null;
+    const sd = skyLight(0).x < x ? -1 : 1;   // quyosh (oy) qaysi tomonda
+    if (!night && depth < 0.25) {   // yerdagi soya (juda uzoq daraxtlarda ko'rinmaydi)
+      g.fillStyle = `rgba(0,0,0,${(0.12 * (1 - depth)).toFixed(3)})`;
+      g.beginPath(); g.ellipse(x + (0.5 - DAY.sun) * 20 * s, y, 12 * s, 3 * s, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.lineCap = 'round';
+    if (kind === 'archa') {
+      const c = sh('#2f5a3a'), cl = sh('#4a7a52');
+      g.fillStyle = sh('#5a4030'); g.fillRect(x - 1.2 * s, y - 6 * s, 2.4 * s, 6 * s);
+      for (let i = 0; i < 3; i++) {
+        const by = y - 4 * s - i * 8 * s, hw = (11 - i * 3) * s, ty = by - 14 * s;
+        g.fillStyle = c; g.beginPath(); g.moveTo(x - hw, by); g.lineTo(x, ty); g.lineTo(x + hw, by); g.closePath(); g.fill();
+        g.fillStyle = cl; g.beginPath(); g.moveTo(x, ty); g.lineTo(x + sd * hw, by); g.lineTo(x + sd * hw * 0.15, by - s); g.closePath(); g.fill();
+        if (S === 'winter') { g.fillStyle = sh('#f4f8ff'); g.beginPath(); g.moveTo(x, ty); g.lineTo(x + hw * 0.45, ty + 6.3 * s); g.lineTo(x - hw * 0.45, ty + 6.3 * s); g.closePath(); g.fill(); }
+      }
+      return;
+    }
+    const terak = kind === 'terak', bark = sh(terak ? '#9b927f' : '#6e5440');
+    if (S === 'winter') {
+      const acc = { seg: [], w: [], snow: new Path2D() };
+      branch(acc, rand, x, y, (terak ? 21 : 12) * s, -Math.PI / 2 + (rand() - 0.5) * 0.06, (terak ? 2.5 : 3.2) * s, 1, terak ? 0.15 : 0, s < 0.55 ? 4 : 5);
+      g.strokeStyle = bark;
+      acc.seg.forEach((p, d) => { if (p) { g.lineWidth = acc.w[d]; g.stroke(p); } });
+      g.strokeStyle = sh('#ffffff'); g.lineWidth = 0.8; g.stroke(acc.snow);
+      return;
+    }
+    const hiK = night ? 0.1 : 0.25, hiC = night ? '#9fb4e6' : '#fff6cc';
+    if (terak) {   // terak: alanga shaklidagi ustun toj
+      const c = sh(S === 'autumn' ? (rand() < 0.5 ? '#f2c84b' : '#e6b43c') : S === 'spring' ? '#8cc65e' : '#4f8d48');
+      g.strokeStyle = bark; g.lineWidth = 2.5 * s; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 16 * s); g.stroke();
+      const n = 10 + Math.floor(rand() * 3), E = [];
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1), wk = t < 0.3 ? 0.75 + t / 0.3 * 0.25 : 1 - (t - 0.3) / 0.7 * 0.72;
+        E.push([x + (rand() - 0.5) * 2 * s, y - 10 * s - t * 65 * s, (5 + rand() * 2) * s * wk, (8 + rand() * 2) * s]);
+      }
+      const P = (dx, dy, kx, ky) => {
+        g.beginPath();
+        for (const [ex, ey, rx, ry] of E) { g.moveTo(ex + dx + rx * kx, ey + dy); g.ellipse(ex + dx, ey + dy, rx * kx, ry * ky, 0, 0, Math.PI * 2); }
+        g.fill();
+      };
+      g.fillStyle = mulHex(c, 0.72); P(-sd * 1.6 * s, s, 1, 1);
+      g.fillStyle = c; P(0, 0, 1, 1);
+      g.fillStyle = lerpHex(c, hiC, hiK); P(sd * 1.8 * s, -1.5 * s, 0.45, 0.7);
+      return;
+    }
+    // tut / olma: ayri tana va doiralardan yumaloq toj (soya, asos, yorug' — 3 o'tish)
+    const olma = kind === 'olma';
+    const PAL = olma ? { summer: ['#5c9a48', '#68a44e'], spring: ['#8ccc66'], autumn: ['#7d9a40', '#8fa04a'] }
+      : { summer: ['#5f9a45', '#6aa24c'], spring: ['#86c25a', '#93cb63'], autumn: ['#e0a63a', '#d98a2b', '#cdb54a'] };
+    const pal = PAL[S] || PAL.summer, c = sh(pal[Math.floor(rand() * pal.length)]);
+    g.strokeStyle = bark; g.lineWidth = 3.2 * s; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 11 * s); g.stroke();
+    const nf = 2 + (rand() < 0.5 ? 1 : 0), fk = new Path2D(), tw = new Path2D();
+    for (let i = 0; i < nf; i++) {
+      const a = (i - (nf - 1) / 2) * 0.9 + (rand() - 0.5) * 0.3;
+      fk.moveTo(x, y - 10 * s); fk.quadraticCurveTo(x + a * 4 * s, y - 16 * s, x + a * 9 * s, y - 22 * s);
+      tw.moveTo(x + a * 9 * s, y - 22 * s); tw.lineTo(x + a * 11 * s, y - 27 * s);
+    }
+    g.lineWidth = 2 * s; g.stroke(fk); g.lineWidth = 1.1 * s; g.stroke(tw);
+    const cy = y - 27 * s, nC = Math.round((16 + rand() * 6) * Math.min(1, 0.45 + 0.55 * s)), C = [];
+    for (let i = 0; i < nC; i++) {
+      const a = rand() * Math.PI * 2, d = Math.sqrt(rand()), r = (4 + rand() * 3) * s;
+      C.push([x + Math.cos(a) * d * (16 * s - r * 0.6), cy + Math.sin(a) * d * (13 * s - r * 0.6), r, rand()]);
+    }
+    C.sort((p, q) => p[1] - q[1]);
+    g.fillStyle = mulHex(c, 0.75); g.beginPath();
+    for (const [cx, cyy, r] of C) { g.moveTo(cx - sd * 2 * s + r, cyy + 2 * s); g.arc(cx - sd * 2 * s, cyy + 2 * s, r, 0, Math.PI * 2); }
+    g.fill();
+    // asosiy doiralar ±8% rang farqi bilan (3 guruhga bo'linib, har guruh bitta yo'lda — ustma-ust tartib saqlanadi)
+    const bloom = olma && S === 'spring', cols = bloom ? [sh('#fbe3ea'), sh('#ffffff'), mulHex(c, 0.95), mulHex(c, 1.06)] : [mulHex(c, 0.92), c, mulHex(c, 1.08)];
+    const bk = q => bloom ? (q < 0.35 ? 0 : q < 0.7 ? 1 : q < 0.85 ? 2 : 3) : Math.min(2, Math.floor(q * 3));
+    const chunk = s < 0.65 ? 99 : 7;
+    for (let i0 = 0; i0 < C.length; i0 += chunk) {   // pastdagilar ustda qolishi uchun bo'laklab
+      const part = C.slice(i0, i0 + chunk);
+      cols.forEach((col, k) => {
+        let any = false; g.beginPath();
+        for (const [cx, cyy, r, q] of part) if (bk(q) === k) { g.moveTo(cx + r, cyy); g.arc(cx, cyy, r, 0, Math.PI * 2); any = true; }
+        if (any) { g.fillStyle = col; g.fill(); }
+      });
+    }
+    g.fillStyle = bloom ? sh('#ffffff') : lerpHex(c, hiC, hiK); g.beginPath();
+    for (const [cx, cyy, r] of C) {
+      if ((cx - x) * sd + (cy - cyy) < -3 * s) continue;
+      const hx = cx + sd * r * 0.35, hy = cyy - r * 0.35;
+      g.moveTo(hx + r * 0.55, hy); g.arc(hx, hy, r * 0.55, 0, Math.PI * 2);
+    }
+    g.fill();
+    if (olma && S === 'autumn') {   // kuzda qizil va to'q sariq olmalar
+      const fr = [new Path2D(), new Path2D()];
+      for (let i = 0; i < 10; i++) {
+        const a = rand() * Math.PI * 2, d = Math.sqrt(rand()), fx = x + Math.cos(a) * d * 14 * s, fy = cy + Math.sin(a) * d * 11 * s, p = fr[rand() < 0.6 ? 0 : 1];
+        p.moveTo(fx + 1.5 * s, fy); p.arc(fx, fy, 1.5 * s, 0, Math.PI * 2);
+      }
+      g.fillStyle = sh('#d8342a'); g.fill(fr[0]); g.fillStyle = sh('#f08a24'); g.fill(fr[1]);
+    }
+  }
+
+  // ---------- Uy (3/4 ko'rinish) ----------
+  // Tunuka tom, ayvon ustunlari, ko'k romli derazalar, paxsa devor (duval) va tandir; shom va tunda chiroq yonadi
+  function house(g, x, y, opt = {}) {
+    const lit = DAY.night || DAY.h >= 18.6 || DAY.h < 6.6, S = DAY.season, dp = 0.2;
+    const front = shade('#e9d5b5', dp), side = mulHex(front, 0.8);
+    const roof = shade(S === 'winter' ? '#f2f6fb' : opt.blue ? '#4f7fa8' : '#5f8f6a', dp), roofS = mulHex(roof, 0.74);
+    const wood = shade('#8a5a3a', dp);
+    g.fillStyle = `rgba(0,0,0,${DAY.night ? 0.08 : 0.13})`;
+    g.beginPath(); g.ellipse(x + 8 + (DAY.sun !== null ? (0.5 - DAY.sun) * 16 : 0), y + 1, 44, 4.5, 0, 0, Math.PI * 2); g.fill();
+    // tandir (hovlida, devor ortida)
+    g.fillStyle = shade('#c98b5a', dp); g.beginPath(); g.arc(x - 42, y - 2, 5, Math.PI, 0); g.lineTo(x - 37, y); g.lineTo(x - 47, y); g.closePath(); g.fill();
+    g.fillStyle = shade('#5a3a28', dp); g.beginPath(); g.ellipse(x - 42, y - 6.6, 2, 0.8, 0, 0, Math.PI * 2); g.fill();
+    // yon devor va old devor
+    g.fillStyle = side; g.beginPath(); g.moveTo(x + 22, y); g.lineTo(x + 22, y - 26); g.lineTo(x + 36, y - 32); g.lineTo(x + 36, y - 6); g.closePath(); g.fill();
+    g.fillStyle = front; g.fillRect(x - 22, y - 26, 44, 26);
+    // tom: yon tekisligi (to'qroq), old uchburchak tunuka, tizma yorug' chizig'i
+    g.fillStyle = roofS; g.beginPath(); g.moveTo(x, y - 43); g.lineTo(x + 26, y - 25); g.lineTo(x + 40, y - 31); g.lineTo(x + 14, y - 49); g.closePath(); g.fill();
+    if (opt.chimney !== false) {   // mo'ri
+      g.fillStyle = shade('#9a6a50', dp); g.fillRect(x + 19, y - 48, 5, 11);
+      g.fillStyle = shade('#6d4a38', dp); g.fillRect(x + 18, y - 49, 7, 2);
+      SCENE_ANCHORS.smoke = [x + 21.5, y - 50];
+    }
+    g.fillStyle = roof; g.beginPath(); g.moveTo(x - 26, y - 25); g.lineTo(x, y - 43); g.lineTo(x + 26, y - 25); g.closePath(); g.fill();
+    g.fillStyle = mulHex(roof, 0.6); g.beginPath(); g.arc(x, y - 31, 2.2, 0, Math.PI * 2); g.fill();   // tom tuynugi
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, y - 43.5); g.lineTo(x + 14, y - 49.5); g.stroke();
+    // ayvon soyasi, derazalar, eshik
+    g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(x - 22, y - 22, 44, 4);
+    for (const wx of [x - 19, x + 9]) {
+      if (lit) {
+        const lg = g.createLinearGradient(0, y - 19, 0, y - 10);
+        lg.addColorStop(0, '#ffe9a8'); lg.addColorStop(1, '#ffb84a'); g.fillStyle = lg;
+        SCENE_ANCHORS.lights.push([wx + 4.5, y - 14.5]);
+      } else g.fillStyle = shade('#a9c6dd', dp);
+      g.fillRect(wx, y - 19, 9, 9);
+      g.strokeStyle = shade('#3f7fb5', dp); g.lineWidth = 1.2; g.strokeRect(wx, y - 19, 9, 9);
+      g.lineWidth = 0.8; g.beginPath(); g.moveTo(wx + 4.5, y - 19); g.lineTo(wx + 4.5, y - 10); g.moveTo(wx, y - 14.5); g.lineTo(wx + 9, y - 14.5); g.stroke();
+    }
+    g.fillStyle = shade('#7a5236', dp); g.fillRect(x - 5, y - 17, 8, 15);
+    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 0.8; g.strokeRect(x - 4, y - 16, 6, 13);
+    SCENE_ANCHORS.door = [x - 1, y - 2];
+    // ayvon: tom osti taxtasi, 3 ingichka ustun, supa
+    g.fillStyle = mulHex(roof, 0.85); g.fillRect(x - 27, y - 25, 54, 3);
+    g.fillStyle = wood; for (const cx of [x - 24, x + 5, x + 23]) g.fillRect(cx - 0.8, y - 22, 1.6, 21);
+    g.fillStyle = shade('#b39470', dp); g.fillRect(x - 27, y - 2, 54, 3);
+    SCENE_ANCHORS.roof = [x - 26, x + 26, y - 25];
+    if (lit) {   // derazadan tushgan nur
+      g.save(); g.globalCompositeOperation = 'lighter';
+      const sg = g.createLinearGradient(0, y - 10, 0, y + 12);
+      sg.addColorStop(0, 'rgba(255,190,90,.22)'); sg.addColorStop(1, 'rgba(255,190,90,0)'); g.fillStyle = sg;
+      for (const wx of [x - 19, x + 9]) { g.beginPath(); g.moveTo(wx, y - 10); g.lineTo(wx + 9, y - 10); g.lineTo(wx + 14, y + 12); g.lineTo(wx - 5, y + 12); g.closePath(); g.fill(); }
+      g.restore();
+    }
+    // paxsa devor (duval) darvoza o'rni bilan
+    g.fillStyle = shade('#c9a77c', dp);
+    g.fillRect(x - 60, y - 3, 50, 6); g.fillRect(x + 6, y - 3, 54, 6);
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(x - 60, y - 3, 50, 1); g.fillRect(x + 6, y - 3, 54, 1);
+    // chiroq ustuni
+    const lx = x + 54;
+    g.strokeStyle = shade('#4a4a50', dp); g.lineWidth = 1.2; g.beginPath(); g.moveTo(lx, y + 2); g.lineTo(lx, y - 20); g.lineTo(lx - 3, y - 20); g.stroke();
+    if (lit) { glow(g, lx - 3, y - 19, 30, 'rgba(255,200,110,.3)'); puff(g, lx - 3, y - 19, 1.6, '#ffe2a0'); SCENE_ANCHORS.lights.push([lx - 3, y - 19]); }
   }
   const HOUSE_X = W * 0.74;
 
-  function bgSurface(g, rand) {
-    vgrad(g, [[0, DAY.top], [0.75, DAY.bot], [1, DAY.bot]]);
-    sunMoon(g, rand, W * 0.8, H * 0.62);
-    const S = DAY.season;
-    const hills = { summer: ['#cfe8bd', '#b2db96'], spring: ['#d7efc4', '#bfe4a2'], autumn: ['#e4d9a6', '#cfbf7c'], winter: ['#eef3f8', '#dde7f0'] }[S];
-    hill(g, H - 110, 70, 1.2, 0.6, nat(hills[0]));
-    for (let i = 0; i < 7; i++) {
-      const x = 40 + rand() * (W - 80);
-      if (Math.abs(x - HOUSE_X) < 40) continue;
-      tree(g, x, hillY(x, H - 110, 70, 1.2, 0.6) + 4, 0.7 + rand() * 0.5, rand);
+  // ---------- Hovuz va o't ----------
+  // Hovuz: osmonning teskari aksi, daraxtlar aksi, qirg'oqlar va qamishlar; qishda muz
+  function drawPond(g, x, y, rx, ry, rand, refl = []) {
+    const winter = DAY.season === 'winter';
+    g.fillStyle = shade('#5e4a32', 0.1); g.beginPath(); g.ellipse(x, y - 1.5, rx + 4, ry + 3, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = shade(winter ? '#e8eef6' : '#cbb98c', 0); g.beginPath(); g.ellipse(x, y + 1.5, rx + 3, ry + 2.2, 0, 0, Math.PI); g.fill();
+    g.save(); g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.clip();
+    const wg = g.createLinearGradient(0, y - ry, 0, y + ry);
+    if (winter) { wg.addColorStop(0, shade('#dfeaf5')); wg.addColorStop(1, shade('#b9cfe6')); }
+    else { wg.addColorStop(0, mulHex(DAY.bot, 0.9)); wg.addColorStop(1, mulHex(lerpHex(DAY.top, DAY.bot, 0.25), 0.82)); }
+    g.fillStyle = wg; g.fillRect(x - rx, y - ry, rx * 2, ry * 2);
+    if (!winter) {   // qirg'oq ortidagi daraxtlarning teskari aksi
+      g.save(); g.translate(0, y - ry + 1); g.scale(1, -0.6); g.fillStyle = 'rgba(25,45,35,.3)'; g.beginPath();
+      for (const t of refl) {
+        if (t.k === 'terak') { g.moveTo(t.x + 6 * t.s, -42 * t.s); g.ellipse(t.x, -42 * t.s, 6 * t.s, 34 * t.s, 0, 0, Math.PI * 2); }
+        else { g.moveTo(t.x + 16 * t.s, -27 * t.s); g.ellipse(t.x, -27 * t.s, 16 * t.s, 13 * t.s, 0, 0, Math.PI * 2); g.rect(t.x - 1.5 * t.s, -14 * t.s, 3 * t.s, 14 * t.s); }
+      }
+      g.fill(); g.restore();
+      g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = 1; g.beginPath();
+      for (let i = 0; i < 5; i++) { const lx = x + (rand() - 0.5) * rx * 1.4, ly = y - ry * 0.3 + rand() * ry; g.moveTo(lx - 6 - rand() * 8, ly); g.lineTo(lx + 6 + rand() * 8, ly); }
+      g.stroke();
+    } else {   // muz: yaltiroq chiziqlar va yoriqlar
+      g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1.3; g.beginPath();
+      for (let i = 0; i < 4; i++) { const lx = x + (rand() - 0.5) * rx * 1.4, ly = y + (rand() - 0.5) * ry; g.moveTo(lx - 12, ly + 3); g.lineTo(lx + 12, ly - 3); }
+      g.stroke();
+      g.strokeStyle = 'rgba(110,130,165,.45)'; g.lineWidth = 0.7; g.beginPath();
+      for (let i = 0; i < 3; i++) {
+        let cx = x + (rand() - 0.5) * rx, cy = y + (rand() - 0.5) * ry * 0.8; g.moveTo(cx, cy);
+        for (let j = 0; j < 4; j++) { cx += (rand() - 0.3) * 14; cy += (rand() - 0.5) * 5; g.lineTo(cx, cy); }
+      }
+      g.stroke();
     }
-    house(g, HOUSE_X, hillY(HOUSE_X, H - 110, 70, 1.2, 0.6) + 6);
-    hill(g, H - 50, 34, 0.8, 2.2, nat(hills[1]));
-    // yer qoplami: o't, xazon yoki qor
-    const grass = { summer: ['#6dbf4b', '#5aa83c'], spring: ['#7fcc58', '#68b443'], autumn: ['#a4a548', '#8a8a3a'], winter: ['#f4f8fc', '#dce6f0'] }[S];
-    g.fillStyle = nat(grass[0]); g.fillRect(0, H - 14, W, 14);
-    g.strokeStyle = nat(grass[1]); g.lineWidth = 2;
+    g.restore();
+    g.strokeStyle = 'rgba(40,30,20,.3)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(x, y, rx, ry, 0, Math.PI, Math.PI * 2); g.stroke();
+    // qamishlar: har tomonda 8 tadan
+    g.lineCap = 'round';
+    const reed = shade(winter ? '#b9a273' : '#6f8a3a', 0), head = shade('#5a3a22', 0);
+    for (const side of [-1, 1]) for (let i = 0; i < 8; i++) {
+      const th = (side > 0 ? 0 : Math.PI) + (rand() - 0.5) * 0.9, bx = x + Math.cos(th) * rx * 0.97, by = y + Math.sin(th) * ry * 0.97 + 2;
+      const hgt = 8 + rand() * 9, lean = side * (1 + rand() * 3);
+      g.strokeStyle = reed; g.lineWidth = 1.1; g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo(bx + lean * 0.3, by - hgt * 0.6, bx + lean, by - hgt); g.stroke();
+      if (rand() < 0.4) { g.fillStyle = head; g.beginPath(); g.ellipse(bx + lean * 0.85, by - hgt * 0.85, 1.2, 3, lean * 0.05, 0, Math.PI * 2); g.fill(); }
+    }
+    SCENE_ANCHORS.pond = { x, y, rx, ry };
+  }
+  // O'tloq: o't tutamlari (2 qator, oldingi qatorni jonli o'tlar chizadi), bo'sh joylar, gullar; qishda qor uyumlari
+  function drawGrassRows(g, rand) {
+    const S = DAY.season, G = { summer: ['#6dbf4b', '#5aa83c'], spring: ['#7fcc58', '#68b443'], autumn: ['#a4a548', '#8a8a3a'], winter: ['#f4f8fc', '#dce6f0'] }[S];
+    const c0 = nat(G[0]), c1 = nat(G[1]), [r0, g0, b0] = hexRgb(c0);
+    const bg = g.createLinearGradient(0, H - 28, 0, H);
+    bg.addColorStop(0, `rgba(${r0},${g0},${b0},0)`); bg.addColorStop(0.5, c0); bg.addColorStop(1, c1);
+    g.fillStyle = bg; g.fillRect(0, H - 28, W, 28);
+    const p1 = rand() * 6, p2 = rand() * 6, nz = x => 0.5 + 0.3 * Math.sin(x / 37 + p1) + 0.2 * Math.sin(x / 13 + p2);
+    g.lineCap = 'round';
     if (S === 'winter') {
-      for (let x = 0; x < W; x += 18) puff(g, x + rand() * 8, H - 13, 7 + rand() * 5, nat('#f4f8fc'));
+      const dry = new Path2D();   // qor ostidan chiqqan quruq poyalar
+      for (let x = rand() * 10; x < W; x += 9 + rand() * 16) { const h = 5 + rand() * 7, y = H - 14 - rand() * 14; dry.moveTo(x, y); dry.quadraticCurveTo(x + 1, y - h * 0.6, x + 2 + rand() * 2, y - h); }
+      g.strokeStyle = shade('#b8a678'); g.lineWidth = 1; g.stroke(dry);
+      for (let x = -10; x < W + 20; x += 22 + rand() * 16) {   // qor uyumlari
+        const rx = 14 + rand() * 16, ry = 4 + rand() * 4, yy = H - 14 - rand() * 14;
+        g.fillStyle = shade('#cfdcec'); g.beginPath(); g.ellipse(x, yy + 1.8, rx, ry, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = shade('#f7faff'); g.beginPath(); g.ellipse(x, yy, rx * 0.97, ry, 0, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = '#ffffff'; g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 0.6;
+      for (let i = 0; i < 34; i++) {   // yaltiroq qor zarralari
+        const x = rand() * W, y = H - 6 - rand() * 26;
+        g.globalAlpha = DAY.night ? 0.5 : 0.9; g.fillRect(x - 0.5, y - 0.5, 1, 1);
+        if (i < 8) { g.beginPath(); g.moveTo(x - 1.6, y); g.lineTo(x + 1.6, y); g.moveTo(x, y - 1.6); g.lineTo(x, y + 1.6); g.stroke(); }
+      }
+      g.globalAlpha = 1;
     } else {
-      for (let x = 0; x < W; x += 5) { g.beginPath(); g.moveTo(x, H - 13); g.lineTo(x + rand() * 4 - 2, H - 18 - rand() * 7); g.stroke(); }
+      const cols = [mulHex(c1, 0.72), c1, lerpHex(c0, nat('#eef59a'), 0.2)], soil = new Path2D();
+      for (const [yRow, rs] of [[H - 30, 0.6], [H - 20, 0.8]]) {
+        const P = Array.from({ length: 6 }, () => new Path2D());
+        for (let x = rand() * 4; x < W + 4; x += 3 + rand() * 5) {
+          if (nz(x) < 0.3) { if (rand() < 0.5) { const sx = x + rand() * 4, sy = yRow + rand() * 3 - 1; soil.moveTo(sx + 1.2, sy); soil.arc(sx, sy, 0.8 + rand() * 0.6, 0, Math.PI * 2); } continue; }
+          const nb = 3 + Math.floor(rand() * 5), wb = rand() < 0.5 ? 0 : 1;
+          for (let b = 0; b < nb; b++) {
+            const ci = b < nb * 0.35 ? 0 : b < nb * 0.75 ? 1 : 2, len = (7 + rand() * 8) * rs, lean = (rand() - 0.5) * 0.6 + 0.15, bx = x + (rand() - 0.5) * 3;
+            const p = P[ci * 2 + wb];
+            p.moveTo(bx, yRow); p.quadraticCurveTo(bx + lean * len * 0.3, yRow - len * 0.6, bx + lean * len, yRow - len);
+          }
+        }
+        for (let ci = 0; ci < 3; ci++) for (let wb = 0; wb < 2; wb++) { g.strokeStyle = cols[ci]; g.lineWidth = wb ? 2.2 : 1.6; g.stroke(P[ci * 2 + wb]); }
+      }
+      g.fillStyle = shade('#6e5034'); g.globalAlpha = 0.45; g.fill(soil); g.globalAlpha = 1;
+      if (S === 'spring') {   // qizil lolalar (ko'knor) to'dalari
+        for (let k = 0; k < 7; k++) {
+          const cx = 20 + rand() * (W - 40), m = 2 + Math.floor(rand() * 4);
+          for (let j = 0; j < m; j++) {
+            const fx = cx + (rand() - 0.5) * 24, fy = H - 22 - rand() * 12, st = 6 + rand() * 6;
+            g.strokeStyle = shade('#4f8a35'); g.lineWidth = 1; g.beginPath(); g.moveTo(fx, fy + st); g.quadraticCurveTo(fx + 1.5, fy + st * 0.5, fx, fy); g.stroke();
+            g.fillStyle = shade('#e8322e'); g.beginPath(); g.arc(fx - 1, fy, 2.3, 0, Math.PI * 2); g.moveTo(fx + 3.3, fy - 0.3); g.arc(fx + 1, fy - 0.3, 2.3, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#3a1a1a'; g.beginPath(); g.arc(fx, fy - 0.2, 0.9, 0, Math.PI * 2); g.fill();
+          }
+        }
+      } else if (S === 'summer') {   // moychechak
+        const pet = shade('#ffffff'), mid = shade('#f2c230');
+        for (let k = 0; k < 24; k++) {
+          const fx = 8 + rand() * (W - 16), fy = H - 18 - rand() * 16;
+          g.fillStyle = pet; g.beginPath();
+          for (let j = 0; j < 5; j++) { const a = j / 5 * Math.PI * 2 + k; g.moveTo(fx + Math.cos(a) * 1.6 + 1.2, fy + Math.sin(a) * 1.6); g.ellipse(fx + Math.cos(a) * 1.6, fy + Math.sin(a) * 1.6, 1.2, 0.8, a, 0, Math.PI * 2); }
+          g.fill(); g.fillStyle = mid; g.beginPath(); g.arc(fx, fy, 1.1, 0, Math.PI * 2); g.fill();
+        }
+      } else if (S === 'autumn') {   // xazon
+        for (let i = 0; i < 40; i++) {
+          g.fillStyle = nat(['#e8822c', '#f2b33d', '#c9512a'][Math.floor(rand() * 3)]);
+          g.beginPath(); g.ellipse(rand() * W, H - 6 - rand() * 14, 3.5, 1.8, rand() * 3, 0, Math.PI * 2); g.fill();
+        }
+      }
     }
-    if (S === 'autumn') for (let i = 0; i < 40; i++) { g.fillStyle = nat(['#e8822c', '#f2b33d', '#c9512a'][rnd(3)]); g.beginPath(); g.ellipse(rand() * W, H - 6 - rand() * 10, 3.5, 1.8, rand() * 3, 0, Math.PI * 2); g.fill(); }
-    if (S === 'spring' || S === 'summer') for (let i = 0; i < 18; i++) puff(g, rand() * W, H - 16 - rand() * 18, 2.5, nat(['#ffffff', '#ffe066', '#ff8fb1'][rnd(3)]));
+    g.fillStyle = c1; g.fillRect(0, H - 1.5, W, 1.5);   // eng pastki qator — yer chizig'i bilan bir xil rang
   }
 
-  function bgSky(g, rand) {
-    const top = skyTop();
+  // ---------- Yer usti manzaralari (har 10 levelda navbatdagisi) ----------
+  // 1) Qishloq: teraklar qatori, tut, uy, elektr simi va hovuz
+  function sceneQishloq(g, rand, St) {
+    St.farRidge();
+    const T = [];
+    let tx = 192 + rand() * 30;
+    const nT = 5 + Math.floor(rand() * 3);
+    for (let i = 0; i < nT; i++) { T.push({ x: tx, k: 'terak', s: 0.5 + rand() * 0.18 }); tx += 18 + rand() * 8; }
+    T.push({ x: HOUSE_X - 62 - rand() * 12, k: 'tut', s: 0.72 + rand() * 0.15 }, { x: HOUSE_X + 66 + rand() * 14, k: 'tut', s: 0.66 + rand() * 0.15 });
+    if (rand() < 0.65) T.push({ x: 40 + rand() * 40, k: 'tut', s: 0.62 + rand() * 0.15 });
+    for (const t of T) t.y = St.y(St.far, t.x) + 3;
+    T.sort((a, b) => a.y - b.y).forEach(t => tree(g, t.x, t.y, t.s, rand, t.k, 0.12));
+    const hy = St.y(St.far, HOUSE_X) + 6;
+    house(g, HOUSE_X, hy);
+    St.meadow();
+    drawPond(g, 150, H - 70, 80, 12, rand, T.filter(t => Math.abs(t.x - 150) < 100));
+    // elektr ustunlari va sim (qushlar qo'nadi)
+    const P = [30, W * 0.42].map(px => { const by = St.y(St.near, px) + 8; return [px, by, by - 56]; });
+    const pole = shade('#5d4a3a');
+    for (const [px, by, ty] of P) {
+      g.strokeStyle = pole; g.lineWidth = 3; g.beginPath(); g.moveTo(px, by); g.lineTo(px, ty); g.stroke();
+      g.lineWidth = 2; g.beginPath(); g.moveTo(px - 8, ty + 4); g.lineTo(px + 8, ty + 4); g.stroke();
+      g.fillStyle = shade('#dfe6ea'); g.fillRect(px - 8, ty + 1, 2, 3); g.fillRect(px + 6, ty + 1, 2, 3);
+    }
+    const [a, b] = P, y0 = a[2] + 2, y1 = b[2] + 2, sag = 14;
+    g.strokeStyle = DAY.sun === null ? 'rgba(8,12,28,.7)' : 'rgba(45,45,52,.6)'; g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(a[0] + 7, y0); g.quadraticCurveTo((a[0] + b[0]) / 2 + 7, (y0 + y1) / 2 + sag * 2, b[0] + 7, y1);
+    g.moveTo(a[0] - 7, y0); g.quadraticCurveTo((a[0] + b[0]) / 2 - 7, (y0 + y1) / 2 + sag * 2 + 2, b[0] - 7, y1);
+    g.moveTo(a[0] - 7, y0); g.quadraticCurveTo(a[0] - 20, y0 + 6, -10, y0 + 4);
+    g.moveTo(b[0] + 7, y1); g.quadraticCurveTo((b[0] + HOUSE_X - 22) / 2, Math.max(y1, hy - 22) + 10, HOUSE_X - 22, hy - 22);
+    g.stroke();
+    SCENE_ANCHORS.wire = { x0: a[0] + 7, y0, x1: b[0] + 7, y1, sag };
+    return 'Qishloq';
+  }
+  // 2) Daryo: ufqdan ilon izi bo'lib kengayib keladigan daryo, yog'och ko'prik, qamishlar
+  function sceneDaryo(g, rand, St) {
+    St.farRidge(ridgePts(rand, H - 136, 26, false));
+    const fy = x => St.y(St.far, x);
+    const hx = 478 + rand() * 30, back = [];
+    for (let i = 0; i < 4; i++) back.push({ x: 352 + i * 21 + rand() * 7, k: 'terak', s: 0.4 + rand() * 0.1 });
+    back.push({ x: hx - 52, k: 'tut', s: 0.6 }, { x: hx + 62 + rand() * 10, k: 'tut', s: 0.62 }, { x: 50 + rand() * 50, k: 'tut', s: 0.55 }, { x: 130 + rand() * 30, k: 'terak', s: 0.45 });
+    for (const t of back) t.y = fy(t.x) + 3;
+    back.sort((p, q) => p.y - q.y).forEach(t => tree(g, t.x, t.y, t.s, rand, t.k, 0.15));
+    house(g, hx, fy(hx) + 5, { chimney: false, blue: true });
+    St.meadow();
+    // daryo o'zani: kubik egri chiziq, kenglik yaqinlashgan sari ortadi (perspektiva)
+    const y0 = Math.max(HZ0 + 1, fy(W * 0.55) + 2), lim = y => Math.min(H - 38, Math.max(y0 - 1, y));
+    const P0 = [W * 0.55, y0], C1 = [170 + rand() * 40, y0 + 22], C2 = [220 + rand() * 40, H - 60], P3 = [W + 16, H - 66 + rand() * 6];
+    const N = 46, A = [], B = [], Cn = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, u = 1 - t;
+      const cx = u * u * u * P0[0] + 3 * u * u * t * C1[0] + 3 * u * t * t * C2[0] + t * t * t * P3[0];
+      const cy = u * u * u * P0[1] + 3 * u * u * t * C1[1] + 3 * u * t * t * C2[1] + t * t * t * P3[1];
+      const dx = 3 * u * u * (C1[0] - P0[0]) + 6 * u * t * (C2[0] - C1[0]) + 3 * t * t * (P3[0] - C2[0]);
+      const dy = 3 * u * u * (C1[1] - P0[1]) + 6 * u * t * (C2[1] - C1[1]) + 3 * t * t * (P3[1] - C2[1]);
+      const l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, hw = 3 + 31 * Math.pow(t, 1.6), f = 0.3 + 0.4 * t;
+      A.push([cx + nx * hw, lim(cy + ny * hw * f)]); B.push([cx - nx * hw, lim(cy - ny * hw * f)]);
+      Cn.push([cx, cy, dx / l, hw]);
+    }
+    const smooth = (p, pts, first) => pts.forEach((q, i) => {
+      if (i === 0) first ? p.moveTo(q[0], q[1]) : p.lineTo(q[0], q[1]);
+      else if (i < pts.length - 1) p.quadraticCurveTo(q[0], q[1], (q[0] + pts[i + 1][0]) / 2, (q[1] + pts[i + 1][1]) / 2);
+      else p.lineTo(q[0], q[1]);
+    });
+    const rp = new Path2D(); smooth(rp, A, true); smooth(rp, B.slice().reverse(), false); rp.closePath();
+    // qirg'oq chizig'i (qum) suv ostida biroz kengroq
+    g.strokeStyle = shade(DAY.season === 'winter' ? '#e6edf5' : '#cdbd92'); g.lineWidth = 4; g.lineJoin = 'round'; g.stroke(rp);
+    const wg = g.createLinearGradient(0, y0, 0, H - 40);
+    wg.addColorStop(0, mulHex(DAY.bot, 0.94)); wg.addColorStop(1, mulHex(lerpHex(DAY.top, DAY.bot, 0.3), 0.8));
+    g.fillStyle = wg; g.fill(rp);
+    const farB = new Path2D(), nearB = new Path2D();
+    for (const side of [A, B]) for (let i = 1; i < side.length; i++) {
+      const p = side[i][1] < Cn[i][1] - 0.5 ? farB : nearB;
+      p.moveTo(side[i - 1][0], side[i - 1][1]); p.lineTo(side[i][0], side[i][1]);
+    }
+    g.lineWidth = 1.6; g.strokeStyle = 'rgba(60,45,30,.4)'; g.stroke(farB);
+    g.strokeStyle = 'rgba(255,255,255,.28)'; g.stroke(nearB);
+    g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1; g.beginPath();   // suvdagi yaltiroq chiziqlar
+    for (let i = 0; i < 12; i++) { const c = Cn[8 + Math.floor(rand() * (N - 10))], d = 4 + c[3] * 0.6; g.moveTo(c[0] - d + rand() * 4, c[1] + (rand() - 0.5) * c[3] * 0.4); g.lineTo(c[0] + d, c[1] + (rand() - 0.5) * 2); }
+    g.stroke();
+    // yog'och ko'prik — daryo bizga qarab oqqan joyda
+    let bi = 10;
+    for (let i = 8; i < 30; i++) if (Math.abs(Cn[i][2]) < Math.abs(Cn[bi][2])) bi = i;
+    const [bx, by, , bw] = Cn[bi], xl = bx - bw - 8, xr = bx + bw + 8, dyAt = xx => { const s = (xx - xl) / (xr - xl); return by - 12 * s * (1 - s); };
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(xl + 4, by + 3, xr - xl - 8, 3);
+    const deck = shade('#8b6a47', 0.08);
+    g.fillStyle = deck; g.beginPath(); g.moveTo(xl, by); g.quadraticCurveTo(bx, by - 6, xr, by); g.lineTo(xr, by + 3); g.quadraticCurveTo(bx, by - 3, xl, by + 3); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(50,35,20,.35)'; g.lineWidth = 0.7; g.beginPath();
+    for (let xx = xl + 3; xx < xr - 1; xx += 3.2) { const yy = dyAt(xx); g.moveTo(xx, yy); g.lineTo(xx, yy + 3); }
+    g.stroke();
+    g.strokeStyle = shade('#6e5238', 0.08); g.lineWidth = 1; g.beginPath();
+    for (let xx = xl + 1; xx <= xr; xx += (xr - xl - 2) / 4) { const yy = dyAt(xx); g.moveTo(xx, yy); g.lineTo(xx, yy - 7); }
+    g.moveTo(xl + 1, dyAt(xl + 1) - 6); for (let xx = xl + 1; xx <= xr; xx += 2) g.lineTo(xx, dyAt(xx) - 6);
+    g.stroke();
+    // yaqin qirg'oqdagi daraxtlar va qamishlar
+    const front = [];
+    for (const i of [Math.round(N * 0.62), Math.round(N * 0.8)]) { const q = A[i][1] > B[i][1] ? A[i] : B[i]; front.push({ x: q[0] + (rand() - 0.5) * 10, y: Math.min(H - 34, q[1] + 6), k: 'tut', s: 0.68 + rand() * 0.12 }); }
+    { const q = A[Math.round(N * 0.45)][1] > B[Math.round(N * 0.45)][1] ? A[Math.round(N * 0.45)] : B[Math.round(N * 0.45)]; front.push({ x: q[0] - 14, y: Math.min(H - 34, q[1] + 5), k: 'terak', s: 0.6 }); }
+    const reed = shade(DAY.season === 'winter' ? '#b9a273' : '#6f8a3a');
+    g.strokeStyle = reed; g.lineWidth = 1.1; g.beginPath();
+    for (let i = Math.round(N * 0.35); i < N; i += 2) {
+      const q = A[i][1] > B[i][1] ? A[i] : B[i];
+      if (rand() < 0.35) continue;
+      for (let j = 0; j < 3 + Math.floor(rand() * 3); j++) { const rx = q[0] + (rand() - 0.5) * 8, ry = q[1] + 1, h = 6 + rand() * 7; g.moveTo(rx, ry); g.quadraticCurveTo(rx + 1, ry - h * 0.6, rx + (rand() - 0.5) * 5, ry - h); }
+    }
+    g.stroke();
+    front.sort((p, q) => p.y - q.y).forEach(t => tree(g, t.x, t.y, t.s, rand, t.k, 0));
+    return 'Daryo';
+  }
+  // 3) Bog': perspektivada 4 qator mevali daraxt (bahorda olma gullaydi) va tok so'ri (ishkom)
+  function sceneBog(g, rand, St) {
+    St.farRidge(ridgePts(rand, H - 128, 18, false));
+    for (let k = 0; k < 4; k++) {
+      const y = HZ0 + 10 + 18 * k, s = 0.4 + 0.2 * k, sp = 40 + 20 * k, off = (k % 2) * sp * 0.5 + rand() * 8;
+      for (let x = off - sp; x < W + sp; x += sp) tree(g, x + (rand() - 0.5) * 5, y + (rand() - 0.5) * 2, s * (0.92 + rand() * 0.16), rand, 'olma', 0.3 - 0.1 * k);
+    }
+    St.meadow();
+    // ishkom: ustunlar, ikki qator sim, tok barglari va uzum boshlari
+    const x0 = 16 + rand() * 10, posts = [];
+    for (let x = x0; x <= x0 + 201; x += 50) posts.push([x, St.y(St.near, x) + 12]);
+    const S = DAY.season, wood = shade('#7a5a3c'), wy = (i, hh) => posts[i][1] - hh;
+    g.lineCap = 'round';
+    g.strokeStyle = shade('#6a4a30'); g.lineWidth = 1.6; g.beginPath();   // tok tanasi
+    for (const [x, by] of posts) { g.moveTo(x + 3, by); g.bezierCurveTo(x + 7, by - 10, x - 1, by - 18, x + 4, by - 30); }
+    g.stroke();
+    g.strokeStyle = wood; g.lineWidth = 2.2; g.beginPath();
+    for (const [x, by] of posts) { g.moveTo(x, by); g.lineTo(x, by - 32); }
+    g.stroke();
+    g.strokeStyle = 'rgba(60,60,60,.5)'; g.lineWidth = 0.8; g.beginPath();
+    for (const hh of [31, 20]) for (let i = 1; i < posts.length; i++) { const xa = posts[i - 1][0], xb = posts[i][0]; g.moveTo(xa, wy(i - 1, hh)); g.quadraticCurveTo((xa + xb) / 2, (wy(i - 1, hh) + wy(i, hh)) / 2 + 4, xb, wy(i, hh)); }
+    g.stroke();
+    const wireY = x => { const i = Math.min(posts.length - 2, Math.max(0, Math.floor((x - x0) / 50))), u = (x - posts[i][0]) / 50; return wy(i, 31) + (wy(i + 1, 31) - wy(i, 31)) * u + 4 * (1 - (2 * u - 1) * (2 * u - 1)); };
+    const xEnd = posts[posts.length - 1][0];
+    if (S !== 'winter') {
+      const leaf = shade(S === 'autumn' ? '#c9a83a' : S === 'spring' ? '#8fcf5f' : '#5e9a3e');
+      g.fillStyle = mulHex(leaf, 0.72); g.beginPath();
+      for (let x = x0 - 4; x < xEnd + 6; x += 6) { const r = 3.5 + rand() * 2, yy = wireY(Math.min(xEnd, Math.max(x0, x))) + 2 + rand() * 3; g.moveTo(x + r, yy); g.arc(x, yy, r, 0, Math.PI * 2); }
+      g.fill();
+      g.fillStyle = leaf; g.beginPath();
+      for (let x = x0 - 2; x < xEnd + 4; x += 7) { const r = 3 + rand() * 2, yy = wireY(Math.min(xEnd, Math.max(x0, x))) - 1 + rand() * 2; g.moveTo(x + r, yy); g.arc(x, yy, r, 0, Math.PI * 2); }
+      g.fill();
+      if (S !== 'spring') {   // uzum boshlari
+        g.fillStyle = shade(S === 'autumn' ? '#5a2a5e' : '#a8c060');
+        for (let i = 0; i < 8; i++) {
+          const gx = x0 + 10 + rand() * (xEnd - x0 - 20), gy = wireY(gx) + 5;
+          g.beginPath();
+          for (const [dx, dy] of [[0, 0], [2.4, 0], [-2.4, 0], [1.2, 2.2], [-1.2, 2.2], [0, 4.2]]) { g.moveTo(gx + dx + 1.4, gy + dy); g.arc(gx + dx, gy + dy, 1.4, 0, Math.PI * 2); }
+          g.fill();
+        }
+      }
+    } else {   // qishda yalang'och tok novdalari
+      g.strokeStyle = shade('#6a4a30'); g.lineWidth = 1.2; g.beginPath();
+      for (let x = x0; x < xEnd; x += 9) { const yy = wireY(x); g.moveTo(x, yy); g.quadraticCurveTo(x + 4, yy - 3 - rand() * 3, x + 9, wireY(Math.min(xEnd, x + 9))); }
+      g.stroke();
+    }
+    SCENE_ANCHORS.wire = { x0, y0: wy(0, 31), x1: xEnd, y1: wy(posts.length - 1, 31), sag: 2 };
+    return "Bog'";
+  }
+  // 4) Tog' etagi: yaqin baland tog'lar, qor, yon bag'irlarda archalar va sharshara
+  function sceneTog(g, rand, St) {
+    // sharshara W*0.3 atrofidagi eng baland cho'qqi ostidagi qoyadan tushadi
+    let M = ridgePts(rand, HZ0 + 30, 220, true), wx = W * 0.3, top = H;
+    for (const [x, y] of M) if (x > W * 0.2 && x < W * 0.42 && y < top) { top = y; wx = x; }
+    M = M.map(([x, y]) => [x, y - Math.max(0, y - 575) * Math.exp(-Math.abs(x - wx) / 55)]);
+    const S = DAY.season, snowY = S === 'winter' ? 690 : S === 'summer' ? 618 : 645;
+    ridge(g, M, '#8a92a0', 0.35, true, { snow: snowY, rand, fit: 0.3 });
+    { // pastki yon bag'irlar o'rmon bilan qoplangan (yashil tus)
+      const fp = new Path2D(); fp.moveTo(M[0][0], H); for (const [x, y] of M) fp.lineTo(x, y); fp.lineTo(M[M.length - 1][0], H); fp.closePath();
+      const [fr, fgc, fb] = hexRgb(shade(S === 'autumn' ? '#7d7a45' : S === 'winter' ? '#c8d2de' : '#4f7a4a', 0.3));
+      const fgr = g.createLinearGradient(0, 640, 0, H);
+      fgr.addColorStop(0, `rgba(${fr},${fgc},${fb},0)`); fgr.addColorStop(0.55, `rgba(${fr},${fgc},${fb},.55)`); fgr.addColorStop(1, `rgba(${fr},${fgc},${fb},.7)`);
+      g.save(); g.clip(fp); g.fillStyle = fgr; g.fillRect(0, 640, W, H - 640); g.restore();
+      valleyFog(g, HZ0 + 40);
+    }
+    const A = [];
+    for (let i = 0; i < 70; i++) {
+      const x = rand() * W, yc = St.y(M, x), y = yc + 18 + rand() * 120;
+      if (y > H - 64 || y < snowY + 25 || Math.abs(x - wx) < 16) continue;
+      A.push([x, y, 0.28 + Math.max(0, y - 600) / 260 * 0.4]);
+    }
+    A.sort((p, q) => p[1] - q[1]).forEach(([x, y, s]) => tree(g, x, y, s, rand, 'archa', 0.3));
+    // sharshara: qoya o'yig'idan tushadi, pastida ko'pik
+    const y0 = Math.max(H - 300, Math.round(St.y(M, wx)) + 22), y1 = H - 120, wc = hexRgb(shade('#ffffff', 0.2));
+    g.fillStyle = `rgba(${hexRgb(shade('#3e4250', 0.3)).join(',')},.35)`;   // qoya o'yig'i (V shaklidagi jar, sharshara boshida)
+    g.beginPath(); g.moveTo(wx - 10, y0 - 18); g.quadraticCurveTo(wx - 3, y0 - 8, wx - 5, y0 + 3); g.lineTo(wx + 5, y0 + 3); g.quadraticCurveTo(wx + 3, y0 - 8, wx + 10, y0 - 18); g.quadraticCurveTo(wx, y0 - 11, wx - 10, y0 - 18); g.fill();
+    const fg = g.createLinearGradient(0, y0, 0, y1);
+    fg.addColorStop(0, `rgba(${wc},.92)`); fg.addColorStop(1, `rgba(${wc},.7)`);
+    g.fillStyle = fg; g.beginPath(); g.moveTo(wx - 4.5, y0); g.lineTo(wx + 4.5, y0); g.lineTo(wx + 6, y1); g.lineTo(wx - 6, y1); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(150,180,215,.35)'; g.lineWidth = 0.8; g.beginPath();
+    for (const dx of [-2.5, 0.5, 3]) { g.moveTo(wx + dx, y0 + 4); g.lineTo(wx + dx * 1.3, y1 - 4); }
+    g.stroke();
+    glow(g, wx, y1, 34, `rgba(${wc},.3)`);
+    g.fillStyle = `rgba(${wc},.85)`; g.beginPath(); g.ellipse(wx, y1 + 2, 18, 5, 0, 0, Math.PI * 2); g.fill();
+    SCENE_ANCHORS.fall = { x: wx, y0, y1, w: 10 };
+    St.farRidge(ridgePts(rand, H - 92, 22, false));   // tog' etagidagi past yashil tepalik
+    // sharsharadan oqib chiqqan soy
+    const wg = g.createLinearGradient(0, y1, 0, H - 50);
+    wg.addColorStop(0, mulHex(DAY.bot, 0.94)); wg.addColorStop(1, mulHex(lerpHex(DAY.top, DAY.bot, 0.35), 0.82));
+    g.fillStyle = wg; g.beginPath();
+    const sx = t => wx + 100 * t * t + 20 * Math.sin(t * 3), sy = t => y1 + 4 + 62 * t, sw = t => 3 + 6 * t;
+    for (let i = 0; i <= 10; i++) { const t = i / 10; i ? g.lineTo(sx(t) - sw(t), sy(t)) : g.moveTo(sx(t) - sw(t), sy(t)); }
+    for (let i = 10; i >= 0; i--) { const t = i / 10; g.lineTo(sx(t) + sw(t), sy(t)); }
+    g.closePath(); g.fill();
+    St.meadow();
+    // o'tloqdagi toshlar va chetlardagi katta archalar
+    for (let i = 0; i < 4; i++) {
+      const x = 60 + rand() * (W - 120), y = St.y(St.near, x) + 10 + rand() * 6, r = 4 + rand() * 5;
+      g.fillStyle = 'rgba(0,0,0,.12)'; g.beginPath(); g.ellipse(x + 2, y + r * 0.45, r * 1.2, r * 0.35, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = shade('#8d8a84'); g.beginPath(); g.ellipse(x, y, r * 1.15, r * 0.75, 0, Math.PI, 0); g.lineTo(x + r * 1.15, y + r * 0.3); g.lineTo(x - r * 1.15, y + r * 0.3); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.35, r * 0.5, r * 0.22, -0.3, 0, Math.PI * 2); g.fill();
+    }
+    tree(g, 18 + rand() * 10, St.y(St.near, 20) + 10, 0.85, rand, 'archa', 0);
+    tree(g, W - 20 - rand() * 10, St.y(St.near, W - 20) + 10, 0.8, rand, 'archa', 0);
+    return "Tog' etagi";
+  }
+  // 5) Shahar chekkasi: xira Samarqand silueti (peshtoqlar, firuza gumbazlar, minoralar) va mahalla uylari
+  function sceneShahar(g, rand, St) {
+    const dp = 0.6, gy = HZ0 + 22, gb = H - 90, sd = skyLight(0).x < W / 2 ? -1 : 1;
+    const brick = shade('#caa47a', dp), brickD = mulHex(brick, 0.86), tile = shade('#2f6fa8', dp), tq = shade('#2fa3b5', dp), niche = shade('#4b4656', dp);
+    const lit = DAY.night || DAY.h >= 18.6 || DAY.h < 6.6;
+    const dome = (x, r, bh) => {
+      g.fillStyle = brick; g.fillRect(x - r * 1.25, gy - bh, r * 2.5, gb - gy + bh);
+      g.fillStyle = tile; g.fillRect(x - r * 0.9, gy - bh - r * 0.4, r * 1.8, r * 0.4);
+      const yb = gy - bh - r * 0.4, p = new Path2D();
+      p.moveTo(x - r, yb); p.bezierCurveTo(x - r * 1.18, yb - r * 0.95, x - r * 0.4, yb - r * 1.15, x, yb - r * 1.4);
+      p.bezierCurveTo(x + r * 0.4, yb - r * 1.15, x + r * 1.18, yb - r * 0.95, x + r, yb); p.closePath();
+      g.fillStyle = tq; g.fill(p);
+      g.save(); g.clip(p); g.fillStyle = mulHex(tq, 0.78); g.fillRect(sd > 0 ? x - r * 1.3 : x + r * 0.15, yb - r * 1.5, r * 1.15, r * 1.6); g.restore();
+      g.strokeStyle = mulHex(tq, 0.62); g.lineWidth = 0.8; g.beginPath();
+      for (let j = 1; j < 6; j++) { const u = j / 6 * 2 - 1; g.moveTo(x + u * r, yb); g.quadraticCurveTo(x + u * r * 1.05, yb - r * 0.9, x, yb - r * 1.38); }
+      g.stroke();
+      g.strokeStyle = brickD; g.beginPath(); g.moveTo(x, yb - r * 1.4); g.lineTo(x, yb - r * 1.4 - 5); g.stroke();
+    };
+    const minaret = (x, h) => {
+      const yt = gy - h;
+      g.fillStyle = brick; g.beginPath(); g.moveTo(x - 5, gb); g.lineTo(x - 5, gy); g.lineTo(x - 3.4, yt); g.lineTo(x + 3.4, yt); g.lineTo(x + 5, gy); g.lineTo(x + 5, gb); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(0,0,0,.08)'; g.beginPath(); g.moveTo(x, gb); g.lineTo(x, yt); g.lineTo(x - sd * 3.4, yt); g.lineTo(x - sd * 5, gy); g.lineTo(x - sd * 5, gb); g.closePath(); g.fill();
+      g.fillStyle = tile;
+      for (let yy = gy - 10; yy > yt + 8; yy -= 13) { const hw = 5 - 1.6 * (gy - yy) / h; g.fillRect(x - hw, yy - 1.2, hw * 2, 2.4); }
+      g.fillStyle = brickD; g.fillRect(x - 5.2, yt - 1, 10.4, 3);
+      g.fillStyle = brick; g.fillRect(x - 3.6, yt - 7, 7.2, 6);
+      g.fillStyle = niche; g.fillRect(x - 1, yt - 6, 2, 4);
+      g.fillStyle = tq; g.beginPath(); g.arc(x, yt - 7, 3.8, Math.PI, 0); g.fill();
+    };
+    const portal = (x, w, h) => {
+      g.fillStyle = brick; g.fillRect(x - w / 2, gy - h, w, gb - gy + h);
+      g.fillStyle = 'rgba(0,0,0,.07)'; g.fillRect(sd > 0 ? x - w / 2 : x + w / 2 - 6, gy - h, 6, gb - gy + h);
+      g.strokeStyle = tile; g.lineWidth = 2; g.strokeRect(x - w / 2 + 3, gy - h + 3, w - 6, h + 6);
+      g.fillStyle = tq; g.fillRect(x - w / 2 + 3, gy - h + 3, w - 6, 3);
+      const aw = w * 0.3, as = gy - h * 0.5, ap = gy - h * 0.84;
+      g.fillStyle = niche; g.beginPath(); g.moveTo(x - aw, gb); g.lineTo(x - aw, as); g.quadraticCurveTo(x - aw, ap + h * 0.12, x, ap); g.quadraticCurveTo(x + aw, ap + h * 0.12, x + aw, as); g.lineTo(x + aw, gb); g.closePath(); g.fill();
+      g.fillStyle = mulHex(niche, 1.35); g.beginPath(); g.moveTo(x - aw * 0.4, gb); g.lineTo(x - aw * 0.4, gy - h * 0.22); g.quadraticCurveTo(x - aw * 0.4, gy - h * 0.34, x, gy - h * 0.38); g.quadraticCurveTo(x + aw * 0.4, gy - h * 0.34, x + aw * 0.4, gy - h * 0.22); g.lineTo(x + aw * 0.4, gb); g.closePath(); g.fill();
+      if (lit) glow(g, x, gy - h * 0.3, w * 0.8, 'rgba(255,180,100,.12)');
+    };
+    const cx = W * 0.5 + (rand() - 0.5) * 50;
+    dome(cx - 172, 11, 6); dome(cx + 180 + rand() * 20, 12, 8); dome(cx - 92, 13, 10); dome(cx + 72, 17, 14);
+    minaret(cx - 140, 64 + rand() * 10); minaret(cx - 38, 80 + rand() * 10); minaret(cx + 38, 80 + rand() * 10);
+    portal(cx - 120, 48, 44); portal(cx + 126, 50, 46); portal(cx, 62, 58);
+    St.farRidge(ridgePts(rand, H - 98, 24, false));
+    // mahalla: tekis tomli uylar va ular orasida daraxtlar
+    const homes = [];
+    for (let x = 6 + rand() * 12; x < W - 14; x += 36 + rand() * 30) homes.push({ x, w: 16 + rand() * 14, h: 9 + rand() * 6 });
+    const T = [];
+    for (let i = 0; i < homes.length - 1; i++) if (rand() < 0.55) T.push({ x: homes[i].x + homes[i].w + 6 + rand() * 6, k: rand() < 0.5 ? 'terak' : 'tut', s: 0.42 + rand() * 0.12 });
+    for (const t of T) tree(g, t.x, St.y(St.far, t.x) + 4, t.s, rand, t.k, 0.22);
+    let best = null;
+    for (const m of homes) {
+      const by = St.y(St.far, m.x + m.w / 2) + 5, wall = shade(rand() < 0.5 ? '#dcc6a2' : '#d2b892', 0.22);
+      g.fillStyle = mulHex(wall, 0.8); g.beginPath(); g.moveTo(m.x + m.w, by); g.lineTo(m.x + m.w, by - m.h); g.lineTo(m.x + m.w + 5, by - m.h - 2); g.lineTo(m.x + m.w + 5, by - 2); g.closePath(); g.fill();
+      g.fillStyle = wall; g.fillRect(m.x, by - m.h, m.w, m.h);
+      g.fillStyle = shade('#8c7a64', 0.22); g.beginPath(); g.moveTo(m.x - 1.5, by - m.h - 2); g.lineTo(m.x + m.w + 1.5, by - m.h - 2); g.lineTo(m.x + m.w + 6.5, by - m.h - 4); g.lineTo(m.x + 3.5, by - m.h - 4); g.closePath(); g.fill();
+      g.fillRect(m.x - 1.5, by - m.h - 2, m.w + 3, 2);
+      g.fillStyle = shade('#6b4a32', 0.22); g.fillRect(m.x + m.w * 0.18, by - 7, 3.5, 7);
+      for (let wx = m.x + m.w * 0.5; wx < m.x + m.w - 3; wx += 7) {
+        const on = lit && rand() < 0.7;
+        g.fillStyle = on ? '#ffd27a' : shade('#5f7d96', 0.22); g.fillRect(wx, by - m.h + 3, 3, 3);
+        if (on) SCENE_ANCHORS.lights.push([wx + 1.5, by - m.h + 4.5]);
+      }
+      m.by = by;
+      if (!best || m.w > best.w) best = m;
+    }
+    if (best) {
+      g.fillStyle = shade('#6a6a70', 0.22); g.fillRect(best.x + best.w * 0.75, best.by - best.h - 8, 2, 6);
+      SCENE_ANCHORS.smoke = [best.x + best.w * 0.75 + 1, best.by - best.h - 9];
+      SCENE_ANCHORS.roof = [best.x, best.x + best.w, best.by - best.h - 3];
+      SCENE_ANCHORS.door = [best.x + best.w * 0.18 + 1.7, best.by - 1];
+    }
+    St.meadow();
+    return 'Shahar chekkasi';
+  }
+  const SURF_SCENES = [sceneQishloq, sceneDaryo, sceneBog, sceneTog, sceneShahar];
+
+  // Yer usti: osmon → quyosh/oy → qorli tog'lar → archali adirlar → tuman → manzara (uzoq tepalik, o'tloq, o't)
+  function bgSurface(g, rand, v) {
+    const S = DAY.season, seed = Math.floor(rand() * 1e9);
+    vgrad(g, [[0, DAY.top], [0.78, DAY.bot], [1, DAY.bot]]);
+    sunMoon(g, prng(seed + 1), 0);
+    if (CLOUD_SPR && DAY.sun !== null) {   // baland patli bulutlar va ufq ustidagi uzoq bulut
+      const rc = prng(seed + 7), cs = CLOUD_SPR.cumulus[2];
+      g.globalAlpha = 0.55; for (const c of CLOUD_SPR.cirrus) g.drawImage(c.c, rc() * (W - 200) - 50, 30 + rc() * 150, c.w, c.h);
+      g.globalAlpha = 0.4; g.drawImage(cs.c, 40 + rc() * (W - 200), HZ0 - 150 - rc() * 30, cs.w * 0.75, cs.h * 0.75);
+      g.globalAlpha = 1;
+    }
+    // [uzoq tepalik, yaqin o'tloq, adirlar]
+    const HL = { summer: ['#9cc879', '#80bb5e', '#7f9c7c'], spring: ['#a9d682', '#8fc865', '#88a67e'], autumn: ['#cbb672', '#b39c55', '#9c9670'], winter: ['#eef3f8', '#e2eaf2', '#c4cedc'] }[S];
+    const r2 = prng(seed + 2);
+    const M = ridgePts(r2, HZ0 - 10, 110, true);
+    // uzoq tog'lar: kunduzi ko'kimtir, oltin soatda binafsha tus (havo pardasi ortida)
+    ridge(g, M, DAY.golden && DAY.sun !== null ? '#6f6898' : '#7584a6', 0.85, true, { snow: S === 'winter' ? HZ0 - 50 : S === 'summer' ? HZ0 - 92 : HZ0 - 80, rand: r2, fit: 0.2 });
+    const F = ridgePts(r2, HZ0 + 12, 50, false);   // adirlar uzoq tepalikdan biroz balandroq ko'rinsin
+    ridge(g, F, HL[2], 0.55, true, { fit: 0.2 });
+    g.fillStyle = shade('#2f5a3a', 0.55); g.beginPath();   // adir ustidagi uzoq archalar
+    for (let i = 0; i < F.length; i++) {
+      if (r2() < 0.4) continue;
+      for (let j = 0; j < 2; j++) { const x = F[i][0] + r2() * 6, y = F[i][1] + 1.5 + r2() * 4 + j * 2.5, r = 1 + r2() * 0.6; g.moveTo(x + r, y); g.arc(x, y, r, 0, Math.PI * 2); }
+    }
+    g.fill();
+    valleyFog(g, HZ0 + 32);
+    SCENE_ANCHORS = { smoke: null, door: null, wire: null, roof: null, pond: null, fall: null, lights: [] };
+    const St = {
+      far: ridgePts(prng(seed + 3), H - 110, 60, false),
+      near: ridgePts(prng(seed + 4), H - 45, 26, false),
+      // chiziqdagi x nuqtaning balandligi (nuqtalar har 6 px da, x=-10 dan)
+      y: (pts, x) => { const f = (x + 10) / 6, i = Math.max(0, Math.min(pts.length - 2, Math.floor(f))), t = Math.max(0, Math.min(1, f - i)); return pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t; },
+      farRidge(pts) { if (pts) this.far = pts; ridge(g, this.far, HL[0], 0.2, true); },
+      meadow() { valleyFog(g, H - 58); ridge(g, this.near, HL[1], 0, true); drawGrassRows(g, prng(seed + 9)); },
+    };
+    return SURF_SCENES[v % 5](g, prng(seed + 5), St);
+  }
+
+  // ---------- Osmon manzaralari ----------
+  const SKY_SCENES = [
+    // 1) Bulut dengizi: qorli cho'qqilar bulutlar ustidan chiqib turadi
+    function (g, r, sea) {
+      const np = 2 + (r() < 0.5 ? 1 : 0), n = DAY.darkK / 0.62, sd = skyLight(1).x < W / 2 ? -1 : 1;
+      const body = lerpHex(shade('#7f8fb0'), DAY.bot, 0.55), snow = lerpHex(lerpHex('#ffffff', DAY.bot, 0.3), '#8f9cc4', n);
+      for (let i = 0; i < np; i++) {
+        const px = W * (0.12 + 0.76 * (i + 0.2 + r() * 0.6) / np), ph = 120 + r() * 60, py = HZ1 - ph, hw = 100 + r() * 50;
+        const Lp = [], Rp = [];
+        for (let j = 1; j <= 6; j++) { const t = j / 6; Lp.push([px - hw * Math.pow(t, 0.9) + (r() - 0.5) * 10, py + (HZ1 + 30 - py) * t]); Rp.push([px + hw * Math.pow(t, 0.9) + (r() - 0.5) * 10, py + (HZ1 + 30 - py) * t]); }
+        const p = new Path2D(); p.moveTo(Lp[5][0], Lp[5][1]);
+        for (let j = 4; j >= 0; j--) p.lineTo(Lp[j][0], Lp[j][1]);
+        p.lineTo(px, py); for (const q of Rp) p.lineTo(q[0], q[1]); p.closePath();
+        g.fillStyle = body; g.fill(p);
+        const sun = sd > 0 ? Rp : Lp, dark = sd > 0 ? Lp : Rp, mid = [px + sd * hw * 0.12, HZ1 + 30];
+        g.fillStyle = `rgba(255,255,255,${(0.18 * (1 - n * 0.6)).toFixed(3)})`; g.beginPath(); g.moveTo(px, py); for (const q of sun) g.lineTo(q[0], q[1]); g.lineTo(mid[0], mid[1]); g.closePath(); g.fill();
+        g.fillStyle = 'rgba(60,80,140,.15)'; g.beginPath(); g.moveTo(px, py); for (const q of dark) g.lineTo(q[0], q[1]); g.lineTo(mid[0], mid[1]); g.closePath(); g.fill();
+        g.save(); g.clip(p); g.fillStyle = snow; g.beginPath(); g.moveTo(px - hw, py - 5);
+        for (let x = px - hw; x <= px + hw; x += 10) g.lineTo(x, py + ph * 0.32 + (r() - 0.5) * 14 + Math.abs(x - px) * 0.12);
+        g.lineTo(px + hw, py - 5); g.closePath(); g.fill(); g.restore();
+      }
+      sea(0);
+      return 'Bulut dengizi';
+    },
+    // 2) Bulut minoralari: dengizdan ko'tarilgan to'p-to'p kumuluslar va uzoqdagi sandonsimon bulut
+    function (g, r, sea) {
+      const C = CLOUD_SPR;
+      if (C) {
+        const ax = W * (0.15 + r() * 0.7), cu = C.cumulus[1], st = C.strato[0];
+        g.globalAlpha = 0.35;
+        g.drawImage(cu.c, ax - cu.w * 0.3, HZ1 - 150, cu.w * 0.6, cu.h * 2);
+        g.drawImage(st.c, ax - st.w * 0.45, HZ1 - 185, st.w * 0.9, st.h * 0.7);
+        g.globalAlpha = 0.95;
+        const nt = 3 + (r() < 0.5 ? 1 : 0);
+        for (let i = 0; i < nt; i++) {
+          const s = C.cumulus[i % 3], k = 1.6 + r() * 0.6, w = s.w * k, h = s.h * k * 1.15;
+          g.drawImage(s.c, W * (i + 0.5) / nt - w / 2 + (r() - 0.5) * 60, HZ1 + 48 - h, w, h);
+        }
+        g.globalAlpha = 1;
+      }
+      sea(2);
+      return 'Bulut minoralari';
+    },
+    // 3) Qatlamli bulutlar: yupqa qatlamlar; qish kechalari qutb shafag'i
+    function (g, r, sea) {
+      const C = CLOUD_SPR;
+      if (DAY.season === 'winter' && DAY.night) {
+        g.save(); g.globalCompositeOperation = 'lighter';
+        const ag = g.createLinearGradient(0, 0, 0, 240);
+        ag.addColorStop(0, 'rgba(150,90,255,0)'); ag.addColorStop(0.35, 'rgba(120,120,255,.07)'); ag.addColorStop(0.75, 'rgba(80,255,170,.18)'); ag.addColorStop(1, 'rgba(80,255,170,0)');
+        g.fillStyle = ag;
+        for (let i = 0; i < 46; i++) { g.save(); g.translate(30 + i * 12 + (r() - 0.5) * 4, 20 + Math.sin(i * 0.28) * 36); g.globalAlpha = 0.4 + 0.6 * r(); g.fillRect(0, 0, 6 + r() * 3, 240); g.restore(); }
+        g.restore();
+      }
+      if (C) {
+        const st = C.strato[0];
+        for (let i = 0; i < 4; i++) {
+          const y = 300 + i * 95 + r() * 30, k = 1.4 + r(), hk = 0.7 + r() * 0.3;
+          g.globalAlpha = 0.18 + i * 0.05;
+          for (let x = -r() * st.w * k * 0.5; x < W; x += st.w * k * (0.8 + r() * 0.25)) g.drawImage(st.c, x, y, st.w * k, st.h * hk);
+        }
+        g.globalAlpha = 1;
+      }
+      sea(3);
+      return 'Qatlamli bulutlar';
+    },
+  ];
+  // Osmon: gradient → quyosh/oy → manzara; eng pastki bulut qatori to'p turadigan "pol"ni (H-20..H) yopadi
+  function bgSky(g, rand, v) {
+    const top = skyTop(), seed = Math.floor(rand() * 1e9);
     vgrad(g, [[0, top], [0.65, lerpHex(top, DAY.bot, 0.55)], [1, DAY.bot]]);
-    sunMoon(g, rand, W * 0.2, H * 0.55);
-    const far = DAY.night ? 'rgba(150,165,200,.16)' : DAY.golden ? 'rgba(255,205,185,.3)' : 'rgba(255,255,255,.28)';
-    for (let i = 0; i < 9; i++) cloudShape(g, rand() * W, 250 + rand() * (H - 380), 0.8 + rand() * 0.9, far);
-    // bulut "pol"i — to'p shu ustida turadi
-    for (let x = -20; x < W + 40; x += 34) puff(g, x, H + 4 + rand() * 6, 26 + rand() * 18, nat('#dbe9f7'));
-    for (let x = -10; x < W + 40; x += 30) puff(g, x, H + 10 + rand() * 6, 22 + rand() * 16, nat('#ffffff'));
+    sunMoon(g, prng(seed + 1), 1);
+    const n = DAY.darkK / 0.62, gold = DAY.golden && DAY.sun !== null, r = prng(seed + 2);
+    // bulut dengizi: k0..4 qatorlar, har biri bitta yo'ldan iborat (yuqori yarim yoylar)
+    const sea = k0 => {
+      for (let k = k0; k < 5; k++) {
+        const yk = HZ1 + 28 * k, rk = 10 + 9 * k, far = 1 - k / 4, last = k === 4;
+        const litD = gold ? lerpHex('#ffd9bf', DAY.bot, 0.35 * far) : lerpHex('#ffffff', DAY.bot, 0.5 * far);
+        const lit = lerpHex(litD, '#b9c4e4', n), shd = lerpHex(lerpHex(DAY.bot, '#9fb0c8', 0.6), '#3a4670', n);
+        const gr = g.createLinearGradient(0, yk - rk, 0, last ? H : yk + 30);
+        gr.addColorStop(0, lit);
+        if (last) { gr.addColorStop(0.55, lerpHex(lit, shd, 0.35)); gr.addColorStop(1, DAY.dark ? '#9aa6c4' : '#ffffff'); }
+        else gr.addColorStop(1, shd);
+        g.fillStyle = gr; g.beginPath(); g.moveTo(-30, H + 2);
+        let x = -30 + r() * rk; g.lineTo(x, yk);
+        while (x < W + 30) { const rr = rk * (0.7 + r() * 0.6); g.arc(x + rr, yk + (r() - 0.5) * 6, rr, Math.PI, 0); x += rr * (1.3 + r() * 0.4); }
+        g.lineTo(W + 30, H + 2); g.closePath(); g.fill();
+        if (!last) { g.fillStyle = 'rgba(60,80,120,.12)'; g.fillRect(0, yk + 2, W, 18); }
+        if (k === 2 && DAY.night) for (let i = 0; i < 3 + (r() < 0.5 ? 1 : 0); i++) glow(g, 60 + r() * (W - 120), HZ1 + 70 + r() * 25, 90, 'rgba(255,170,90,.12)');
+      }
+    };
+    return SKY_SCENES[v % 3](g, r, sea);
   }
 
   function bgSpace(g, rand) {
