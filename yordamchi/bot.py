@@ -88,6 +88,7 @@ BUYRUQLAR = [
     {"command": "vaqt", "description": "🕛 Avtojavob soatlari"},
     {"command": "tozala", "description": "🧹 AI suhbat tarixini o'chirish"},
 ]
+AVTO_KECHIK = int(os.environ.get("AVTO_KECHIK") or 120)  # avtojavobdan oldin kutish, soniya
 TOSHKENT = 5 * 3600        # UTC+5, yozgi vaqt yo'q
 REJIMLAR = {"aralash": "⭐ Belgilanganlarga avtojavob, qolganlarga AI",
             "ai": "🤖 Hammaga AI", "avto": "⏰ Hammaga avtojavob", "off": "⛔ O'chiq"}
@@ -417,11 +418,11 @@ def bildir(u, chat_id, c, muhim, tarix):
 
 
 def kutganlarga(db):
-    """Soatdan tashqari yozib, hali javob olmaganlarga avtojavob (soat kirganda)."""
+    """Kutish vaqti o'tgan va egasi hali javob bermaganlarga avtojavob (faqat soatda)."""
     navbat = []
     with _db_lock:
         for kalit, c in db["chatlar"].items():
-            if not c.get("kutyapti"):
+            if not c.get("kutyapti") or c["kutyapti"] > time.time():
                 continue
             conn_id, chat_id = kalit.split(":", 1)
             u = db["ulanish"].get(conn_id) or {}
@@ -472,21 +473,20 @@ def javob_ber(db, conn_id, chat_id, message_id):
             else:
                 ai = ai_bor and e["rejim"] == "ai"
             avto = not ai
-            avto_matn = None
-            if avto and not soatda(e):
-                # Soatdan tashqari: egasi shu orada javob bermasa, soat kirganda yuboriladi.
-                c["kutyapti"] = True
-                print("  avtojavob navbatga qo'yildi: soat %d:00 dan keyin yuboriladi" % e["soat"][0])
-            elif avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
-                c["avto"] = time.time()
-                avto_matn = e["matn"]
+            if avto and time.time() - c.get("avto", 0) >= AVTO_QAYTA:
+                # Darhol emas: egasi shu orada o'zi javob bersa, yuborilmaydi.
+                # Soatdan tashqari bo'lsa — soat kirganda yuboriladi.
+                if not c.get("kutyapti"):
+                    c["kutyapti"] = time.time() + AVTO_KECHIK
+                if soatda(e):
+                    print("  avtojavob %d soniyadan keyin (egasi javob bermasa)" % AVTO_KECHIK)
+                else:
+                    print("  avtojavob navbatga qo'yildi: soat %d:00 dan keyin" % e["soat"][0])
             elif avto:
                 print("  javob yo'q: avtojavob bu odamga %d soat ichida yuborilgan"
                       % (AVTO_QAYTA // 3600))
             tarix = list(c["tarix"])
             ega_nusxa = dict(e)
-        if avto_matn:
-            yubor(c, conn_id, chat_id, avto_matn)
         if not ai:
             return
         call("sendChatAction", chat_id=chat_id, action="typing",
@@ -707,12 +707,12 @@ def main(argv):
     offset, soni, keyingi_saqlash = None, 0, 0
     try:
         while True:
-            timeout = 50
+            timeout = 15                          # kutayotgan avtojavoblar o'z vaqtida ketsin
             if tugash is not None:
                 qoldi = int(tugash - time.time())
                 if qoldi <= 0:
                     break
-                timeout = max(1, min(50, qoldi))
+                timeout = max(1, min(15, qoldi))
             r = call("getUpdates", offset=offset, timeout=timeout,
                      allowed_updates=["message", "callback_query",
                                       "business_connection", "business_message"])
