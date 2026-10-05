@@ -7477,9 +7477,10 @@
       ctx.beginPath();
       for (let i = 0; i < 3; i++) {
         const bx = x + sz * (0.27 + 0.23 * i), by = y + sz - GAP - 6, sw = Math.sin(tick / 50 + i * 2 + ref.s) * 3, d = (i - 1) * 10 || 5, sg = d > 0 ? 1 : -1;
-        ctx.moveTo(bx, by); ctx.bezierCurveTo(bx - 7 * sg, by + 12, bx + d + sw, by + 16, bx + d * 0.7 + sw, by + 34);
-        const rx = bx + d * 0.25 + sw * 0.4, ry = by + 15;
-        ctx.moveTo(rx, ry); ctx.quadraticCurveTo(rx - 9 * sg, ry + 3, rx - 13 * sg, ry + 12);
+        // ildizlar qisqa: pastdagi katakdagi g'isht/narsalarni to'smaydi
+        ctx.moveTo(bx, by); ctx.bezierCurveTo(bx - 5 * sg, by + 7, bx + d * 0.6 + sw, by + 10, bx + d * 0.5 + sw, by + 19);
+        const rx = bx + d * 0.2 + sw * 0.4, ry = by + 9;
+        ctx.moveTo(rx, ry); ctx.quadraticCurveTo(rx - 7 * sg, ry + 2, rx - 10 * sg, ry + 7);
       }
       ctx.strokeStyle = '#3e2614'; ctx.lineWidth = 6.5; ctx.stroke();
       ctx.strokeStyle = '#b08050'; ctx.lineWidth = 3; ctx.stroke();
