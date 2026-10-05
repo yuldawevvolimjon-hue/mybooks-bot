@@ -681,6 +681,9 @@
     if (!same) { canvas.width = cw; canvas.height = ch; }
     scale = canvas.width / W;
     ctrl.style.top = (cssH + 10) + 'px';
+    // Xabar (toast) tugmalar qatorini yopmasin: joy bo'lsa — tugmalar ostida, aks holda — ularning ustida
+    const below = wrap.clientHeight - (cssH + 52);
+    document.getElementById('toast').style.bottom = (below >= 76 ? 8 : below + 60) + 'px';
     FIELD_CSS_H = cssH; paintGround();
     if (same) return;
     resize.done = true;
@@ -5708,7 +5711,9 @@
     if (!ink || typeof ink === 'string') { INK_TMP.fill = ink || '#fff'; ink = INK_TMP; }
     if (!cell || typeof cell !== 'object') cell = null;
     const v = cell && cell.dhp !== undefined ? Math.round(cell.dhp) : n;
-    const fs = (v >= 1000 ? 30 : v >= 100 ? 36 : 42) * NUMK;
+    // zirh ramkasi / ildiz bezagi chetdagi raqamlarni yopmasin — 3+ xonali sonlar biroz kichikroq
+    const deco = cell && v >= 100 && (cell.k === 'regen' || (cell.k === 'arm' && cell.sh > 0));
+    const fs = (v >= 1000 ? 30 : v >= 100 ? 36 : 42) * NUMK * (deco ? 0.86 : 1);
     ctx.font = NUM_FONT[fs] || (NUM_FONT[fs] = `900 ${fs}px Roboto, system-ui, Arial`);
     const L = LIGHT, w = cell && cell.wob > 0.02 ? 1 + cell.wob * 0.14 : 1;
     let px = x, py = y + 2;
@@ -7012,14 +7017,12 @@
     }
 
     // To'plar
-    const labelFont = '800 30px Roboto, Arial, sans-serif';
     if (phase === 'aim' || phase === 'shift' || phase === 'zone' || (phase === 'fire' && shotsLeft > 0)) {
       // turgan to'p ostidagi kontakt soyasi
       ctx.fillStyle = L.moon ? 'rgba(0,0,0,.12)' : 'rgba(0,0,0,.25)';
       ctx.beginPath(); ctx.ellipse(game.launchX, H - 1, R * 1.1, R * 0.3, 0, 0, Math.PI * 2); ctx.fill();
       drawBall(game.launchX, H - R, 0, armed ? { fire: armed === 'fire', heavy: armed === 'heavy' } : null);
-      ctx.fillStyle = ballColor(0); ctx.font = labelFont;
-      ctx.fillText('x' + (phase === 'fire' ? shotsLeft : game.balls), clampLabel(game.launchX), H - R * 2 - 22);
+      countLabel('x' + (phase === 'fire' ? shotsLeft : game.balls), game.launchX);
     }
     if (phase === 'fire') {
       drawTrails();
@@ -7027,8 +7030,7 @@
       if (firstLandX !== null && shotsLeft === 0) {
         const landed = flying.filter(b => b.s === 'done' && !b.temp).length;
         if (landed > 0) {
-          ctx.fillStyle = ballColor(0); ctx.font = labelFont;
-          ctx.fillText('x' + landed, clampLabel(firstLandX), H - R * 2 - 22);
+          countLabel('x' + landed, firstLandX);
         }
       }
     }
@@ -7194,7 +7196,17 @@
     hitAlive = hits;
   }
 
-  function clampLabel(x) { return Math.max(30, Math.min(W - 30, x)); }
+  // To'plar soni yozuvi: to'q chegara bilan (o't, bulut, Yer fonida ham o'qiladi) va devorga kesilmaydi
+  function countLabel(t, x) {
+    ctx.save();
+    ctx.font = '800 30px Roboto, Arial, sans-serif';
+    const w = ctx.measureText(t).width, y = H - R * 2 - 22;
+    x = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, x));
+    ctx.lineJoin = 'round'; ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(10,20,40,.6)';
+    ctx.strokeText(t, x, y);
+    ctx.fillStyle = ballColor(0); ctx.fillText(t, x, y);
+    ctx.restore();
+  }
 
   // To'p spraytlari: rang bo'yicha bir marta chiziladi (yorug'lik tomondagi dog' va yaltiroq nuqta bilan).
   // Kamalak rangi 12 ta tusga bo'lingan. Har to'p — bitta drawImage.
