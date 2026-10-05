@@ -1993,6 +1993,26 @@
   const snap = v => Math.round(v * scale) / scale;
   function blit(img, x, y) { ctx.drawImage(img, snap(x), snap(y), img.width / scale, img.height / scale); }
 
+  // Pastdan yoritish (lava / Yer aksi) har g'isht shakli uchun bir marta chiziladi (pastki 40% tasma):
+  // har kadrda gradiyent emas, faqat shaffofligi o'zgaradigan bitta tez drawImage.
+  const UNDER_SPR = new WeakMap();
+  function underSpr(cell, st, s) {
+    const key = `${LIGHT.z}|${st}|${s}|${cell.s | 0}|${SPR_SCALE}`;
+    let o = UNDER_SPR.get(cell);
+    if (o && o.key === key) return o;
+    const y1 = Math.floor(s * 0.6), c = o ? o.c : document.createElement('canvas');
+    c.width = Math.ceil((s + 8) * scale); c.height = Math.ceil((s - y1 + 4) * scale);
+    const g = c.getContext('2d'), q = s / 94, z = LIGHT.z, col = z === -2 ? '255,120,40' : '110,170,255';
+    g.setTransform(scale, 0, 0, scale, 4 * scale, -y1 * scale);
+    brickPath(g, 0, 0, s, cell, st, true);
+    const gr = g.createLinearGradient(0, 94 * q, 0, (z === -2 ? 0.66 : 0.72) * 94 * q);
+    gr.addColorStop(0, `rgba(${col},1)`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.fill();
+    o = { key, c, y1 };
+    UNDER_SPR.set(cell, o);
+    return o;
+  }
+
   // Yorug'lik qatlami: pastdan yoritish (lava / Yer aksi), zarba chaqnashi, tiklanish nuri.
   // Tungi qorong'ilik va oltin soat iliqligi spraytga "pishirilgan". inClip — g'isht shakli bilan kesilgan bo'lsa
   // to'rtburchak chiziladi, aks holda g'isht shaklining o'zi bo'yaladi (kesish shart emas).
@@ -2004,15 +2024,11 @@
       if (!shaped) { brickPath(ctx, x0, y0, s, cell, st); shaped = true; }
       ctx.fill();
     };
-    if (L.under) {
-      const rowK = Math.max(0, Math.min(1, (ay + s) / H)), q = s / 94;
+    if (L.under) {   // tasma — keshlangan sprayt (siniq g'ishtda kesish yo'li uni shaklga moslaydi)
+      const rowK = Math.max(0, Math.min(1, (ay + s) / H)), u = underSpr(cell, st, s);
       const a = L.z === -2 ? (0.12 + 0.5 * rowK) * (0.8 + 0.2 * Math.sin(tick / 30)) : 0.1 + 0.35 * rowK;
-      if (!shaped) { brickPath(ctx, x0, y0, s, cell, st); shaped = true; }
       ctx.globalAlpha = ga * Math.min(1, a);
-      ctx.translate(x0, y0); ctx.scale(q, q);
-      ctx.fillStyle = L.under;
-      if (inClip) ctx.fillRect(-2, 0, 98, 96); else ctx.fill();
-      ctx.scale(1 / q, 1 / q); ctx.translate(-x0, -y0);
+      blit(u.c, x0 - 4, y0 + u.y1);
       ctx.globalAlpha = ga;
     }
     if (cell.fl > 0.01) { ctx.globalAlpha = ga * cell.fl * 0.3; ctx.fillStyle = '#fff'; fillShape(); ctx.globalAlpha = ga; }
