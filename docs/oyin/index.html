@@ -1988,6 +1988,11 @@
     return c;
   }
 
+  // Spraytni qurilma pikseliga tekislab, o'z o'lchamida chizish: masshtablash va filtrlash bo'lmaydi —
+  // brauzer uni tez "nusxa ko'chirish" yo'li bilan chizadi. x, y — spraytning chap-yuqori burchagi (CSS birlikda).
+  const snap = v => Math.round(v * scale) / scale;
+  function blit(img, x, y) { ctx.drawImage(img, snap(x), snap(y), img.width / scale, img.height / scale); }
+
   // Yorug'lik qatlami: pastdan yoritish (lava / Yer aksi), zarba chaqnashi, tiklanish nuri.
   // Tungi qorong'ilik va oltin soat iliqligi spraytga "pishirilgan". inClip — g'isht shakli bilan kesilgan bo'lsa
   // to'rtburchak chiziladi, aks holda g'isht shaklining o'zi bo'yaladi (kesish shart emas).
@@ -2490,7 +2495,8 @@
   // Yer usti: shaffof shisha idish ichida chayqalayotgan suyuqlik. Suyuqlik sathi = qolgan zarbalar.
   // Butun shishada kesish (clip) kerak emas: suyuqlik shakli shisha tagidagi yumaloq burchaklarni o'zi takrorlaydi.
   function drawLiquid(x, y, cell, t, sz = CELL) {
-    const s = sz - GAP * 2, sh = jitter(cell), x0 = x + GAP + sh, y0 = y + GAP, k = s / 94;
+    // spraytning chap-yuqori burchagi (x0 - 4) qurilma pikseliga tushadi
+    const s = sz - GAP * 2, sh = jitter(cell), x0 = snap(x + GAP + sh - 4) + 4, y0 = snap(y + GAP - 4) + 4, k = s / 94;
     const L = LIGHT, li = liqInfo(cell, t, s), wob = cell.wob || 0, v = cell.v | 0, spr = brickSprite('liquid', cell, 0, sz);
     let sun = 0;   // quyosh orqada bo'lsa sharbat yorishib ko'rinadi
     if (L.src && !L.moon && (L.z === 0 || L.z === 1)) { const d = Math.hypot(x0 + s / 2 - L.src.x, y0 + s / 2 - L.src.y); if (d < 140) sun = 1 - d / 140; }
@@ -2563,7 +2569,7 @@
       ctx.drawImage(fxGlow('255,230,150'), L.src.x - x0 - 140, L.src.y - y0 - 140, 280, 280);
       ctx.globalAlpha = ga;
     }
-    ctx.drawImage(spr, -4, -4, s + 8, s + 8);   // shisha old qatlami (qirra, yaltiroq, tungi soya)
+    ctx.drawImage(spr, -4, -4, spr.width / scale, spr.height / scale);   // shisha old qatlami (qirra, yaltiroq, tungi soya)
     litPass(0, 0, s, cell, 'liquid', y0, clip);
     ctx.restore();
     if (chip) { brickShape(x0, y0, s, cell); ctx.strokeStyle = L.glassEdge || 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke(); }
@@ -2578,11 +2584,11 @@
     if (chip) {
       ctx.save();
       brickShape(x0, y0, s, cell); ctx.clip();
-      ctx.drawImage(spr, x0 - 4, y0 - 4, s + 8, s + 8);
+      blit(spr, x0 - 4, y0 - 4);
       ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.stroke();   // siniq chetlar bo'ylab ichki chegara
-    } else ctx.drawImage(spr, x0 - 4, y0 - 4, s + 8, s + 8);
+    } else blit(spr, x0 - 4, y0 - 4);
     const cl = crackLayer(st, cell, s, cc, ch);   // yoriqlar (rock — ichidan porlashi bilan) keshdan
-    if (cl) ctx.drawImage(cl, x0 - 4, y0 - 4, s + 8, s + 8);
+    if (cl) blit(cl, x0 - 4, y0 - 4);
     litPass(x0, y0, s, cell, st, y0, chip);
     if (chip) ctx.restore();
     number(cell.hp, x + sz / 2 + sh, y + sz / 2, NUM_INK[st], cell);
@@ -2598,7 +2604,7 @@
   function drawCloud(x, y, cell, t, sz = CELL) {
     const s = sz - GAP * 2, h = s / 2, bob = Math.sin(tick / 30 + cell.s) * 1.5;
     const wob = cell.wob || 0, k = wob * 3, sh = jitter(cell) - Math.sin(tick * 1.7) * wob * 3;
-    const cx = x + sz / 2 + sh, cy = y + sz / 2 + bob, dmg = dmgOf(cell), L = LIGHT, chip = dmg > 0.45;
+    const cx = snap(x + sz / 2 + sh - h - 4) + h + 4, cy = snap(y + sz / 2 + bob - h - 4) + h + 4, dmg = dmgOf(cell), L = LIGHT, chip = dmg > 0.45;
     const spr = brickSprite('cloud', cell, t, sz);
     ctx.save();
     ctx.globalAlpha = 1 - dmg * 0.4;
@@ -2608,7 +2614,7 @@
       ctx.strokeStyle = L.night ? 'rgba(150,165,210,.5)' : 'rgba(255,255,255,.65)'; ctx.lineWidth = 2; ctx.stroke();
       ctx.clip();
     }
-    ctx.drawImage(spr, -h - 4, -h - 4, s + 8, s + 8);
+    ctx.drawImage(spr, -h - 4, -h - 4, spr.width / scale, spr.height / scale);
     if (dmg > 0.25) {   // siyraklashgan joylar — bulut orqali osmon ko'rinadi
       const rand = prng(cell.s + 21);
       ctx.fillStyle = L.night ? 'rgba(30,40,80,.35)' : 'rgba(120,180,240,.35)'; ctx.beginPath();
@@ -3049,7 +3055,8 @@
     }
     const ck = SKIN_COL === 'rainbow' ? 'h' + (Math.round(((i * 37 + tick * 3) % 360) / 30) % 12) : SKIN_COL;
     const spr = ballSprite(ck, fire ? 'fire' : heavy ? 'heavy' : 'n'), hs = spr._half * r / spr._r;
-    ctx.drawImage(spr, x - hs, y - hs, hs * 2, hs * 2);
+    if (r === spr._r) { const q = spr.width / scale / 2; ctx.drawImage(spr, snap(x - q), snap(y - q), q * 2, q * 2); }   // o'z o'lchamida — tez
+    else ctx.drawImage(spr, x - hs, y - hs, hs * 2, hs * 2);
   }
   // Harakat izi: uchidan boshiga kengayadigan bitta lenta (joriy yo'lga qo'shiladi)
   const TRAIL_P = new Float32Array(40), TRAIL_N = new Float32Array(40);
