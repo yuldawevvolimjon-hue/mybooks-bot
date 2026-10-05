@@ -96,6 +96,11 @@
   .pips i { flex: 1; max-width: 18px; height: 5px; border-radius: 3px; background: #dde3ea; }
   .pips i.f { background: #2fb34a; }
   .chute button:disabled { background: #9aa5b1; }
+  .diffs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .diffs button { height: 54px; border-radius: 14px; border: 2.5px solid #d4d4d4; background: #fafafa; font-weight: 800; font-size: 17px; color: #16222e; }
+  .diffs button.sel { border-color: #e8432e; background: #fff1ee; }
+  .diffs button.pending { border-color: #2fb34a; background: #effaf1; }
+  #diffBadge { font-size: 14px; margin-left: 1px; vertical-align: super; line-height: 0; }   /* qiyin rejim belgisi — HUDni kengaytirmaydi */
   .chute button { height: 38px; border-radius: 10px; border: 0; background: #e8432e; color: #fff;
                   font-weight: 800; padding: 0 12px; }
   .layers { margin: 8px 0 4px; padding: 0; list-style: none; }
@@ -145,7 +150,7 @@
     </div>
     <div id="scores">
       <div class="rec">RECORD : <span id="record">1</span></div>
-      <div class="sc">LEVEL : <span id="score">1</span></div>
+      <div class="sc">LEVEL : <span id="score">1</span><span id="diffBadge"></span></div>
     </div>
     <div class="btns"><button class="ibtn glass" id="shopBtn" aria-label="Do'kon">
       <svg viewBox="0 0 40 40" aria-hidden="true">
@@ -194,6 +199,9 @@
   <h2>Menyu</h2>
   <button class="big primary" data-close>Davom etish</button>
   <button class="big" id="newGameBtn">Yangi o'yin</button>
+  <h3>Qiyinlik</h3>
+  <div class="diffs" id="diffList"></div>
+  <p class="center" id="diffNote" style="font-size:14px;color:#555"></p>
   <button class="big" id="soundBtn">Ovoz: yoqilgan</button>
   <button class="big" id="musicBtn">Musiqa: yoqilgan</button>
   <button class="big" id="helpBtn">Qanday o'ynaladi?</button>
@@ -244,6 +252,8 @@
   <p>• 📋 <b>Kunlik vazifalar</b> — har kuni 3 ta yangi vazifa. Bajarsangiz «Olish» tugmasi bilan S va P oling; uchalasini olsangiz — kunlik sandiq ochiladi.</p>
   <p>• 🏆 <b>Yutuqlar</b> — rekord, bosslar, sindirilgan g'ishtlar va kombo uchun doimiy nishonlar, har biriga S mukofot.</p>
   <p>• Statistika tugmasidagi <b style="color:#e8432e">qizil nuqta</b> — olinmagan mukofot bor degani.</p>
+  <h3>Qiyinlik</h3>
+  <p>• Menyuda: 😐 <b>Oddiy</b> yoki 🔥 <b>Qiyin</b>. Qiyinda qatorlar deyarli to'la, g'isht joni ×1,25, halqa har qatorda emas, ko'tarilish qiyinroq — lekin tangalar 2 barobar. Rekord har daraja uchun alohida.</p>
   <h3>To'p kuchi</h3>
   <p>• Do'konda S tangaga: 💪 kritik zarba, 🚀 tezlik, 🧲 magnit, ➕ qo'shimcha to'p.</p>
   <p>• P bonusga maxsus zarbalar: 🔥 olovli (g'ishtni teshib o'tadi) va 🔩 po'lat (2× kuch). Otishdan oldin pastdagi tugmani bosing.</p>
@@ -328,7 +338,14 @@
             maxB: 5, coin: 0.25, gem: 0.1, dbl: 0.22, hpK: 1 },
   };
   // Keyingi qatlamga chiqish uchun kerakli ochko: yer ostidan chiqish osonroq, osmonda qiyinroq.
-  const climbNeed = z => z < 0 ? 6 : 10 + 3 * z;
+  // Qiyinlik: oddiy — odatiy o'yin; qiyin — qatorlar deyarli to'la, jon ko'p, halqa kamroq, tanga 2 barobar
+  const DIFFS = {
+    oddiy: { name: 'Oddiy', icon: '😐', hpK: 1, minB: 1, extraB: 0, ring: 1, dblAdd: 0, climbK: 1, coinK: 1 },
+    qiyin: { name: 'Qiyin', icon: '🔥', hpK: 1.25, minB: 3, extraB: 1, ring: 0.7, dblAdd: 0.15, climbK: 1.5, coinK: 2 },
+  };
+  const diffId = () => (typeof game !== 'undefined' && game && DIFFS[game.diff]) ? game.diff : 'oddiy';
+  const diff = () => DIFFS[diffId()];
+  const climbNeed = z => Math.round((z < 0 ? 6 : 10 + 3 * z) * diff().climbK);
   // Balandlik ishora bilan: yer usti 0, yer ostida minus, osmonda plyus
   const altText = z => z > 0 ? '+' + z : z < 0 ? '−' + (-z) : '0';
 
@@ -410,9 +427,11 @@
     };
   }
 
-  function newGame() {
+  function newGame(d) {
+    d = DIFFS[d] ? d : (game && DIFFS[game.diff] ? game.diff : (DIFFS[profile.diff] ? profile.diff : 'oddiy'));
+    profile.diff = d;
     game = { level: 1, balls: 3 + profile.up.start, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0,
-      queue: [], ev: null, era: 0, bossN: 0, nf: 0, lastForm: null };
+      queue: [], ev: null, era: 0, bossN: 0, nf: 0, lastForm: null, diff: d };
     spawnRow(0);
     profile.games++;
     phase = 'aim';
@@ -433,7 +452,7 @@
   // Yangi qator 1-qatorga qo'yiladi (0-qator odatda bo'sh; boss chiqqanda uning yuqori yarmi shu yerda).
   // Ritm: har 10 levelda boss; bossdan keyingi 2 qator — nafas rostlash (siyrak), bossdan oldingi 2 qator — zich.
   function spawnRow(zone) {
-    const Z = ZONES[zone], lv = game.level;
+    const Z = ZONES[zone], lv = game.level, D = diff();
     // 1-qatorda bossning yuqori yarmi turgan bo'lishi mumkin — uni o'chirib yubormaymiz
     const row = game.grid[1] ? [...game.grid[1]] : Array(COLS).fill(null);
     const base = baseHp(lv, zone);
@@ -516,14 +535,14 @@
         ch === 'C' ? (chest || lv < 12 ? mk(hp) : mk(base * 1.5, 'chest')) :
         ch === 'S' ? { t: 'coin' } : ch === 'R' ? ring() : null);
       cols = shuffle(res.dots);
-      if (!res.ring) put(ring());
+      if (!res.ring && Math.random() < D.ring) put(ring());   // qiyinda halqa kafolatlanmagan
       if (ev && ev.id === 'halqa') { put(ring()); put(ring()); }
       if (Math.random() < Z.coin) put({ t: 'coin' });
       if (Math.random() < Z.gem) put({ t: 'gem' });
       if (lv >= 3 && Math.random() < 0.38 + Math.min(0.17, lv / 600)) put({ t: pickSpecial(lv) });
     } else {
       cols = shuffle(free);
-      const rings = 1 + (breather && Math.random() < 0.5 ? 1 : 0) + (ev && ev.id === 'halqa' ? 2 : 0);
+      const rings = (Math.random() < D.ring ? 1 : 0) + (breather && Math.random() < 0.5 ? 1 : 0) + (ev && ev.id === 'halqa' ? 2 : 0);
       for (let k = 0; k < rings; k++) put(ring());
       if (Math.random() < Z.coin) put({ t: 'coin' });
       if (Math.random() < Z.gem) put({ t: 'gem' });
@@ -532,14 +551,14 @@
       }
       // Sandiq: 12-leveldan; har 15 levelda (lv%15===7) albatta, aks holda 3%
       if (lv >= 12 && !chest && (lv % 15 === 7 || Math.random() < 0.03) && i < cols.length) put(mk(base * 1.5, 'chest'));
-      const minB = lv < 20 ? 1 : lv < 50 ? 2 : 3;
-      const maxB = Math.min(cols.length - i, (lv < 5 ? Math.min(3, Z.maxB) : Z.maxB) + (lv >= 40 ? 1 : 0));
-      let nB = breather ? 1 + rnd(2)
+      const maxB = Math.min(cols.length - i, (lv < 5 ? Math.min(3, Z.maxB) : Z.maxB) + (lv >= 40 ? 1 : 0) + D.extraB);
+      const minB = Math.min(maxB, Math.max(lv < 20 ? 1 : lv < 50 ? 2 : 3, lv < 5 ? Math.min(2, D.minB) : D.minB));
+      let nB = breather ? (D.minB > 1 ? 2 : 1) + rnd(2)
         : preBoss ? Math.min(maxB, Math.max(minB, maxB - 1) + rnd(2))
         : minB + rnd(Math.max(0, maxB - minB) + 1);
       nB = Math.max(0, Math.min(nB, maxB));
       for (let k = 0; k < nB; k++) {
-        const dbl = !breather && lv >= 8 && Math.random() < (Z.dbl || (lv >= 30 ? 0.06 : 0));
+        const dbl = !breather && Math.random() < (lv >= 8 ? (Z.dbl || (lv >= 30 ? 0.06 : 0)) : 0) + (lv >= 5 ? D.dblAdd : 0);
         const b = mk(breather ? base * 0.8 : dbl ? base * 2 : base);
         if (dbl) b.dbl = true;
         put(b);
@@ -559,7 +578,7 @@
 
   // Bitta qatorning asosiy joni: level × qatlam og'irligi; 60-leveldan keyin sekin qo'shimcha o'sadi
   function baseHp(lv, z) {
-    return Math.max(1, Math.round(lv * ZONES[z].hpK * (1 + Math.max(0, lv - 60) / 300)));
+    return Math.max(1, Math.round(lv * ZONES[z].hpK * diff().hpK * (1 + Math.max(0, lv - 60) / 300)));
   }
 
   // Shakllar: qatorlar pastdan yuqoriga. B g'isht, D ikki baravar, A zirhli, G ildizli, C sandiq, S tanga, R halqa, '.' bo'sh
@@ -4770,7 +4789,7 @@
       profile.chests = (profile.chests || 0) + 1;
       if (typeof track === 'function') track('chest', 1);
     }
-    if (cell.gold) { profile.coins++; text(cx, cy + 28, '+1 S', '#e0a800'); updateHud(); }
+    if (cell.gold) { const k = diff().coinK; profile.coins += k; text(cx, cy + 28, `+${k} S`, '#e0a800'); updateHud(); }
     addKill();
   }
 
@@ -5044,7 +5063,7 @@
       beep(v === 2 ? 1046 : 880, 0.09, 0.05, 'sine');
       if (typeof track === 'function') track('rings', v);
     }
-    if (cell.t === 'coin') { profile.coins++; text(x, y, '+1 S', '#c98a00'); beep(1200, 0.08, 0.04, 'sine'); }
+    if (cell.t === 'coin') { const k = diff().coinK; profile.coins += k; text(x, y, `+${k} S`, '#c98a00'); beep(1200, 0.08, 0.04, 'sine'); }
     if (cell.t === 'gem')  { profile.gems++;  text(x, y, '+1 P', '#e8432e'); beep(1400, 0.1, 0.04, 'sine'); }
     updateHud();
   }
@@ -7605,11 +7624,25 @@
 
   // ---------- Interfeys ----------
   const $ = id => document.getElementById(id);
+  // Rekord har qiyinlik uchun alohida (oddiy — profile.record, qiyin — profile.recordHard)
+  function recordOf(d) { return d === 'qiyin' ? (profile.recordHard || 1) : profile.record; }
+  function setRecord() {
+    if (diffId() === 'qiyin') profile.recordHard = Math.max(profile.recordHard || 1, game.level);
+    else if (game.level > profile.record) profile.record = game.level;
+  }
+  let pendingDiff = null;
+  function renderDiffs() {
+    $('diffList').innerHTML = Object.entries(DIFFS).map(([id, D]) =>
+      `<button data-diff="${id}" class="${id === diffId() ? 'sel' : ''} ${id === pendingDiff ? 'pending' : ''}">${D.icon} ${D.name}</button>`).join('');
+    $('diffNote').textContent = pendingDiff ? "Yangi o'yin boshlanadi — tasdiqlash uchun yana bosing"
+      : diffId() === 'qiyin' ? "Qiyin: qatorlar to'la, jon ×1,25, halqa kamroq, tanga ×2" : "Oddiy: odatiy o'yin";
+  }
   function updateHud() {
-    if (game.level > profile.record) profile.record = game.level;
+    setRecord();
     bumpNum('coins', profile.coins);
     bumpNum('gems', profile.gems);
-    $('record').textContent = profile.record;
+    $('record').textContent = recordOf(diffId());
+    $('diffBadge').textContent = diffId() === 'qiyin' ? '🔥' : '';
     $('score').textContent = game.level;
     const Z = ZONES[game.zone], need = climbNeed(game.zone);
     const alt = altText(game.zone);
@@ -7664,14 +7697,14 @@
   }
 
   function persist() {
-    if (game.level > profile.record) profile.record = game.level;
+    setRecord();
     store.set({ profile, game });
   }
 
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.remove('show')));
   const soundLabel = () => 'Ovoz: ' + (profile.sound ? 'yoqilgan' : "o'chirilgan");
   const musicLabel = () => 'Musiqa: ' + (profile.music ? 'yoqilgan' : "o'chirilgan");
-  $('menuBtn').onclick = () => { resetNewBtn(); $('soundBtn').textContent = soundLabel(); $('musicBtn').textContent = musicLabel(); show('menuModal'); };
+  $('menuBtn').onclick = () => { pendingDiff = null; renderDiffs(); resetNewBtn(); $('soundBtn').textContent = soundLabel(); $('musicBtn').textContent = musicLabel(); show('menuModal'); };
   $('musicBtn').onclick = () => {
     profile.music = !profile.music; $('musicBtn').textContent = musicLabel(); persist();
     if (profile.music) Music.start(game.zone); else Music.stop();
@@ -7682,6 +7715,15 @@
   $('helpBtn').onclick = () => { hide('menuModal'); show('helpModal'); };
   // Tasdiqlash sahifaning o'zida: birinchi bosish so'raydi, ikkinchisi boshlaydi
   let confirmNew = false;
+  // Qiyinlik tanlash: boshqa darajani ikki bosishda tasdiqlash — yangi o'yin boshlanadi
+  $('diffList').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-diff]'); if (!btn) return;
+    const d = btn.dataset.diff;
+    if (d === diffId() && !pendingDiff) return;
+    if (pendingDiff !== d) { pendingDiff = d; renderDiffs(); return; }
+    pendingDiff = null; hide('menuModal'); effects = []; banner = null; newGame(d);
+    toast(`${DIFFS[d].icon} ${DIFFS[d].name} daraja`);
+  });
   const resetNewBtn = () => { confirmNew = false; $('newGameBtn').textContent = "Yangi o'yin"; };
   $('newGameBtn').onclick = () => {
     if (!confirmNew) { confirmNew = true; $('newGameBtn').textContent = "Ha, joriy o'yin o'chirilsin"; return; }
@@ -7694,7 +7736,7 @@
     checkAch();
     const mz = ZONES[profile.maxZone];
     const rows = [
-      ['Rekord (LEVEL)', profile.record], ['Joriy LEVEL', game.level], ["To'plar soni", game.balls],
+      ['Rekord (oddiy)', profile.record], ['Rekord (🔥 qiyin)', profile.recordHard || 1], ['Qiyinlik', `${diff().icon} ${diff().name}`], ['Joriy LEVEL', game.level], ["To'plar soni", game.balls],
       ['Hozirgi joy', `${ZONES[game.zone].icon} ${ZONES[game.zone].name} (${altText(game.zone)})`], ['Eng baland joy', `${mz.icon} ${mz.name} (${altText(profile.maxZone)})`],
       ["Ko'tarilishlar", profile.climbs], ['Yiqilishlar', profile.falls], ['Yengilgan bosslar', profile.bosses || 0],
       ["Sindirilgan g'ishtlar", profile.bricks], ["Yig'ilgan halqalar", profile.rings],
@@ -7790,7 +7832,7 @@
   // ---------- Yutuqlar (doimiy) ----------
   const ACH_RW = [10, 20, 40, 60, 80, 120];   // daraja bo'yicha S mukofot
   const ACH = [];
-  [['rec', '📈', n => `Rekord ${n}`, n => String(n), [25, 50, 100, 150, 200, 300], () => profile.record],
+  [['rec', '📈', n => `Rekord ${n}`, n => String(n), [25, 50, 100, 150, 200, 300], () => Math.max(profile.record, profile.recordHard || 1)],
    ['boss', '👑', n => n > 1 ? `${n} ta boss yengildi` : 'Birinchi boss', n => String(n), [1, 5, 15, 40], () => profile.bosses],
    ['brick', '🧱', n => `${n / 1000} ming g'isht`, n => n / 1000 + 'k', [1000, 5000, 20000], () => profile.bricks],
    ['combo', '🔥', n => `Kombo ×${n}`, n => '×' + n, [20, 35, 50], () => profile.maxCombo],
@@ -7894,6 +7936,7 @@
         || !(g.level >= 1) || !(g.balls >= 1) || typeof g.launchX !== 'number') return null;
     g.zone = Math.max(ZMIN, Math.min(ZMAX, g.zone | 0));
     g.climb = g.climb | 0;
+    if (!DIFFS[g.diff]) g.diff = 'oddiy';
     // Yangi maydonlar — eski saqlanmalarda bo'lmaydi
     if (!Array.isArray(g.queue)) g.queue = [];
     if (!g.ev || typeof g.ev !== 'object' || !EVENTS.some(e => e.id === g.ev.id)) g.ev = null;
