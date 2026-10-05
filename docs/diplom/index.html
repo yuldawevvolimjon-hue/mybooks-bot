@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Diplom — Sun'iy intellekt</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  :root { --blue: #0457a0; --gold: #fbcf00; --ink: #1d2a3a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 297mm; height: 210mm; background: #fff; }
+  body { font-family: "DejaVu Serif", "Liberation Serif", Georgia, serif; color: var(--ink); }
+
+  .page { position: relative; width: 297mm; height: 210mm; padding: 9mm; }
+  .frame { position: relative; width: 100%; height: 100%; border: 3mm solid var(--blue); padding: 2mm; }
+  .frame-inner { position: relative; width: 100%; height: 100%; border: 1.2mm solid var(--gold);
+    display: flex; flex-direction: column; align-items: center; padding: 8mm 22mm 10mm; }
+
+  /* corner ornaments */
+  .corner { position: absolute; width: 16mm; height: 16mm; border: 1.2mm solid var(--blue); }
+  .tl { top: 3mm; left: 3mm; border-right: none; border-bottom: none; }
+  .tr { top: 3mm; right: 3mm; border-left: none; border-bottom: none; }
+  .bl { bottom: 3mm; left: 3mm; border-right: none; border-top: none; }
+  .br { bottom: 3mm; right: 3mm; border-left: none; border-top: none; }
+
+  /* faint watermark */
+  .watermark { position: absolute; inset: 0; background: url(logo.webp) center 58% / 62% no-repeat; opacity: .05; pointer-events: none; }
+
+  .logo { height: 30mm; }
+  h1 { font-family: "DejaVu Sans", "Liberation Sans", sans-serif; font-weight: 800;
+    font-size: 24mm; line-height: 1; letter-spacing: 5mm; color: var(--blue); margin-top: 1mm; margin-right: -5mm; }
+  .bar { width: 70mm; height: 1.6mm; background: var(--gold); margin: 3mm 0 6mm; }
+  .lead { font-size: 5mm; font-style: italic; }
+  .name { width: 170mm; height: 10mm; margin-top: 4mm; border-bottom: 0.6mm dotted var(--ink); }
+  .name-hint { font-size: 3.2mm; color: #6b7785; margin-top: 1mm; font-family: "DejaVu Sans", sans-serif; }
+  .text { margin-top: 7mm; font-size: 5mm; text-align: center; line-height: 1.6; }
+  .course { display: inline-block; font-family: "DejaVu Sans", sans-serif; font-weight: 700; font-size: 7.5mm;
+    color: var(--blue); text-transform: uppercase; letter-spacing: .6mm; }
+
+  .footer { margin-top: auto; width: 100%; display: flex; justify-content: space-between; align-items: flex-end; }
+  .sign { font-family: "DejaVu Sans", sans-serif; font-size: 4.2mm; width: 80mm; }
+  .sign .dots { font-size: 4.2mm; white-space: nowrap; color: var(--ink); }
+  .sign .label { margin-top: 1mm; font-size: 3.2mm; color: #6b7785; }
+  .sign b { color: var(--blue); }
+
+  .seal { position: relative; width: 44mm; height: 44mm; transform: rotate(-12deg); margin-bottom: -3mm; }
+  .seal svg { width: 100%; height: 100%; }
+  .seal img { position: absolute; left: 50%; top: 50%; width: 23mm; transform: translate(-50%, -50%); opacity: .85; }
+
+  .date { text-align: right; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="frame">
+    <div class="frame-inner">
+      <div class="watermark"></div>
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+
+      <img class="logo" src="logo.webp" alt="Oscar Ta'lim">
+      <h1>DIPLOM</h1>
+      <div class="bar"></div>
+
+      <p class="lead">Ushbu diplom</p>
+      <p class="name"></p>
+      <p class="name-hint">(familiyasi, ismi)</p>
+
+      <p class="text">
+        «Oscar Ta'lim» o'quv markazida<br>
+        <span class="course">«Sun'iy intellekt»</span><br>
+        kursini muvaffaqiyatli tamomlaganligi uchun berildi.
+      </p>
+
+      <div class="footer">
+        <div class="sign">
+          <div class="dots">.......................................</div>
+          <div class="label">imzo</div>
+          <div style="margin-top:2mm"><b>Direktor:</b> X. Sohibjon</div>
+        </div>
+
+        <div class="seal" aria-label="Muhr">
+          <svg viewBox="0 0 200 200">
+            <defs>
+              <path id="ring" d="M100,100 m-74,0 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"/>
+            </defs>
+            <g fill="none" stroke="#0457a0" opacity=".85">
+              <circle cx="100" cy="100" r="96" stroke-width="4"/>
+              <circle cx="100" cy="100" r="90" stroke-width="1.5"/>
+              <circle cx="100" cy="100" r="58" stroke-width="2"/>
+            </g>
+            <text fill="#0457a0" opacity=".9" font-family="DejaVu Sans, sans-serif" font-weight="700" font-size="15" letter-spacing="1.2">
+              <textPath href="#ring" startOffset="0">OSCAR TA'LIM ★ O'QUV MARKAZI ★ DIREKTOR ★</textPath>
+            </text>
+          </svg>
+          <img src="logo.webp" alt="">
+        </div>
+
+        <div class="sign date">
+          <div class="dots">«......» ..................... 20...... y.</div>
+          <div class="label">berilgan sana</div>
+          <div style="margin-top:2mm"><b>Qayd raqami:</b> № ..............</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
