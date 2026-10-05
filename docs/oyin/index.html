@@ -1750,7 +1750,7 @@
   let FX_BUSY = false;   // juda ko'p to'p uchayotganda (60+) mayda jonli bezaklar o'tkazib yuboriladi
   function ensureCaches() {
     if (scale !== SPR_SCALE) {
-      SPR_SCALE = scale; SPR.clear(); BALL_SPR.clear(); BOSS_HALO = null; CRYSTAL_SPR = {}; LIQ_SPR = {};
+      SPR_SCALE = scale; SPR.clear(); BALL_SPR.clear(); BOSS_HALO = null; CRYSTAL_SPR = {}; LIQ_SPR = {}; LIQ_CACHE.clear();
       crystalSpr('#9b7bff', 0); crystalSpr('#5fe0ff', 0);
     }
     const lz = zoneAnim && zoneAnim.t < 0.5 ? zoneAnim.from : game.zone;
@@ -2445,6 +2445,7 @@
     g.addColorStop(0, `rgba(${cs},.5)`); g.addColorStop(1, `rgba(${cs},.86)`);
     o = { s: cs, g, dark: `rgba(${c.map(v => Math.round(v * 0.7)).join(',')},.35)`, ink: { fill: '#fff', edge: `rgba(${ed},.85)` },
       sh: `rgba(${cs},${(LIGHT.a * 1.1).toFixed(3)})` };
+    if (LIQ_CACHE.size > 96) LIQ_CACHE.clear();   // xotira cheklovi (tana spraytlari)
     LIQ_CACHE.set(key, o);
     return o;
   }
@@ -2496,6 +2497,18 @@
     g.stroke();
     return (LIQ_SPR[key] = { c, d, P, y0, h });
   }
+  // Suyuqlik tanasi (pastki yumaloq burchaklari bilan, gradiyentli) — rang bosqichi bo'yicha bir marta chiziladi
+  function liqBody(li, s) {
+    if (li.body) return li.body;
+    const c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = c.height = Math.ceil((s + 8) * scale);
+    g.setTransform(scale, 0, 0, scale, 4 * scale, 4 * scale);
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(s, 0); g.lineTo(s, s - BR); g.arcTo(s, s, s - BR, s, BR); g.lineTo(BR, s); g.arcTo(0, s, 0, s - BR, BR); g.closePath();
+    const gr = g.createLinearGradient(0, 0, 0, s);
+    gr.addColorStop(0, `rgba(${li.s},.5)`); gr.addColorStop(1, `rgba(${li.s},.86)`);
+    g.fillStyle = gr; g.fill();
+    return (li.body = c);
+  }
   const WAVE_P = new Float32Array(34);
   function wavePath(off) {
     ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1] + off);
@@ -2524,15 +2537,20 @@
     if (clip) ctx.clip();
     const lvl = Math.max(0, Math.min(1, (cell.dhp ?? cell.hp) / cell.m));
     const top = s * (1 - (0.22 + 0.78 * lvl)), amp = (2.5 + wob * 7) * (v === 4 ? 0.4 : 1) * k, ph = tick * 0.08 + cell.s;
+    let low = 0;
     for (let i = 0; i <= 16; i++) {   // to'lqin + devor yonida menisk (shisha ustki burchaklaridan chiqmaydi)
       const px = s * i / 16, d = Math.min(px, s - px);
       const py = top + Math.sin(i * 0.675 + ph) * amp - (d < 8 ? 4 * (1 - d / 8) : 0);
       WAVE_P[i * 2] = px;
-      WAVE_P[i * 2 + 1] = Math.max(py, d < BR ? BR - Math.sqrt(BR * BR - (BR - d) * (BR - d)) + 1.5 : 1.5);
+      low = Math.max(low, WAVE_P[i * 2 + 1] = Math.max(py, d < BR ? BR - Math.sqrt(BR * BR - (BR - d) * (BR - d)) + 1.5 : 1.5));
     }
+    // Suyuqlik: to'lqin cho'qqisidan pastki qismi keshlangan spraytdan (gradiyent har kadrda hisoblanmaydi),
+    // ustidagi ingichka to'lqinli qism — jonli. Chegara qurilma piksel chizig'ida: ulanish izi ko'rinmaydi.
+    const body = liqBody(li, s), sy = Math.min(body.height - 1, Math.ceil((low + 4) * scale)), ty = sy / scale - 4;
+    ctx.drawImage(body, 0, sy, body.width, body.height - sy, -4, ty, body.width / scale, (body.height - sy) / scale);
     ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1]);
     for (let i = 1; i <= 16; i++) ctx.lineTo(WAVE_P[i * 2], WAVE_P[i * 2 + 1]);
-    ctx.lineTo(s, s - BR); ctx.arcTo(s, s, s - BR, s, BR); ctx.lineTo(BR, s); ctx.arcTo(0, s, 0, s - BR, BR); ctx.closePath();
+    ctx.lineTo(s, ty); ctx.lineTo(0, ty); ctx.closePath();
     ctx.fillStyle = li.g; ctx.fill();
     ctx.lineJoin = 'bevel'; ctx.lineCap = 'butt';
     if (!FX_BUSY) {   // tubdagi yorug' to'rlar (kaustika) — siljiyotgan tasma; to'p juda ko'p uchganda mayda bezaklar chizilmaydi
