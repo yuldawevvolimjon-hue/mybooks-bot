@@ -5974,7 +5974,7 @@
     return c;
   }
   // Donadorlik ekran pikseliga 1:1 chiziladi (kattalashtirilganda katakchalar ko'rinmasin)
-  function grainFill(g, s, st, cell, a) {
+  function brickGrain(g, s, st, cell, a) {
     const pat = g.createPattern(GRAIN_CV[st] || (GRAIN_CV[st] = makeGrain(st)), 'repeat');
     const ox = ((cell.s | 0) * 13) % 128, oy = ((cell.s | 0) * 7) % 128;
     g.save(); g.setTransform(1, 0, 0, 1, -ox, -oy); g.globalAlpha = a; g.fillStyle = pat;
@@ -6123,7 +6123,7 @@
         g.restore();
         for (let i = 0; i < 3; i++) { const [gx, gy] = decoPos(rand, s, 8 * k); g.fillStyle = 'rgba(255,240,190,.5)'; g.fillRect(gx, gy, 1.6 * k, 1.6 * k); }
       }
-      grainFill(g, s, 'soil', cell, 1);
+      brickGrain(g, s, 'soil', cell, 1);
       rimStroke(g, s, cell, 'soil');
     },
     stone(g, s, cell, t) {
@@ -6201,7 +6201,7 @@
         }
         g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1; g.beginPath(); g.ellipse(gx, gy, gr, gr * 0.85, 0, 0, Math.PI * 2); g.stroke();
       }
-      grainFill(g, s, 'stone', cell, 0.45);
+      brickGrain(g, s, 'stone', cell, 0.45);
       rimStroke(g, s, cell, 'stone');
     },
     cloud(g, s, cell, t) {
@@ -6237,7 +6237,7 @@
       const fb = g.createLinearGradient(0, s * 0.65, 0, s);   // bulut tagi tekis va xiraroq
       fb.addColorStop(0, 'rgba(70,90,130,0)'); fb.addColorStop(1, L.night ? 'rgba(20,28,60,.25)' : 'rgba(70,90,130,.2)');
       g.fillStyle = fb; g.fillRect(-4, s * 0.65, s + 8, s * 0.35 + 4);
-      grainFill(g, s, 'cloud', cell, 0.16);
+      brickGrain(g, s, 'cloud', cell, 0.16);
       // kumush hoshiya: hamma chet xira, nurga qaragan chet yorqin
       brickPath(g, 0, 0, s, cell, 'cloud', true);
       g.lineWidth = 3; g.strokeStyle = L.night ? 'rgba(120,135,180,.45)' : 'rgba(150,170,205,.45)'; g.stroke();
@@ -6295,7 +6295,7 @@
       const tg = g.createLinearGradient(s / 2 - L.lx * s * 0.5, s / 2 - L.ly * s * 0.5, s / 2 + L.lx * s * 0.5, s / 2 + L.ly * s * 0.5);
       tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(0.55, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,.35)');
       g.fillStyle = tg; g.fillRect(-4, -4, s + 8, s + 8);
-      grainFill(g, s, 'rock', cell, 1);
+      brickGrain(g, s, 'rock', cell, 1);
       rimStroke(g, s, cell, 'rock');
     },
   };
