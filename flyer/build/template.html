@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saydali Restaurant&nbsp;— флаер</title>
+<style>
+/*FONTS*/
+img.plov{content:url("PLOV_IMG")}
+:root{
+  --red:#7a1416; --red-deep:#4e0b0d; --red-mid:#951c1f;
+  --gold:#d4a54a; --gold-light:#f1d48c; --gold-dark:#a87a26;
+  --cream:#fbf3e2; --cream-2:#f3e4c4; --brown:#4a2a17; --ink:#3a2014;
+}
+@page{size:A4;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#5b4a3c}
+body{font-family:'Lora',Georgia,serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.sheet{width:210mm;height:297mm;position:relative;overflow:hidden;margin:10mm auto;box-shadow:0 6mm 18mm rgba(0,0,0,.45)}
+@media print{html,body{background:none}.sheet{margin:0;box-shadow:none;page-break-after:always;break-after:page}}
+
+/* ---------- shared ornaments ---------- */
+.frame{position:absolute;inset:7mm;border:0.6mm solid var(--gold);pointer-events:none}
+.frame::after{content:"";position:absolute;inset:1.6mm;border:0.25mm solid var(--gold)}
+.corner{position:absolute;width:24mm;height:24mm}
+.corner.tl{top:4.5mm;left:4.5mm}
+.corner.tr{top:4.5mm;right:4.5mm;transform:scaleX(-1)}
+.corner.bl{bottom:4.5mm;left:4.5mm;transform:scaleY(-1)}
+.corner.br{bottom:4.5mm;right:4.5mm;transform:scale(-1,-1)}
+.divider{display:flex;align-items:center;justify-content:center;gap:3mm;color:var(--gold)}
+.divider i{display:block;height:0.35mm;width:22mm;background:linear-gradient(90deg,transparent,var(--gold))}
+.divider i:last-child{background:linear-gradient(90deg,var(--gold),transparent)}
+.divider svg{width:7mm;height:7mm}
+
+/* ---------- SIDE 1 ---------- */
+.front{background:
+  radial-gradient(ellipse 85% 48% at 50% 46%, #a3262a 0%, var(--red) 45%, var(--red-deep) 100%);
+  color:var(--cream)}
+.front .pattern{position:absolute;inset:0;background-image:url("PATTERN_GOLD");background-size:17mm 17mm;opacity:.09}
+.front .inner{position:absolute;inset:13mm 15mm;display:flex;flex-direction:column;align-items:center;text-align:center}
+.emblem{width:16mm;height:16mm;margin-top:1mm}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:58pt;line-height:1;letter-spacing:.06em;margin-top:2mm;
+  background:linear-gradient(180deg,#fbe7a8 0%,#e3b45a 48%,#b78526 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 .6mm .4mm rgba(0,0,0,.35))}
+.brand-sub{font-family:'Montserrat',sans-serif;font-weight:700;font-size:13pt;letter-spacing:.75em;margin:2.5mm 0 0 .75em;color:var(--gold-light)}
+.slogan{font-family:'Playfair Display',serif;font-style:italic;font-weight:500;font-size:17pt;margin-top:4mm;color:var(--cream)}
+.hero{position:relative;width:104mm;height:104mm;margin-top:4mm;flex:none}
+.hero .halo{position:absolute;inset:-7mm;border-radius:50%;
+  background:radial-gradient(circle,rgba(241,212,140,.35) 0%,rgba(241,212,140,.12) 55%,transparent 70%)}
+.hero .ring{position:absolute;inset:-3.5mm;border-radius:50%;border:0.4mm dashed rgba(241,212,140,.55)}
+.hero img{position:absolute;inset:0;width:100%;height:auto}
+.badge{position:absolute;right:-12mm;top:4mm;width:31mm;height:31mm;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#f7dc94,#d4a54a 55%,#a87a26);color:var(--red-deep);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(10deg);
+  box-shadow:0 1.5mm 4mm rgba(0,0,0,.4);border:0.6mm solid #fbe7a8;outline:0.3mm solid var(--gold-dark);outline-offset:-2mm}
+.badge small{line-height:1.35;font-family:'Montserrat',sans-serif;font-weight:700;font-size:6.2pt;letter-spacing:.14em;text-transform:uppercase}
+.badge b{font-family:'Playfair Display',serif;font-weight:800;font-size:13pt;line-height:1.05;margin:.6mm 0}
+.desc{font-size:11pt;line-height:1.55;max-width:158mm;margin-top:5mm;color:#f6e6c8}
+.desc strong{color:var(--gold-light);font-weight:600}
+.why{margin-top:4.5mm;margin-bottom:5mm;width:100%;background:rgba(251,243,226,.96);color:var(--ink);border-radius:2mm;padding:4.5mm 7mm 5mm;
+  position:relative;box-shadow:0 2mm 6mm rgba(0,0,0,.3);border:0.5mm solid var(--gold)}
+.why h2{font-family:'Playfair Display',serif;font-weight:600;font-size:17pt;color:var(--red);margin-bottom:3mm}
+.why ul{list-style:none;display:flex;flex-wrap:wrap;justify-content:center;gap:2.4mm 4mm}
+.why li{display:flex;align-items:center;gap:2mm;font-size:10.6pt;font-weight:600;background:#fff9ec;border:0.3mm solid #e6cf9d;
+  border-radius:10mm;padding:1.6mm 4.5mm 1.6mm 2.2mm;color:var(--brown)}
+.why li svg{width:5.2mm;height:5.2mm;flex:none}
+.closing{margin-top:auto;width:100%;position:relative;
+  background:linear-gradient(180deg,#f3d48a,#d4a54a 60%,#b98a2f);color:var(--red-deep);
+  font-family:'Playfair Display',serif;font-style:italic;font-weight:600;font-size:14.5pt;padding:3.6mm 6mm;
+  clip-path:polygon(0 0,100% 0,97% 50%,100% 100%,0 100%,3% 50%);box-shadow:0 1mm 3mm rgba(0,0,0,.3)}
+
+/* ---------- SIDE 2 ---------- */
+.back{background:var(--cream);color:var(--ink)}
+.back .pattern{position:absolute;inset:0;background-image:url("PATTERN_RED");background-size:17mm 17mm;opacity:.06}
+.back .frame{border-color:var(--red)}
+.back .frame::after{border-color:var(--gold)}
+.back .inner{position:absolute;inset:17mm 17mm 16mm;display:flex;flex-direction:column}
+.r-head{position:relative;flex:none;background:radial-gradient(ellipse at 50% 0%,#9a2124,var(--red) 60%,var(--red-deep));color:var(--cream);
+  text-align:center;padding:7mm 8mm 6mm;border-radius:2mm;box-shadow:0 1.5mm 4mm rgba(78,11,13,.35);overflow:hidden}
+.r-head .pattern{opacity:.1;background-image:url("PATTERN_GOLD")}
+.r-head h1{position:relative;font-family:'Playfair Display',serif;font-weight:800;font-size:36pt;letter-spacing:.06em;
+  background:linear-gradient(180deg,#fbe7a8,#e3b45a 50%,#c49233);-webkit-background-clip:text;background-clip:text;color:transparent}
+.r-head p{position:relative;font-family:'Playfair Display',serif;font-style:italic;font-size:14pt;margin-top:1.5mm;color:#f6e6c8}
+.r-head .divider{position:relative;margin-top:2.5mm}
+.r-body{display:grid;grid-template-columns:62mm 1fr;gap:7mm;margin-top:7mm;flex:1;min-height:0}
+.card{background:#fffaf0;border:0.4mm solid #e2c88f;border-radius:2mm;padding:5mm 5.5mm;position:relative;box-shadow:0 1mm 3mm rgba(74,42,23,.12)}
+.card::before{content:"";position:absolute;inset:1.3mm;border:0.2mm dashed #e2c88f;border-radius:1.4mm;pointer-events:none}
+.sec-title{font-family:'Playfair Display',serif;font-weight:600;font-size:17pt;color:var(--red);display:flex;align-items:center;gap:2.5mm;
+  padding-bottom:2mm;margin-bottom:3mm;border-bottom:0.4mm solid var(--gold)}
+.sec-title svg{width:7mm;height:7mm;flex:none}
+.ingr ul{list-style:none}
+.ingr li{display:flex;align-items:baseline;gap:2.5mm;font-size:11.6pt;padding:1.75mm 0;border-bottom:0.2mm dotted #d9bf88}
+.ingr li:last-child{border-bottom:none}
+.ingr li::before{content:"";width:2mm;height:2mm;background:var(--gold);transform:rotate(45deg) translateY(-.3mm);flex:none}
+.ingr li b{color:var(--red);font-weight:600;white-space:nowrap}
+.side-col{display:flex;flex-direction:column;gap:6mm}
+.mini{display:flex;flex-direction:column;align-items:center;text-align:center}
+.mini img{width:50mm;height:auto}
+.mini span{font-family:'Playfair Display',serif;font-style:italic;font-size:10.5pt;color:var(--brown);margin-top:1mm}
+.steps ol{list-style:none;counter-reset:s}
+.steps li{counter-increment:s;display:grid;grid-template-columns:9mm 1fr;gap:3.2mm;align-items:start;font-size:11.3pt;line-height:1.42;padding:2.1mm 0}
+.steps li+li{border-top:0.2mm dotted #d9bf88}
+.steps li::before{content:counter(s);width:8.5mm;height:8.5mm;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 35% 30%,#a42a2d,var(--red) 60%,var(--red-deep));color:var(--gold-light);
+  font-family:'Playfair Display',serif;font-weight:800;font-size:12pt;box-shadow:0 0 0 .5mm #fffaf0,0 0 0 .8mm var(--gold)}
+.steps li span{padding-top:1.1mm}
+.r-foot{margin-top:6mm;margin-bottom:4mm;flex:none;text-align:center;background:radial-gradient(ellipse at 50% 100%,#9a2124,var(--red) 60%,var(--red-deep));
+  color:var(--cream);border-radius:2mm;padding:4.5mm 6mm;position:relative;overflow:hidden}
+.r-foot .pattern{opacity:.1;background-image:url("PATTERN_GOLD")}
+.r-foot p{position:relative;font-family:'Playfair Display',serif;font-style:italic;font-size:14pt}
+.r-foot p.big{font-style:normal;font-weight:800;font-size:22pt;letter-spacing:.04em;margin-top:1mm;
+  background:linear-gradient(180deg,#fbe7a8,#e3b45a 50%,#c49233);-webkit-background-clip:text;background-clip:text;color:transparent}
+.r-brand{position:absolute;bottom:9.8mm;left:0;right:0;text-align:center;font-family:'Montserrat',sans-serif;font-weight:700;
+  font-size:7pt;letter-spacing:.5em;color:var(--red)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="star8" viewBox="0 0 40 40">
+      <path d="M20 2 L24.5 10.5 L33 7 L29.5 15.5 L38 20 L29.5 24.5 L33 33 L24.5 29.5 L20 38 L15.5 29.5 L7 33 L10.5 24.5 L2 20 L10.5 15.5 L7 7 L15.5 10.5Z" fill="currentColor"/>
+      <circle cx="20" cy="20" r="6.5" fill="none" stroke="#fff8e6" stroke-width="1.6"/>
+      <circle cx="20" cy="20" r="2.4" fill="#fff8e6"/>
+    </symbol>
+    <symbol id="corner" viewBox="0 0 100 100">
+      <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M6 94 V30 Q6 6 30 6 H94"/>
+        <path d="M14 94 V36 Q14 14 36 14 H94" stroke-width="1"/>
+        <path d="M22 60 Q22 22 60 22" stroke-width="1.4"/>
+        <path d="M30 30 Q44 26 52 34 Q58 42 50 48 Q42 52 38 44 Q36 38 42 36"/>
+        <path d="M30 30 Q26 44 34 52 Q42 58 48 50 Q52 42 44 38" />
+      </g>
+      <path d="M30 30 L24 24 M24 24 Q18 16 24 10 Q30 16 24 24 Q16 18 10 24 Q16 30 24 24" fill="currentColor"/>
+      <circle cx="94" cy="6" r="3" fill="currentColor"/><circle cx="6" cy="94" r="3" fill="currentColor"/>
+      <circle cx="70" cy="22" r="2" fill="currentColor"/><circle cx="22" cy="70" r="2" fill="currentColor"/>
+    </symbol>
+    <symbol id="bodom" viewBox="0 0 24 24">
+      <path d="M12 2 C18 7 19 14 12 22 C5 14 6 7 12 2Z" fill="currentColor"/>
+      <path d="M12 7 C15 10 15 14 12 18 C9 14 9 10 12 7Z" fill="#fff8e6"/>
+      <circle cx="12" cy="12.5" r="1.6" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ======================= SIDE 1 ======================= -->
+<section class="sheet front">
+  <div class="pattern"></div>
+  <div class="frame"></div>
+  <svg class="corner tl" style="color:#d4a54a"><use href="#corner"/></svg>
+  <svg class="corner tr" style="color:#d4a54a"><use href="#corner"/></svg>
+  <svg class="corner bl" style="color:#d4a54a"><use href="#corner"/></svg>
+  <svg class="corner br" style="color:#d4a54a"><use href="#corner"/></svg>
+
+  <div class="inner">
+    <svg class="emblem" style="color:#d4a54a"><use href="#star8"/></svg>
+    <div class="brand">SAYDALI</div>
+    <div class="brand-sub">RESTAURANT</div>
+    <div class="divider" style="margin-top:3mm"><i></i><svg style="color:#d4a54a"><use href="#bodom"/></svg><i></i></div>
+    <div class="slogan">«Вкус Узбекистана в каждом блюде!»</div>
+
+    <div class="hero">
+      <div class="halo"></div>
+      <div class="ring"></div>
+      <img class="plov" alt="Узбекский плов">
+      <div class="badge"><small>Фирменное</small><small>блюдо</small><b>Узбекский<br>плов</b></div>
+    </div>
+
+    <p class="desc">Добро пожаловать в <strong>Saydali Restaurant</strong>&nbsp;— место, где традиционная узбекская кухня сочетается с уютной атмосферой. Наше фирменное блюдо&nbsp;— <strong>настоящий узбекский плов</strong>, приготовленный по традиционному рецепту.</p>
+
+    <div class="why">
+      <h2>Почему стоит посетить нас?</h2>
+      <ul>
+        <li><svg style="color:#7a1416"><use href="#star8"/></svg>Традиционная узбекская кухня</li>
+        <li><svg style="color:#7a1416"><use href="#star8"/></svg>Свежие и качественные продукты</li>
+        <li><svg style="color:#7a1416"><use href="#star8"/></svg>Уютная атмосфера</li>
+        <li><svg style="color:#7a1416"><use href="#star8"/></svg>Большие и вкусные порции</li>
+        <li><svg style="color:#7a1416"><use href="#star8"/></svg>Настоящий домашний вкус</li>
+      </ul>
+    </div>
+
+    <div class="closing">«Saydali Restaurant&nbsp;— попробуйте вкус настоящего Узбекистана!»</div>
+  </div>
+</section>
+
+<!-- ======================= SIDE 2 ======================= -->
+<section class="sheet back">
+  <div class="pattern"></div>
+  <div class="frame"></div>
+  <svg class="corner tl" style="color:#7a1416"><use href="#corner"/></svg>
+  <svg class="corner tr" style="color:#7a1416"><use href="#corner"/></svg>
+  <svg class="corner bl" style="color:#7a1416"><use href="#corner"/></svg>
+  <svg class="corner br" style="color:#7a1416"><use href="#corner"/></svg>
+
+  <div class="inner">
+    <header class="r-head">
+      <div class="pattern" style="position:absolute;inset:0;background-size:17mm 17mm"></div>
+      <h1>УЗБЕКСКИЙ ПЛОВ</h1>
+      <div class="divider"><i></i><svg style="color:#d4a54a"><use href="#bodom"/></svg><i></i></div>
+      <p>Традиционный рецепт Saydali Restaurant</p>
+    </header>
+
+    <div class="r-body">
+      <div class="side-col">
+        <div class="card ingr">
+          <h2 class="sec-title"><svg style="color:#d4a54a"><use href="#star8"/></svg>Ингредиенты:</h2>
+          <ul>
+            <li><span><b>500 г</b> риса</span></li>
+            <li><span><b>500 г</b> мяса</span></li>
+            <li><span><b>500 г</b> моркови</span></li>
+            <li><span><b>2</b> луковицы</span></li>
+            <li><span><b>100 мл</b> растительного масла</span></li>
+            <li><span><b>1</b> головка чеснока</span></li>
+            <li><span>соль и специи</span></li>
+            <li><span>вода</span></li>
+          </ul>
+        </div>
+        <div class="mini">
+          <img class="plov" alt="Узбекский плов">
+          <span>Фирменное блюдо Saydali</span>
+        </div>
+      </div>
+
+      <div class="card steps">
+        <h2 class="sec-title"><svg style="color:#d4a54a"><use href="#star8"/></svg>Способ приготовления</h2>
+        <ol>
+          <li><span>Хорошо промойте рис и замочите его в воде.</span></li>
+          <li><span>Нарежьте мясо небольшими кусочками. Лук нарежьте полукольцами, а морковь&nbsp;— тонкой соломкой.</span></li>
+          <li><span>Разогрейте масло в казане и обжарьте мясо до золотистой корочки.</span></li>
+          <li><span>Добавьте лук и морковь. Обжаривайте несколько минут.</span></li>
+          <li><span>Добавьте воду, соль и специи. Положите целую головку чеснока и приготовьте зирвак.</span></li>
+          <li><span>Добавьте рис и равномерно распределите его сверху.</span></li>
+          <li><span>Готовьте на среднем огне, пока рис не впитает воду.</span></li>
+          <li><span>Накройте казан крышкой и оставьте на слабом огне ещё на 15–20 минут.</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <footer class="r-foot">
+      <div class="pattern" style="position:absolute;inset:0;background-size:17mm 17mm"></div>
+      <p>«Ароматный и настоящий узбекский плов готов!»</p>
+      <p class="big">«Приятного аппетита!»</p>
+    </footer>
+  </div>
+  <div class="r-brand">SAYDALI RESTAURANT</div>
+</section>
+</body>
+</html>
