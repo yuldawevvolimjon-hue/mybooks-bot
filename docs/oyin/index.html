@@ -102,9 +102,34 @@
   .layers li { padding: 4px 0; }
   .center { text-align: center; }
   #toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #16222e;
+           width: max-content; max-width: calc(100vw - 32px); text-align: center;
            color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 600; opacity: 0;
            transition: opacity .25s; pointer-events: none; z-index: 20; }
   #toast.show { opacity: 1; }
+  /* ---------- Kunlik vazifalar, yutuqlar va HUD belgilari ---------- */
+  .ibtn { position: relative; }
+  .ibtn.dot::after { content: ''; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px;
+                     border-radius: 50%; background: #e8432e; box-shadow: 0 0 0 2px rgba(255,255,255,.9); }
+  #coins, #gems { display: inline-block; }
+  .bump { animation: bump .25s ease-out; }
+  @keyframes bump { from { transform: scale(1.25); } to { transform: scale(1); } }
+  .missions { display: grid; gap: 8px; }
+  .chute.mis { padding: 8px 10px; gap: 10px; }
+  .chute.mis .em { font-size: 26px; }
+  .chute.mis .bar { height: 7px; margin-top: 6px; background: #e3e8ee; }
+  .chute.mis.done { border-color: #2fb34a; background: #f1fbf3; }
+  .chute.mis.got { opacity: .55; }
+  .chute.mis button { background: #2fb34a; min-width: 64px; }
+  .chute.mis button:disabled { background: #9aa5b1; }
+  .chute.mis.box { border-style: dashed; }
+  .chute.mis.box.open { border-style: solid; border-color: #f2c94c; background: #fff8e1; opacity: 1; }
+  .achs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .ach { position: relative; aspect-ratio: 1; border-radius: 12px; border: 2px solid #f2c94c; background: #fff6d8;
+         display: grid; place-items: center; font-size: 21px; padding: 0 0 9px; cursor: pointer; }
+  .ach small { position: absolute; left: 0; right: 0; bottom: 2px; text-align: center; font-size: 10px;
+               font-weight: 800; color: #6b5300; }
+  .ach.off { filter: grayscale(1); opacity: .38; background: #f1f1f1; border-color: #d4d4d4; }
+  #achInfo { min-height: 20px; margin-top: 6px; text-align: center; font-size: 13px; color: #555; }
 </style>
 </head>
 <body>
@@ -178,17 +203,47 @@
   <h2>Qanday o'ynaladi?</h2>
   <p>• Barmog'ingiz bilan nishonga oling va qo'yib yuboring: barcha to'plar ketma-ket uchadi.</p>
   <p>• G'ishtdagi raqam — uni sindirish uchun kerakli zarbalar soni.</p>
-  <p>• <b style="color:#2fb34a">Yashil halqa</b> +1 to'p beradi.</p>
+  <p>• <b style="color:#2fb34a">Yashil halqa</b> +1 to'p beradi, <b style="color:#c98a00">oltin halqa</b> esa +2.</p>
   <p>• O'yin <b>hech qachon tugamaydi</b> — har yurishda LEVEL oshib boradi.</p>
+  <p>• To'plar ko'payganda yurish o'zi tezlashadi; maydonda g'isht qolmasa, to'plar o'zi qaytadi.</p>
   <h3>Maxsus narsalar</h3>
   <ul class="layers">
     <li>💣 <b>Bomba</b> — atrofidagi 8 ta g'ishtga katta zarba</li>
     <li>⚡ <b>Chaqmoq</b> — har to'p o'tganda butun qator yoki ustunni uradi</li>
+    <li>✚ <b>Xoch</b> — qator va ustunni birdaniga uradi</li>
+    <li>🚀 <b>Raketa</b> — eng kuchli g'ishtga zarba beradi</li>
+    <li>🔗 <b>Zanjir</b> — eng yaqin 4 ta g'ishtga chaqmoq uradi</li>
     <li>🔀 <b>Bo'luvchi</b> — to'pni ikkiga ajratadi</li>
     <li>❄️ <b>Muzlatgich</b> — keyingi yurishda g'ishtlar pastga tushmaydi</li>
-    <li>👑 <b>Boss</b> — har 10-levelda; yengsangiz +15 S, +3 P, +2 to'p</li>
     <li>🔥 <b>Kombo</b> — bir otishda har 5 g'isht uchun +1 S</li>
   </ul>
+  <h3>G'ishtlar</h3>
+  <ul class="layers">
+    <li>🧱 <b>Shakllar</b> — 10-leveldan g'ishtlar devor, shaxmat, piramida, zigzag, koridor, ustunlar va qal'a bo'lib tushadi</li>
+    <li>🛡️ <b>Zirhli</b> — oddiy zarbaning har ikkinchisini qaytaradi; kritik, 🔩 va 🔥 zarba zirhni sindiradi</li>
+    <li>🌱 <b>Ildizli</b> — urilmasa har yurish jonini tiklaydi</li>
+    <li>🎁 <b>Sandiq</b> — sindirsangiz sovg'a (S, P, zarba, parashyut yoki to'p). Pastga yetsa yo'qoladi, yiqitmaydi</li>
+  </ul>
+  <h3>Bosslar</h3>
+  <p>• Har 10-levelda boss chiqadi: oldidan 2 qator zich, keyin 2 qator siyrak. Har qatlamning o'z bossi bor:</p>
+  <ul class="layers">
+    <li>🏺 <b>Ko'za qiroli</b> (yer usti) — qo'shni g'ishtlarni tuzatadi</li>
+    <li>🌪️ <b>Bo'ron</b> (osmon) — har yurish yangi g'isht chiqaradi</li>
+    <li>🕳️ <b>Qora tuynuk</b> (koinot) — to'plarni o'ziga tortadi</li>
+    <li>🌳 <b>Ildiz ona</b> (yer osti) — urilmasa o'sadi</li>
+    <li>💠 <b>Kristall golem</b> (chuqurlik) — juft levelda qalqon tutadi</li>
+  </ul>
+  <p>• Yengsangiz S tanga, +3 P, +2 to'p va +3 ko'tarilish; har yengilgan boss bilan sovg'a oshib boradi.</p>
+  <h3>Hodisalar</h3>
+  <p>• Har 7 levelda (14, 21, 28…) qatlamga mos hodisa bo'ladi: 🌬️ shamol, ✨ oltin g'ishtlar, 💚 halqa yomg'iri, 🌍 zilzila, 🌋 lava toshqini, 💎 kristall qatori, ☀️ quyosh zarbasi. Qancha qolgani tepada, ko'tarilish chizig'i ostida ko'rinadi.</p>
+  <h3>Davrlar, manzillar va topilmalar</h3>
+  <p>• 🎨 Har 25 levelda yangi davr — g'ishtlar yangi materialga o'tadi.</p>
+  <p>• 🌄 Har 10 levelda yangi manzil: yer usti va osmon manzarasi almashadi; yer osti, chuqurlik va koinot har kelganingizda boshqacha.</p>
+  <p>• 🦴 <b>Topilmalar</b> — yer osti, chuqurlik va koinotda qadimiy va noyob narsalar yashiringan. Topganlaringiz statistikada sanaladi.</p>
+  <h3>Kunlik vazifalar va yutuqlar</h3>
+  <p>• 📋 <b>Kunlik vazifalar</b> — har kuni 3 ta yangi vazifa. Bajarsangiz «Olish» tugmasi bilan S va P oling; uchalasini olsangiz — kunlik sandiq ochiladi.</p>
+  <p>• 🏆 <b>Yutuqlar</b> — rekord, bosslar, sindirilgan g'ishtlar va kombo uchun doimiy nishonlar, har biriga S mukofot.</p>
+  <p>• Statistika tugmasidagi <b style="color:#e8432e">qizil nuqta</b> — olinmagan mukofot bor degani.</p>
   <h3>To'p kuchi</h3>
   <p>• Do'konda S tangaga: 💪 kritik zarba, 🚀 tezlik, 🧲 magnit, ➕ qo'shimcha to'p.</p>
   <p>• P bonusga maxsus zarbalar: 🔥 olovli (g'ishtni teshib o'tadi) va 🔩 po'lat (2× kuch). Otishdan oldin pastdagi tugmani bosing.</p>
@@ -209,6 +264,12 @@
 
 <div class="modal" id="statsModal"><div class="card">
   <h2>Statistika</h2>
+  <h3>Bugungi vazifalar</h3>
+  <div id="missionList" class="missions"></div>
+  <h3>Yutuqlar</h3>
+  <div id="achList" class="achs"></div>
+  <div id="achInfo"></div>
+  <h3>Ko'rsatkichlar</h3>
   <div id="statsList"></div>
   <button class="big primary" data-close>Yopish</button>
 </div></div>
@@ -307,10 +368,16 @@
     record: 1, coins: 0, gems: 0, sound: true, music: true, skin: 'blue', owned: ['blue'],
     games: 0, bricks: 0, rings: 0, helpSeen: false, chutes: 0, falls: 0, climbs: 0, maxZone: 0,
     up: {}, boost: {},
+    visits: {}, finds: [], seen: {}, daily: null, ach: [], maxCombo: 0, chests: 0, bosses: 0,
   }, saved.profile || {});
 
   profile.up = Object.assign({ power: 0, speed: 0, magnet: 0, start: 0 }, profile.up);
   profile.boost = Object.assign({ fire: 0, heavy: 0 }, profile.boost);
+  // Eski saqlanmalar: yangi maydonlar yo'q yoki noto'g'ri turda bo'lishi mumkin
+  for (const k of ['visits', 'seen']) if (!profile[k] || typeof profile[k] !== 'object' || Array.isArray(profile[k])) profile[k] = {};
+  for (const k of ['finds', 'ach']) if (!Array.isArray(profile[k])) profile[k] = [];
+  for (const k of ['maxCombo', 'chests', 'bosses']) profile[k] = Math.max(0, +profile[k] || 0);
+  if (!profile.daily || typeof profile.daily !== 'object' || !Array.isArray(profile.daily.list)) profile.daily = null;
   const ballSpeed = () => SPEED * (1 + 0.06 * profile.up.speed);
   let armed = null, shotBoost = null;   // tanlangan maxsus zarba / joriy otishniki
 
@@ -328,6 +395,8 @@
   let aim = null;
   let effects = [];
   let tick = 0;
+  let autoRecall = false;   // shu yurishda maydon tozalanib, to'plar o'zi qaytarildimi
+  const HUD_PREV = {};      // HUD dagi S va P ning oldingi qiymati (oshganda "sakraydi")
 
   const emptyGrid = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null));
   const rnd = n => Math.floor(Math.random() * n);
@@ -342,7 +411,8 @@
   }
 
   function newGame() {
-    game = { level: 1, balls: 3 + profile.up.start, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0 };
+    game = { level: 1, balls: 3 + profile.up.start, launchX: W / 2, grid: emptyGrid(), zone: 0, climb: 0,
+      queue: [], ev: null, era: 0, bossN: 0, nf: 0, lastForm: null };
     spawnRow(0);
     profile.games++;
     phase = 'aim';
@@ -356,6 +426,7 @@
 
   function resetTurn() {
     flying = []; shotsLeft = 0; firstLandX = null; extraBalls = 0; turnTime = 0; fast = false;
+    autoRecall = false;
     updateCtrl();
   }
 
@@ -4528,9 +4599,12 @@
     turnTime++;
     if (shotsLeft > 0) {
       if (fireTimer <= 0) {
-        newBall(game.launchX, H - R, fireDir.x * ballSpeed(), fireDir.y * ballSpeed(), false);
+        const vx = fireDir.x * ballSpeed(), vy = fireDir.y * ballSpeed();
+        newBall(game.launchX, H - R, vx, vy, false);
         shotsLeft--;
-        fireTimer = FIRE_GAP;
+        // 160+ to'pda bir qadamda 2 ta to'p: ikkinchisi yarim qadam oldinda (bir-birini yopmaydi)
+        if (game.balls >= 160 && shotsLeft > 0) { newBall(game.launchX + vx * 0.5, H - R + vy * 0.5, vx, vy, false); shotsLeft--; }
+        fireTimer = fireGap();
       }
       fireTimer--;
     }
@@ -4538,6 +4612,12 @@
       const b = flying[k];
       if (b.s === 'fly') moveBall(b);
       else if (b.s === 'slide' || b.s === 'recall') slideBall(b);
+    }
+    // Maydonda birorta g'isht qolmasa — to'plar o'zi qaytariladi (yurishga bir marta; to'plar soni o'zgarmaydi)
+    if (!autoRecall && turnTime > 30 && turnTime % 10 === 0 && !game.grid.some(row => row.some(isSolid))) {
+      autoRecall = true;
+      recall();
+      pushFx({ k: 'tag', str: '✨ Maydon toza!', life: 90, x: W / 2, y: 180, color: '#ffffff' });
     }
     if (shotsLeft === 0 && flying.every(b => b.s === 'done' || b.s === 'gone')) endTurn();
     if (turnTime === 60) updateCtrl();
@@ -5008,6 +5088,13 @@
     }
     const bonus = Math.floor(turnKills / 5);
     if (bonus > 0) { profile.coins += bonus; text(W / 2, H * 0.62, `+${bonus} S kombo bonusi`, '#c98a00'); }
+    if (turnKills > profile.maxCombo) profile.maxCombo = turnKills;
+    track('combo', turnKills);
+    // Hodisa: yurishlar sanog'i kamayadi; yurishi ham, qatori ham qolmasa — tugaydi
+    if (game.ev) {
+      if (game.ev.turns > 0) game.ev.turns--;
+      if ((game.ev.turns || 0) <= 0 && (game.ev.rows || 0) <= 0) game.ev = null;
+    }
     updateCtrl();
     if (game.freeze > 0) {   // muzlatilgan: g'ishtlar joyida qoladi
       game.freeze--;
@@ -5025,6 +5112,7 @@
 
   // Qatorlar pastga surilgach: yiqilish / ko'tarilish hisoblanadi. O'yin hech qachon tugamaydi.
   function finishShift() {
+    if (typeof preShift === 'function') preShift();   // ildizli g'ishtlar tiklanadi (E1)
     const g = game.grid;
     for (let r = ROWS - 1; r > 0; r--) g[r] = g[r - 1];
     g[0] = Array(COLS).fill(null);
@@ -5033,22 +5121,29 @@
     for (let c = 0; c < COLS; c++) {
       const cell = last[c];
       if (!cell) continue;
-      if (isSolid(cell)) fell = true;
+      const x = c * CELL + CELL / 2, y = (ROWS - 1) * CELL + CELL / 2;
+      if (cell.t === 'brick' && cell.k === 'chest') {   // sandiq yiqitmaydi — shunchaki yo'qoladi
+        last[c] = null;
+        pushFx({ k: 'c', x, y, life: 26, size: 24 });
+        pushFx({ k: 'tag', str: "🎁 Sandiq yo'qoldi", life: 90, x: W / 2, y: 230, color: '#ffcf3a' });
+      } else if (isSolid(cell)) fell = true;
       else {   // pastga yetgan halqa va tangalar avtomatik yig'iladi, boshqalari yo'qoladi
-        if (cell.t === 'ring') game.balls++;
+        if (cell.t === 'ring') { game.balls++; profile.rings++; track('rings', 1); }
         if (cell.t === 'coin') profile.coins++;
         if (cell.t === 'gem') profile.gems++;
         last[c] = null;
       }
     }
     game.level++;
-    const from = game.zone;
+    const lv = game.level, from = game.zone;
     let to = from;
 
     if (fell) {
       profile.falls++;
       game.climb = 0;
+      game.nf = 0;
       shake = 22;
+      if (typeof worldReact === 'function') worldReact('quake');
       if (profile.chutes > 0) {
         profile.chutes--;
         clearRows(ROWS - 3);
@@ -5062,8 +5157,11 @@
         clearRows(ROWS - 3);
         showBanner('🌋 Lava g\'ishtlarni eritdi', 'Bundan chuqurroq joy yo\'q — yuqoriga intiling!');
         beep(140, 0.5, 0.07, 'sawtooth');
+        if (typeof worldReact === 'function') worldReact('lava');
       }
     } else {
+      game.nf = (game.nf || 0) + 1;      // yiqilmasdan o'tilgan levellar
+      track('nofall', game.nf);
       // Eng pastdagi g'isht qatori
       let lowest = -1;
       for (let r = 0; r < ROWS; r++) if (g[r].some(isSolid)) lowest = r;
@@ -5076,16 +5174,27 @@
           profile.climbs++;
           showBanner(`${ZONES[to].icon} ${ZONES[to].name} ${altText(to)}`, from < 0 ? 'Yuqoriga chiqdingiz!' : "Yuqoriga ko'tarildingiz!");
           beep(660, 0.15, 0.05, 'sine'); setTimeout(() => beep(990, 0.2, 0.05, 'sine'), 140);
+          if (typeof worldReact === 'function') worldReact('rise');
+          track('climb', 1);
         } else {
           profile.coins += 10;
           showBanner('🌟 Cho\'qqi bonusi', '+10 S tanga');
         }
       }
     }
+    // Hodisa: har 7 levelda (boss levellaridan tashqari), qatlam o'zgarmagan va yiqilmagan bo'lsa
+    if (!fell && to === from && !game.ev && lv >= 14 && lv % 7 === 0 && lv % 10 !== 0) startEvent(to);
     game.zone = to;
     if (to > profile.maxZone) profile.maxZone = to;
     spawnRow(to);
+    if (typeof postSpawn === 'function') postSpawn();   // bosslar navbati (E1)
+    // E1 paketisiz: qator hodisasi shu yerda sarflanadi (aks holda hodisa tugamay qoladi)
+    else if (game.ev && game.ev.rows > 0) game.ev.rows--;
+    if (game.grid[ROWS - 2].some(isSolid) && typeof worldReact === 'function') worldReact('worry');
     if (to !== from) {
+      profile.visits[to] = (profile.visits[to] || 0) + 1;
+      bgCache[to] = renderBg(to);   // har kelganda yangi manzara
+      if (banner && typeof BG_NAME !== 'undefined' && BG_NAME[to]) banner.sub += ' · ' + BG_NAME[to];
       zoneAnim = { from, to, t: 0 };
       Music.setZone(to);
       phase = 'zone';
@@ -5093,6 +5202,7 @@
       phase = 'aim';
       resetTurn();
     }
+    checkAch();
     persist();
     updateHud();
   }
@@ -5103,6 +5213,71 @@
       if (!cell) continue;
       if (cell.t === 'boss') killBoss(cell.ref, false);
       else { if (cell.t === 'brick') breakFx(c * CELL + CELL / 2, r * CELL + CELL / 2, cell); game.grid[r][c] = null; }
+    }
+  }
+
+  // ---------- Sur'at: ko'p to'p bilan yurish cho'zilib ketmasin ----------
+  // To'plar orasidagi qadamlar: to'p ko'paygan sari zichroq uchadi
+  function fireGap() { return game.balls < 40 ? 3 : game.balls < 90 ? 2 : 1; }
+  // Bir tikda nechta fizika qadami (asosiy sikl chaqiradi): vaqt o'tgan sari va oxirgi to'plarni kutishda tezlashadi
+  function turnSteps() {
+    if (fast) return 3;
+    const many = game.balls >= 60, t2 = 60 * (many ? 3 : 6), t3 = 60 * (many ? 6 : 12);
+    // 100+ to'pda (to'plar oqimi uzun): tezlashish ertaroq boshlanadi va 5× gacha boradi — yurish ~4 soniyada tugaydi
+    const k = game.balls >= 100 ? (turnTime > 480 ? 5 : turnTime > 240 ? 4 : turnTime > 120 ? 3 : turnTime > 60 ? 2 : 1)
+      : turnTime > t3 ? 3 : turnTime > t2 ? 2 : 1;
+    if (k < 3 && shotsLeft === 0 && turnTime > 120) {   // deyarli hammasi qo'ngan — qolganlarini tez kutamiz
+      let n = 0, d = 0;
+      for (const b of flying) if (!b.temp) { n++; if (b.s === 'done' || b.s === 'gone') d++; }
+      if (n && d >= n * 0.9) return 3;
+    }
+    return k;
+  }
+
+  // ---------- Hodisalar (har 7 levelda) ----------
+  // zones: qaysi qatlamlarda bo'ladi (null — hammasida); turns — necha otish; rows — nechta yangi qatorga ta'sir
+  const EVENTS = [
+    { id: 'shamol', icon: '🌬️', name: 'Shamol', desc: "To'plarni shamol suradi", zones: [0, 1], turns: 3 },
+    { id: 'oltin', icon: '✨', name: "Oltin g'ishtlar", desc: 'Har biri +1 S', zones: [0, 1, 2, -1], rows: 2 },
+    { id: 'halqa', icon: '💚', name: "Halqa yomg'iri", desc: 'Keyingi qatorda 3 halqa', zones: null, rows: 1 },
+    { id: 'zilzila', icon: '🌍', name: 'Zilzila', desc: "G'ishtlar aralashdi", zones: [-1, -2] },
+    { id: 'lava', icon: '🌋', name: 'Lava toshqini', desc: 'Pastki 2 qator yarim joni bilan', zones: [-2] },
+    { id: 'kristall', icon: '💎', name: 'Kristall qatori', desc: 'Keyingi qator zirhli', zones: [-2], rows: 1 },
+    { id: 'quyosh', icon: '☀️', name: 'Quyosh zarbasi', desc: "Bu otishda hamma to'p po'lat", zones: [2, 1], turns: 1 },
+  ];
+  const evOk = (e, z) => (!e.zones || e.zones.includes(z)) && !(e.id === 'quyosh' && z === 1 && DAY.sun === null);   // osmonda quyosh faqat kunduzi
+  function startEvent(zone) {
+    let pool = EVENTS.filter(e => evOk(e, zone));
+    if (pool.length > 1) pool = pool.filter(e => e.id !== game.lastEv);   // ketma-ket bir xil hodisa bo'lmaydi
+    if (!pool.length) return;
+    const E = pool[rnd(pool.length)];
+    game.lastEv = E.id;
+    game.ev = { id: E.id, dir: Math.random() < 0.5 ? -1 : 1, turns: E.turns || 0, rows: E.rows || 0 };
+    showBanner(E.icon + ' ' + E.name, E.desc);
+    beep(520, 0.12, 0.05, 'triangle'); setTimeout(() => beep(780, 0.16, 0.05, 'triangle'), 110);
+    if (E.id === 'zilzila') {   // har qatorning kataklari aralashadi (boss turgan qatorlardan tashqari)
+      for (let r = 1; r <= ROWS - 2; r++) {
+        const row = game.grid[r];
+        if (row.some(c => c && c.t === 'boss')) continue;
+        shuffle(row);
+        for (const c of row) if (c && c.t === 'brick') c.wob = 1;
+      }
+      shake = 40;
+      crunch(0.6, 0.1, 200);
+      game.ev = null;
+    } else if (E.id === 'lava') {   // pastki 2 qatordagi g'ishtlar jonining yarmini yo'qotadi
+      for (let r = ROWS - 3; r <= ROWS - 2; r++) for (let c = 0; c < COLS; c++) {
+        const cell = game.grid[r][c];
+        if (!isSolid(cell) || cell.t === 'boss') continue;
+        cell.hp = Math.max(1, Math.ceil(cell.hp / 2));
+        cell.wob = 1;
+        const x = c * CELL + CELL / 2, y = r * CELL + CELL * 0.8;
+        for (let k = 0; k < 7; k++) pushFx({ k: 'p', x: x + (Math.random() - 0.5) * 60, y, vx: (Math.random() - 0.5) * 3,
+          vy: -2 - Math.random() * 4, life: 22 + rnd(12), color: k % 3 ? '#ff8a2a' : '#ffd23a', size: 2.5 + Math.random() * 2 });
+      }
+      shake = Math.max(shake, 10);
+      if (typeof worldReact === 'function') worldReact('lava');
+      game.ev = null;
     }
   }
 
@@ -6366,63 +6541,312 @@
 
   const DRAW = { liquid: drawLiquid, soil: drawSoil, stone: drawStone, cloud: drawCloud, rock: drawRock };
 
+  // ---------- Narsalar: halqa, S tanga, P tosh va maxsus narsalar ----------
+  // Yorug'lik yo'nalishi D paketidagi LIGHT dan (bo'lmasa — yuqori-chapdan oddiy nur).
+  // Gradiyentlar narsa markazida (mahalliy koordinatada) bir marta yaratilib, keshdan olinadi — har kadrda yangisi yo'q.
+  const ITEM_L0 = { lx: 0.55, ly: 0.83, len: 8, a: 0.2, col: '0,0,0' };
+  const itemLight = () => (typeof LIGHT !== 'undefined' && LIGHT && isFinite(LIGHT.lx) ? LIGHT : ITEM_L0);
+  const ITEM_GRAD = new Map();
+  let ITEM_SH = { L: null, s: '', lk: '' };
+  const DASH2 = [2.2, 2.2], DASH3 = [3, 3], NODASH = [];
+  function itemGrad(key, make) {
+    let gr = ITEM_GRAD.get(key);
+    if (!gr) { if (ITEM_GRAD.size > 120) ITEM_GRAD.clear(); gr = make(); ITEM_GRAD.set(key, gr); }
+    return gr;
+  }
+  // Yorug'lik o'zgarganda (LIGHT almashadi) soya rangi va kesh kaliti qayta hisoblanadi
+  function itemLk(L) {
+    if (ITEM_SH.L !== L) ITEM_SH = { L, s: `rgba(${L.col},${(L.a * 0.8).toFixed(3)})`, lk: L.lx.toFixed(2) + ',' + L.ly.toFixed(2) };
+    return ITEM_SH.lk;
+  }
+  // Rangni ko'paytirish (k > 1 — oqartiradi)
+  function itemTone(hex, k) {
+    const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    return '#' + c.map(v => Math.max(0, Math.min(255, Math.round(k > 1 ? v + (255 - v) * (k - 1) : v * k))).toString(16).padStart(2, '0')).join('');
+  }
+  const hash01 = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+  // To'rt uchli yulduzcha (yaltirash)
+  function star4(x, y, s) {
+    ctx.beginPath(); ctx.moveTo(x, y - s);
+    ctx.quadraticCurveTo(x, y, x + s, y); ctx.quadraticCurveTo(x, y, x, y + s);
+    ctx.quadraticCurveTo(x, y, x - s, y); ctx.quadraticCurveTo(x, y, x, y - s); ctx.fill();
+  }
+  // Hajmli shar (markaz 0,0 da): asosiy rang, yorug'lik tomonida yaltiroq, chetlari qoraygan, yoritilgan qirra
+  function orb(r, base) {
+    const L = itemLight(), lk = itemLk(L), a0 = Math.atan2(-L.ly, -L.lx);
+    ctx.fillStyle = itemGrad('orb|' + base + '|' + r + '|' + lk, () => {
+      const gr = ctx.createRadialGradient(-L.lx * r * 0.4, -L.ly * r * 0.4, r * 0.08, 0, 0, r);
+      gr.addColorStop(0, itemTone(base, 1.45)); gr.addColorStop(0.55, base); gr.addColorStop(1, itemTone(base, 0.55));
+      return gr;
+    });
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.beginPath(); ctx.arc(-L.lx * r * 0.45, -L.ly * r * 0.45, r * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, r - 1, a0 - 0.9, a0 + 0.9); ctx.stroke();
+  }
+  // Nur halqasi: shadowBlur o'rniga bir marta chizilgan yumshoq dog'
+  let LASER_HALO = null;
+  function laserHalo() {
+    if (LASER_HALO) return LASER_HALO;
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,238,150,.95)'); gr.addColorStop(0.45, 'rgba(255,204,70,.42)'); gr.addColorStop(1, 'rgba(255,190,40,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return (LASER_HALO = c);
+  }
+  // Yerdagi soya: yorug'likdan teskari tomonga yassi ellips
+  function itemShadow(cx, cy, L, k = 1) {
+    itemLk(L);
+    ctx.fillStyle = ITEM_SH.s;
+    ctx.beginPath();
+    ctx.ellipse(cx + L.lx * L.len * 0.6, cy + L.ly * L.len * 0.6 + 22, 16 * k, 6 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawItem(x, y, cell) {
-    if (cell.t === 'ring') {
-      const pulse = 1 + Math.sin(tick / 9) * 0.07;
-      ctx.strokeStyle = '#5ee87a'; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 20 * pulse, 0, Math.PI * 2); ctx.stroke();
-      puff(ctx, x + CELL / 2, y + CELL / 2, 11, '#5ee87a');
-    } else if (SPECIALS.includes(cell.t)) {
-      drawSpecial(x + CELL / 2, y + CELL / 2, cell);
-    } else {
-      const coin = cell.t === 'coin';
-      const sx = Math.abs(Math.cos(tick / 20));
-      ctx.save(); ctx.translate(x + CELL / 2, y + CELL / 2); ctx.scale(0.35 + 0.65 * sx, 1);
-      ctx.fillStyle = coin ? '#f7c21b' : '#f7a21b';
-      ctx.strokeStyle = coin ? '#c98a00' : '#b55a00'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = coin ? '#c98a00' : '#7a3400';
-      ctx.font = '900 22px Arial'; ctx.fillText(coin ? 'S' : 'P', 0, 2);
-      ctx.restore();
+    const cx = x + CELL / 2, cy = y + CELL / 2, L = itemLight();
+    if (cell.ph === undefined) cell.ph = Math.random() * 6.28;   // har narsa o'z fazasida aylanadi
+    const ph = tick / 20 + cell.ph;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+    if (cell.u) ctx.globalAlpha = 0.45;   // ishlatilgan narsa xira
+    itemShadow(cx, cy, L, cell.t === 'coin' ? 0.55 + 0.45 * Math.abs(Math.cos(ph)) : 1);
+    if (cell.t === 'ring') itemRing(cx, cy, cell, ph, L);
+    else if (cell.t === 'coin') itemCoin(cx, cy, ph, L);
+    else if (cell.t === 'gem') itemGem(cx, cy, ph, L);
+    else drawSpecial(cx, cy, cell);
+    ctx.globalAlpha = 1;
+  }
+
+  // Halqa: yashil (+1) yoki oltin (+2), ichida kichik to'p
+  function itemRing(cx, cy, cell, ph, L) {
+    const gold = cell.v === 2, r = 20 * (1 + Math.sin(ph * 2.2) * 0.05), a0 = Math.atan2(-L.ly, -L.lx);
+    ctx.lineWidth = 6; ctx.strokeStyle = gold ? '#ffd23a' : '#4fd36a';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.beginPath(); ctx.arc(cx, cy, r - 1.2, a0 - 1, a0 + 1); ctx.stroke();
+    ctx.strokeStyle = gold ? 'rgba(110,70,0,.45)' : 'rgba(0,80,30,.45)';
+    ctx.beginPath(); ctx.arc(cx, cy, r + 1.2, a0 + Math.PI - 1, a0 + Math.PI + 1); ctx.stroke();
+    const by = cy + Math.sin(ph * 1.6) * 2;
+    if (typeof LIGHT !== 'undefined') drawBall(cx, by, 0, null, 8);   // D paketining to'p spraytlari
+    else {
+      puff(ctx, cx, by, 8, ballColor(0));
+      ctx.fillStyle = 'rgba(255,255,255,.7)';
+      ctx.beginPath(); ctx.arc(cx - L.lx * 3, by - L.ly * 3, 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    if (gold) {
+      ctx.font = '900 16px Arial'; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.strokeText('+2', cx + 21, cy - 21); ctx.fillStyle = '#a06c00'; ctx.fillText('+2', cx + 21, cy - 21);
     }
   }
 
-  // Maxsus narsalar: bomba, chaqmoq (gorizontal/vertikal), bo'luvchi, muzlatgich
+  // S tanga: aylanganda qalinligi (qirrasi) ko'rinadi, yuzi yorug'lik tomondan yaltiraydi
+  function itemCoin(cx, cy, ph, L) {
+    const c = Math.cos(ph), ac = Math.abs(c), sg = c < 0 ? -1 : 1, lk = itemLk(L);
+    ctx.fillStyle = '#b07a00';
+    ctx.beginPath(); ctx.ellipse(cx + 3 * sg, cy, 18 * ac + 3, 18, 0, 0, Math.PI * 2); ctx.fill();
+    if (ac > 0.04) {
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(ac, 1);
+      ctx.fillStyle = itemGrad('coin|' + lk, () => {
+        const gr = ctx.createLinearGradient(-L.lx * 18, -L.ly * 18, L.lx * 18, L.ly * 18);
+        gr.addColorStop(0, '#ffe680'); gr.addColorStop(0.5, '#f2b31b'); gr.addColorStop(1, '#c98a00');
+        return gr;
+      });
+      ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+      if (ac > 0.3) {
+        ctx.setLineDash(DASH2); ctx.strokeStyle = 'rgba(150,95,0,.7)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash(NODASH);
+        // bo'rtma S: soyasi +L tomonda, yorug'i -L tomonda
+        ctx.font = '900 19px Arial';
+        ctx.fillStyle = 'rgba(120,66,0,.8)'; ctx.fillText('S', L.lx * 1.3, 1 + L.ly * 1.3);
+        ctx.fillStyle = 'rgba(255,250,215,.95)'; ctx.fillText('S', -L.lx * 1.1, 1 - L.ly * 1.1);
+        ctx.fillStyle = '#e3a612'; ctx.fillText('S', 0, 1);
+      }
+      ctx.restore();
+    }
+    if (ac > 0.97) {   // to'g'ri qaraganda yaltirash
+      const k = (ac - 0.97) / 0.03;
+      ctx.fillStyle = `rgba(255,255,255,${(0.5 + 0.5 * k).toFixed(2)})`;
+      star4(cx - L.lx * 9 - 3, cy - L.ly * 9 - 3, 3 + 5 * k);
+    }
+  }
+
+  // P: qirrali to'q sariq-qizil tosh (sakkiz burchakli yuza va 8 ta qirra), chayqaladi
+  const GEM_BASE = [236, 92, 38];
+  let GEM_COL = { lk: '', cols: null };
+  function itemGem(cx, cy, ph, L) {
+    const lk = itemLk(L), R0 = 21, R1 = 11.5;
+    if (GEM_COL.lk !== lk) {   // qirralar yorqinligi: .75 + .35 * dot(n, -L)
+      const cols = [];
+      for (let k = 0; k < 8; k++) {
+        const na = (k + 0.5) * Math.PI / 4 + Math.PI / 8, d = -(Math.cos(na) * L.lx + Math.sin(na) * L.ly);
+        const f = 0.75 + 0.35 * d;
+        cols.push(`rgb(${GEM_BASE.map(v => Math.min(255, Math.round(f > 1 ? v + (255 - v) * (f - 1) * 0.9 : v * f))).join(',')})`);
+      }
+      GEM_COL = { lk, cols };
+    }
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.sin(ph) * 0.15);
+    const vx = k => Math.cos(k * Math.PI / 4 + Math.PI / 8), vy = k => Math.sin(k * Math.PI / 4 + Math.PI / 8);
+    for (let k = 0; k < 8; k++) {
+      ctx.fillStyle = GEM_COL.cols[k];
+      ctx.beginPath(); ctx.moveTo(vx(k) * R1, vy(k) * R1); ctx.lineTo(vx(k) * R0, vy(k) * R0);
+      ctx.lineTo(vx(k + 1) * R0, vy(k + 1) * R0); ctx.lineTo(vx(k + 1) * R1, vy(k + 1) * R1); ctx.closePath(); ctx.fill();
+    }
+    // yuza (stol)
+    ctx.fillStyle = '#f2733a';
+    ctx.beginPath(); for (let k = 0; k < 8; k++) ctx.lineTo(vx(k) * R1, vy(k) * R1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,214,180,.7)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = '#7a1e08'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); for (let k = 0; k < 8; k++) ctx.lineTo(vx(k) * R0, vy(k) * R0); ctx.closePath(); ctx.stroke();
+    // o'yilgan P: soyasi -L tomonda, yorug' qirrasi +L tomonda
+    ctx.font = '900 15px Arial';
+    ctx.fillStyle = 'rgba(255,214,190,.75)'; ctx.fillText('P', L.lx * 1.1, 1 + L.ly * 1.1);
+    ctx.fillStyle = 'rgba(90,18,0,.9)'; ctx.fillText('P', -L.lx * 1.1, 1 - L.ly * 1.1);
+    ctx.fillStyle = '#b8400f'; ctx.fillText('P', 0, 1);
+    // yorug' qirradagi yaltirash
+    const gl = 0.5 + 0.5 * Math.sin(ph * 1.3);
+    if (gl > 0.6) { ctx.fillStyle = `rgba(255,255,255,${((gl - 0.6) * 2.2).toFixed(2)})`; star4(-L.lx * 14, -L.ly * 14, 4.5); }
+    ctx.restore();
+  }
+
+  // Chaqmoq kapsulasi (gorizontal, markaz 0,0): shisha tana, metall qopqoqlar, ichida tebranuvchi chaqmoq
+  function itemCapsule(len, cell, a, halo = true) {
+    if (halo) {
+      ctx.globalAlpha = a * (0.55 + 0.15 * Math.sin(tick / 6 + cell.ph));
+      ctx.drawImage(laserHalo(), -len - 16, -24, (len + 16) * 2, 48);
+      ctx.globalAlpha = a;
+    }
+    ctx.fillStyle = 'rgba(255,243,176,.86)'; roundRect(-len, -9, len * 2, 18, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(206,140,10,.75)'; ctx.lineWidth = 1.4; ctx.stroke();
+    // chaqmoq har 5 tikda yangi shaklda
+    const sd = Math.floor(tick / 5) * 13 + Math.floor(cell.ph * 100);
+    ctx.beginPath(); ctx.moveTo(-len + 5, 0);
+    for (let k = 1; k <= 5; k++) ctx.lineTo(-len + 5 + k * (len * 2 - 10) / 6, (hash01(sd + k) - 0.5) * 11);
+    ctx.lineTo(len - 5, 0);
+    ctx.lineJoin = 'round'; ctx.strokeStyle = '#f29400'; ctx.lineWidth = 3.6; ctx.stroke();
+    ctx.strokeStyle = '#fffdf0'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-len + 9, -5); ctx.lineTo(len - 9, -5); ctx.stroke();
+    for (const sg of [-1, 1]) {   // metall qopqoqlar va nur yo'nalishi uchburchaklari
+      ctx.fillStyle = '#9aa6b4'; roundRect(sg * len - 4, -7, 8, 14, 3); ctx.fill();
+      ctx.strokeStyle = '#5b6674'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(sg * len - 3, -6, 6, 2);
+      ctx.fillStyle = '#e8a000';
+      ctx.beginPath(); ctx.moveTo(sg * (len + 13), 0); ctx.lineTo(sg * (len + 6), -6); ctx.lineTo(sg * (len + 6), 6); ctx.fill();
+    }
+    ctx.lineJoin = 'miter';
+  }
+
+  // Maxsus narsalar: bomba, chaqmoq, xoch, raketa, zanjir, bo'luvchi, muzlatgich
   function drawSpecial(cx, cy, cell) {
-    const p = 1 + Math.sin(tick / 8) * 0.06;
+    if (cell.ph === undefined) cell.ph = Math.random() * 6.28;
+    const L = itemLight(), a0 = Math.atan2(-L.ly, -L.lx), p = 1 + Math.sin(tick / 8 + cell.ph) * 0.06;
     ctx.save(); ctx.translate(cx, cy); ctx.scale(p, p);
     if (cell.u) ctx.globalAlpha = 0.45;
+    const a = ctx.globalAlpha;
+    ctx.lineCap = 'round';
     if (cell.t === 'bomb') {
-      ctx.fillStyle = '#26262e'; ctx.beginPath(); ctx.arc(0, 4, 17, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(-6, -2, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#5a5a66'; ctx.fillRect(-5, -16, 10, 6);
-      ctx.strokeStyle = '#a07850'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -16); ctx.quadraticCurveTo(6, -24, 12, -22); ctx.stroke();
-      const f = tick % 10 < 5;
-      puff(ctx, 13, -23, f ? 6 : 4, '#ffcf3a'); puff(ctx, 13, -23, f ? 3 : 2, '#ff6a1a');
+      ctx.translate(0, 4);
+      orb(17, '#2e323d');
+      // ko'kish-oq qirra nuri — qorong'i qatlamlarda ham ko'rinadi
+      ctx.strokeStyle = 'rgba(150,185,235,.45)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, 17.6, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,228,255,.9)'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(0, 0, 16.2, a0 - 1.1, a0 + 1.1); ctx.stroke();
+      ctx.translate(0, -4);
+      ctx.fillStyle = '#5d6270'; ctx.fillRect(-5, -16, 10, 6);
+      ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(-5, -16, 10, 1.6);
+      // ikki rangli pilik
+      ctx.lineWidth = 3; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(0, -16); ctx.quadraticCurveTo(6, -25, 12, -23);
+      ctx.strokeStyle = '#e2bf86'; ctx.stroke();
+      ctx.setLineDash(DASH3); ctx.strokeStyle = '#7a5230'; ctx.stroke(); ctx.setLineDash(NODASH);
+      // uchqun
+      const f = 0.75 + 0.25 * Math.sin(tick * 0.9 + cell.ph * 3);
+      ctx.globalAlpha = a * 0.9; ctx.drawImage(laserHalo(), 12 - 13 * f, -23 - 13 * f, 26 * f, 26 * f); ctx.globalAlpha = a;
+      ctx.strokeStyle = '#ffcf3a'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let k = 0; k < 3; k++) { const g = tick * 0.3 + k * 2.1; ctx.moveTo(12 + Math.cos(g) * 3, -23 + Math.sin(g) * 3); ctx.lineTo(12 + Math.cos(g) * 8 * f, -23 + Math.sin(g) * 8 * f); }
+      ctx.stroke();
+      puff(ctx, 12, -23, 2.8 * f, '#fff7c0');
     } else if (cell.t === 'laserH' || cell.t === 'laserV') {
       if (cell.t === 'laserV') ctx.rotate(Math.PI / 2);
-      ctx.shadowColor = '#ffd23a'; ctx.shadowBlur = 16;
-      ctx.fillStyle = '#fff3b0'; roundRect(-26, -9, 52, 18, 9); ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#e8a000'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
-      ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-8, -6); ctx.lineTo(-2, 4); ctx.lineTo(8, -5); ctx.lineTo(20, 0); ctx.stroke();
-      ctx.fillStyle = '#e8a000';
-      ctx.beginPath(); ctx.moveTo(-34, 0); ctx.lineTo(-26, -6); ctx.lineTo(-26, 6); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(34, 0); ctx.lineTo(26, -6); ctx.lineTo(26, 6); ctx.fill();
+      itemCapsule(22, cell, a);
+    } else if (cell.t === 'cross') {   // xoch: ikki kapsula ustma-ust
+      ctx.globalAlpha = a * (0.5 + 0.15 * Math.sin(tick / 6 + cell.ph));
+      ctx.drawImage(laserHalo(), -34, -34, 68, 68); ctx.globalAlpha = a;
+      ctx.save(); ctx.scale(0.86, 0.86);
+      itemCapsule(22, cell, a, false); ctx.rotate(Math.PI / 2); itemCapsule(22, cell, a, false);
+      ctx.restore();
+      ctx.fillStyle = '#9aa6b4'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#5b6674'; ctx.lineWidth = 1.2; ctx.stroke();
+    } else if (cell.t === 'rocket') {   // raketa: -45° da qizil kapsula, illyuminator va lipillagan alanga
+      ctx.rotate(-Math.PI / 4);
+      const fl = 9 + 4 * Math.sin(tick * 0.8 + cell.ph * 5) + 2 * Math.sin(tick * 1.7);
+      ctx.fillStyle = '#ffb21a';
+      ctx.beginPath(); ctx.moveTo(-16, -6); ctx.quadraticCurveTo(-16 - fl * 0.6, -4, -16 - fl, 0); ctx.quadraticCurveTo(-16 - fl * 0.6, 4, -16, 6); ctx.fill();
+      ctx.fillStyle = '#fff1a8';
+      ctx.beginPath(); ctx.moveTo(-16, -3); ctx.quadraticCurveTo(-16 - fl * 0.35, -2, -16 - fl * 0.6, 0); ctx.quadraticCurveTo(-16 - fl * 0.35, 2, -16, 3); ctx.fill();
+      ctx.fillStyle = '#9b1c1c';
+      ctx.beginPath(); ctx.moveTo(-14, -7); ctx.lineTo(-20, -14); ctx.lineTo(-6, -7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-14, 7); ctx.lineTo(-20, 14); ctx.lineTo(-6, 7); ctx.fill();
+      ctx.fillStyle = '#e8432e'; roundRect(-17, -8, 30, 16, 7); ctx.fill();
+      ctx.fillStyle = '#c42a1c';
+      ctx.beginPath(); ctx.moveTo(12, -8); ctx.quadraticCurveTo(24, -5, 27, 0); ctx.quadraticCurveTo(24, 5, 12, 8); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#7d160e'; ctx.lineWidth = 1.4; roundRect(-17, -8, 30, 16, 7); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-12, -4.5); ctx.lineTo(16, -4.5); ctx.stroke();
+      ctx.fillStyle = '#bfe8ff'; ctx.beginPath(); ctx.arc(2, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(0.6, -1.6, 1.4, 0, Math.PI * 2); ctx.fill();
+    } else if (cell.t === 'chain') {   // zanjir: binafsha shar va atrofida aylanuvchi 3 uchqun
+      ctx.strokeStyle = 'rgba(200,170,255,.45)'; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 3; k++) {
+        const g = tick * 0.07 + k * 2.094 + cell.ph;
+        ctx.beginPath(); ctx.ellipse(0, 0, 25, 13, -0.35, g - 0.7, g); ctx.stroke();
+      }
+      orb(15, '#7b4fd8');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.ellipse(-4, 2.5, 5.5, 3.4, -0.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(4, -2.5, 5.5, 3.4, -0.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#f3e8ff';
+      for (let k = 0; k < 3; k++) {
+        const g = tick * 0.07 + k * 2.094 + cell.ph, c = Math.cos(-0.35), s = Math.sin(-0.35);
+        const ex = Math.cos(g) * 25, ey = Math.sin(g) * 13;
+        star4(ex * c - ey * s, ex * s + ey * c, 4 + Math.sin(tick * 0.4 + k) * 1.2);
+      }
     } else if (cell.t === 'split') {
-      ctx.fillStyle = '#9b59f5'; ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+      orb(19, '#9b59f5');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3.5;
       ctx.beginPath(); ctx.moveTo(0, 11); ctx.lineTo(0, 0); ctx.lineTo(-8, -9); ctx.moveTo(0, 0); ctx.lineTo(8, -9); ctx.stroke();
       puff(ctx, -9, -10, 3.5, '#fff'); puff(ctx, 9, -10, 3.5, '#fff');
-    } else if (cell.t === 'freeze') {
-      ctx.fillStyle = 'rgba(120,210,255,.35)'; ctx.beginPath(); ctx.arc(0, 0, 21, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#2a9fd6'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      for (let k = 0; k < 3; k++) {
-        ctx.rotate(Math.PI / 3);
-        ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, 16);
-        ctx.moveTo(-5, -11); ctx.lineTo(0, -6); ctx.lineTo(5, -11);
-        ctx.moveTo(-5, 11); ctx.lineTo(0, 6); ctx.lineTo(5, 11); ctx.stroke();
+    } else if (cell.t === 'freeze') {   // olti burchakli muz bo'lagi, ichida o'yilgan qor parchasi
+      const hx = k => Math.cos(k * Math.PI / 3 - Math.PI / 2) * 21, hy = k => Math.sin(k * Math.PI / 3 - Math.PI / 2) * 21;
+      ctx.fillStyle = 'rgba(170,225,255,.85)';
+      ctx.beginPath(); for (let k = 0; k < 6; k++) ctx.lineTo(hx(k), hy(k)); ctx.closePath(); ctx.fill();
+      for (let k = 0; k < 6; k++) {   // qirralar yorug'likka qarab
+        const na = (k + 0.5) * Math.PI / 3 - Math.PI / 2, d = -(Math.cos(na) * L.lx + Math.sin(na) * L.ly);
+        ctx.fillStyle = d > 0 ? `rgba(255,255,255,${(d * 0.45).toFixed(2)})` : `rgba(20,90,150,${(-d * 0.3).toFixed(2)})`;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(hx(k), hy(k)); ctx.lineTo(hx(k + 1), hy(k + 1)); ctx.closePath(); ctx.fill();
       }
+      ctx.strokeStyle = '#2a8fc6'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.beginPath(); for (let k = 0; k < 6; k++) ctx.lineTo(hx(k), hy(k)); ctx.closePath(); ctx.stroke();
+      const flake = () => {
+        ctx.beginPath();
+        for (let k = 0; k < 3; k++) {
+          const g = k * Math.PI / 3, c = Math.cos(g), s = Math.sin(g);
+          const P = (x, y) => [x * c - y * s, x * s + y * c];
+          let q = P(0, -13); ctx.moveTo(q[0], q[1]); q = P(0, 13); ctx.lineTo(q[0], q[1]);
+          for (const e of [-1, 1]) {
+            q = P(-4, -9 * e); ctx.moveTo(q[0], q[1]); q = P(0, -5 * e); ctx.lineTo(q[0], q[1]); q = P(4, -9 * e); ctx.lineTo(q[0], q[1]);
+          }
+        }
+        ctx.stroke();
+      };
+      ctx.lineWidth = 1.8;
+      ctx.save(); ctx.translate(L.lx * 0.9, L.ly * 0.9); ctx.strokeStyle = 'rgba(255,255,255,.85)'; flake(); ctx.restore();
+      ctx.strokeStyle = 'rgba(25,105,165,.9)'; flake();
     }
     ctx.restore();
   }
@@ -7182,15 +7606,26 @@
   const $ = id => document.getElementById(id);
   function updateHud() {
     if (game.level > profile.record) profile.record = game.level;
-    $('coins').textContent = profile.coins;
-    $('gems').textContent = profile.gems;
+    bumpNum('coins', profile.coins);
+    bumpNum('gems', profile.gems);
     $('record').textContent = profile.record;
     $('score').textContent = game.level;
     const Z = ZONES[game.zone], need = climbNeed(game.zone);
     const alt = altText(game.zone);
     $('zoneName').innerHTML = `${Z.icon} ${Z.name} <b class="alt ${game.zone < 0 ? 'neg' : game.zone > 0 ? 'pos' : ''}">${alt}</b>`;
     $('zoneFill').style.width = Math.min(100, game.climb / need * 100) + '%';
-    $('zoneHint').textContent = game.zone < ZMAX ? `Ko'tarilish: ${game.climb}/${need}` : `Cho'qqi bonusi: ${game.climb}/${need}`;
+    let hint = game.zone < ZMAX ? `Ko'tarilish: ${game.climb}/${need}` : `Cho'qqi bonusi: ${game.climb}/${need}`;
+    const E = game.ev && EVENTS.find(e => e.id === game.ev.id);
+    if (E) { const n = game.ev.turns || game.ev.rows; hint += ` · ${E.icon}${n ? ' ' + n : ''}`; }   // faol hodisa va qolgan yurish/qator
+    $('zoneHint').textContent = hint;
+  }
+  // Son oshganda HUD dagi qiymat bir lahza kattalashib qaytadi
+  function bumpNum(id, v) {
+    const el = $(id), old = HUD_PREV[id];
+    if (old === v) return;
+    el.textContent = v;
+    if (old !== undefined && v > old) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    HUD_PREV[id] = v;
   }
   function updateCtrl() {
     for (const [id, key] of [['boostFire', 'fire'], ['boostHeavy', 'heavy']]) {
@@ -7205,9 +7640,26 @@
   }
   function show(id) { $(id).classList.add('show'); }
   function hide(id) { $(id).classList.remove('show'); }
+  // Qisqa xabarlar: yangisi darhol ko'rinadi; endigina chiqqan (hali o'qilmagan) xabar navbatga qaytadi va keyin ko'rsatiladi —
+  // bir vaqtda kelgan xabarlar (yutuq, vazifa, ob-havo...) bir-birini yo'qotmaydi, tugma javobi esa kechikmaydi
+  const TOASTQ = [];
+  let toastCur = null;   // { msg, t0 }
   function toast(msg) {
-    const t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 1600);
+    if ((toastCur && toastCur.msg === msg) || TOASTQ.includes(msg)) return;
+    if (toastCur && performance.now() - toastCur.t0 < 700) TOASTQ.unshift(toastCur.msg);
+    if (TOASTQ.length > 3) TOASTQ.length = 3;
+    toastShow(msg);
+  }
+  function toastShow(msg) {
+    const t = $('toast');
+    toastCur = { msg, t0: performance.now() };
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.h);
+    toast.h = setTimeout(() => {
+      toastCur = null;
+      t.classList.remove('show');
+      if (TOASTQ.length) toast.h = setTimeout(() => toastShow(TOASTQ.shift()), 260);
+    }, TOASTQ.length ? 1300 : 1700);
   }
 
   function persist() {
@@ -7238,17 +7690,136 @@
   $('recallBtn').onclick = recall;
 
   $('statsBtn').onclick = () => {
+    checkAch();
     const mz = ZONES[profile.maxZone];
     const rows = [
       ['Rekord (LEVEL)', profile.record], ['Joriy LEVEL', game.level], ["To'plar soni", game.balls],
       ['Hozirgi joy', `${ZONES[game.zone].icon} ${ZONES[game.zone].name} (${altText(game.zone)})`], ['Eng baland joy', `${mz.icon} ${mz.name} (${altText(profile.maxZone)})`],
       ["Ko'tarilishlar", profile.climbs], ['Yiqilishlar', profile.falls], ['Yengilgan bosslar', profile.bosses || 0],
       ["Sindirilgan g'ishtlar", profile.bricks], ["Yig'ilgan halqalar", profile.rings],
+      ["Eng katta kombo", profile.maxCombo], ['Sandiqlar', profile.chests],
       ['S tangalar', profile.coins], ['P bonuslar', profile.gems], ['Parashyutlar', profile.chutes],
     ];
+    if (typeof FINDS !== 'undefined' && Array.isArray(FINDS)) rows.push(['Topilmalar', `${profile.finds.length}/${FINDS.length}`]);
     $('statsList').innerHTML = rows.map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('');
+    renderMissions(); renderAch();
+    $('achInfo').textContent = '';
+    $('statsBtn').classList.remove('dot');
     show('statsModal');
   };
+
+  // ---------- Kunlik vazifalar ----------
+  // need: daraja bo'yicha maqsad (rekord < 30 / < 80 / undan yuqori); max — eng yaxshi natija olinadi (yig'ilmaydi);
+  // min — shu rekorddan oldin tushmaydi (o'yinchi bunday g'ishtlarni hali ko'rmagan)
+  const MISSIONS = [
+    { id: 'combo', icon: '🔥', text: n => `Bir otishda ${n} ta g'isht`, need: [8, 12, 18], max: true },
+    { id: 'bomb', icon: '💣', text: n => `Bomba bilan ${n} ta g'isht`, need: [6, 12, 20], min: 3 },
+    { id: 'boss', icon: '👑', text: n => n > 1 ? `${n} ta bossni yeng` : 'Bossni yeng', need: [1, 1, 2], min: 8 },
+    { id: 'rings', icon: '💚', text: n => `${n} ta halqa yig'`, need: [15, 30, 50] },
+    { id: 'nofall', icon: '🧗', text: n => `Yiqilmasdan ${n} level`, need: [12, 20, 35], max: true },
+    { id: 'climb', icon: '⛰️', text: n => `${n} marta ko'taril`, need: [1, 2, 3] },
+    { id: 'chest', icon: '🎁', text: n => n > 1 ? `${n} ta sandiq och` : 'Sandiq och', need: [1, 1, 2], min: 10 },
+    { id: 'armor', icon: '🛡️', text: n => `${n} ta zirhni sindir`, need: [3, 6, 10], min: 18 },
+  ];
+  const MISSION_RW = [[10, 0], [20, 1], [30, 2]];   // [S, P] daraja bo'yicha
+  const dayNum = (d = new Date()) => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  // Bugungi 3 ta vazifa (sana bo'yicha urug' — kun davomida o'zgarmaydi). Yangi kun bo'lsa true qaytaradi.
+  function rollDaily() {
+    const day = dayNum();
+    if (profile.daily && profile.daily.day === day) return false;
+    const rand = prng(day), rec = profile.record || 1;
+    const tier = rec < 30 ? 0 : rec < 80 ? 1 : 2;
+    const pool = MISSIONS.filter(m => rec >= (m.min || 0)), list = [];
+    while (list.length < 3 && pool.length) {
+      const m = pool.splice(Math.floor(rand() * pool.length), 1)[0];
+      list.push({ id: m.id, need: m.need[tier], got: 0, claimed: false });
+    }
+    profile.daily = { day, tier, list, box: false };
+    return true;
+  }
+  // Vazifa jarayoni: boshqa qismlar ham chaqiradi (track('boss', 1) va h.k.)
+  function track(id, n = 1) {
+    const d = profile.daily;
+    if (!d || !Array.isArray(d.list) || !(n > 0)) return;
+    const q = d.list.find(x => x.id === id), M = MISSIONS.find(m => m.id === id);
+    if (!q || !M || q.got >= q.need) return;
+    q.got = M.max ? Math.max(q.got, n) : q.got + n;
+    if (q.got >= q.need) {
+      q.got = q.need;
+      toast('✅ ' + M.text(q.need));
+      $('statsBtn').classList.add('dot');
+      beep(880, 0.08, 0.04, 'sine'); setTimeout(() => beep(1320, 0.14, 0.04, 'sine'), 90);
+    }
+    if ($('statsModal').classList.contains('show')) renderMissions();
+  }
+  const canClaim = () => !!(profile.daily && profile.daily.list.some(q => q.got >= q.need && !q.claimed));
+  function renderMissions() {
+    const d = profile.daily, el = $('missionList');
+    if (!d) { el.innerHTML = ''; return; }
+    const [rs, rp] = MISSION_RW[d.tier || 0], rw = `+${rs} S` + (rp ? ` · +${rp} P` : '');
+    el.innerHTML = d.list.map((q, i) => {
+      const M = MISSIONS.find(m => m.id === q.id);
+      if (!M) return '';
+      const done = q.got >= q.need, pct = Math.min(100, q.got / q.need * 100);
+      return `<div class="chute mis ${q.claimed ? 'got' : done ? 'done' : ''}"><span class="em">${M.icon}</span>
+        <div>${M.text(q.need)} <small>${Math.min(q.got, q.need)}/${q.need} · ${rw}</small><div class="bar"><i style="width:${pct}%"></i></div></div>
+        <button data-claim="${i}" ${done && !q.claimed ? '' : 'disabled'}>${q.claimed ? '✓' : 'Olish'}</button></div>`;
+    }).join('') + `<div class="chute mis box ${d.box ? 'open' : ''}"><span class="em">${d.box ? '🎉' : '🎁'}</span>
+        <div>Kunlik sandiq <small>${d.box ? 'Ochildi! Ertaga yangi vazifalar' : "Uchala mukofotni oling — sandiq ochiladi"}</small></div></div>`;
+  }
+  $('missionList').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-claim]'); if (!btn) return;
+    const d = profile.daily, q = d && d.list[+btn.dataset.claim];
+    if (!q || q.claimed || q.got < q.need) return;
+    q.claimed = true;
+    const [rs, rp] = MISSION_RW[d.tier || 0];
+    profile.coins += rs; profile.gems += rp;
+    toast(`🎉 +${rs} S` + (rp ? ` · +${rp} P` : ''));
+    beep(660, 0.1, 0.05, 'sine'); setTimeout(() => beep(990, 0.16, 0.05, 'sine'), 100);
+    if (!d.box && d.list.every(x => x.claimed)) {   // uchalasi olindi — kunlik sandiq
+      d.box = true;
+      if (typeof rollLoot === 'function') {
+        const a = rollLoot(W / 2, H * 0.45), b = rollLoot(W / 2, H * 0.45);
+        toast('🎁 Kunlik sandiq: ' + [a, b].filter(Boolean).join(' · '));
+      } else { profile.coins += 20; toast("🎁 Kunlik sandiq: +20 S"); }
+    }
+    persist(); updateHud(); renderMissions();
+  });
+
+  // ---------- Yutuqlar (doimiy) ----------
+  const ACH_RW = [10, 20, 40, 60, 80, 120];   // daraja bo'yicha S mukofot
+  const ACH = [];
+  [['rec', '📈', n => `Rekord ${n}`, n => String(n), [25, 50, 100, 150, 200, 300], () => profile.record],
+   ['boss', '👑', n => n > 1 ? `${n} ta boss yengildi` : 'Birinchi boss', n => String(n), [1, 5, 15, 40], () => profile.bosses],
+   ['brick', '🧱', n => `${n / 1000} ming g'isht`, n => n / 1000 + 'k', [1000, 5000, 20000], () => profile.bricks],
+   ['combo', '🔥', n => `Kombo ×${n}`, n => '×' + n, [20, 35, 50], () => profile.maxCombo],
+   ['zone', '🪐', () => 'Koinotga chiqish', () => '+2', [2], () => profile.maxZone],
+  ].forEach(([g, icon, name, lab, needs, val]) => needs.forEach((n, i) =>
+    ACH.push({ id: g + n, icon, name: name(n), lab: lab(n), need: n, val, rw: ACH_RW[i] })));
+  // Yangi ochilgan yutuqlar: S mukofot va 🏆 xabar
+  function checkAch() {
+    const got = [];
+    let sum = 0;
+    for (const A of ACH) if (!profile.ach.includes(A.id) && (+A.val() || 0) >= A.need) { profile.ach.push(A.id); profile.coins += A.rw; sum += A.rw; got.push(A); }
+    if (!got.length) return 0;
+    // har biri alohida xabar; birdaniga ko'p ochilsa (eski saqlanma) — bitta umumiy xabar
+    if (got.length <= 3) for (const A of got) toast(`🏆 ${A.name} · +${A.rw} S`);
+    else toast(`🏆 ${got.length} ta yutuq: ${got.map(A => A.name).join(', ')} · +${sum} S`);
+    beep(784, 0.12, 0.05, 'triangle'); setTimeout(() => beep(1046, 0.2, 0.05, 'triangle'), 120);
+    updateHud();
+    return got.length;
+  }
+  function renderAch() {
+    $('achList').innerHTML = ACH.map(A => {
+      const on = profile.ach.includes(A.id);
+      return `<div class="ach ${on ? '' : 'off'}" data-ach="${A.id}" title="${A.name}">${A.icon}<small>${A.lab}</small></div>`;
+    }).join('');
+  }
+  $('achList').addEventListener('click', ev => {   // telefonda title ko'rinmaydi — bosilganda tavsif
+    const el = ev.target.closest('[data-ach]'); if (!el) return;
+    const A = ACH.find(x => x.id === el.dataset.ach);
+    $('achInfo').textContent = `${A.icon} ${A.name} — ${profile.ach.includes(A.id) ? 'olingan' : 'hali olinmagan'} · +${A.rw} S`;
+  });
 
   function renderShop() {
     $('upgList').innerHTML = UPG.map(u => {
@@ -7322,6 +7893,12 @@
         || !(g.level >= 1) || !(g.balls >= 1) || typeof g.launchX !== 'number') return null;
     g.zone = Math.max(ZMIN, Math.min(ZMAX, g.zone | 0));
     g.climb = g.climb | 0;
+    // Yangi maydonlar — eski saqlanmalarda bo'lmaydi
+    if (!Array.isArray(g.queue)) g.queue = [];
+    if (!g.ev || typeof g.ev !== 'object' || !EVENTS.some(e => e.id === g.ev.id)) g.ev = null;
+    else { g.ev.turns = Math.max(0, g.ev.turns | 0); g.ev.rows = Math.max(0, g.ev.rows | 0); g.ev.dir = g.ev.dir < 0 ? -1 : 1; }
+    g.era = g.era | 0; g.bossN = g.bossN | 0; g.nf = g.nf | 0;
+    if (typeof g.lastForm !== 'string') g.lastForm = null;
     const bosses = {};   // JSON'dan keyin boss qismlari yana bitta jonni bo'lishadi
     const parts = {};
     for (const row of g.grid) for (const c of row) if (c && c.t === 'boss') {
@@ -7335,6 +7912,8 @@
     }
     for (const row of g.grid) for (const c of row) if (c && c.t === 'brick') {
       c.m = Math.max(c.m || 0, c.hp); if (c.s === undefined) c.s = rnd(1000);
+      c.tr = Math.max(0, Math.min(3, c.tr | 0)); c.v = c.v | 0;   // davr va ko'rinish varianti (eski g'ishtlarda yo'q)
+      if (c.k !== undefined && !['arm', 'regen', 'chest'].includes(c.k)) delete c.k;
     }
     return g;
   }
@@ -7345,10 +7924,21 @@
   if (!profile.helpSeen) { profile.helpSeen = true; persist(); show('helpModal'); }
   updateCtrl();
   toast(`${DAY.seasonIcon} ${DAY.seasonName} · ${DAY.partName}`);
+  // Kunlik vazifalar: yuklanganda va har daqiqada sana almashganini tekshiramiz
+  function dailyTick() {
+    const fresh = rollDaily();
+    if (fresh) { persist(); toast('📋 Bugungi vazifalar tayyor!'); }
+    if (fresh || canClaim()) $('statsBtn').classList.add('dot');
+    if (fresh && $('statsModal').classList.contains('show')) renderMissions();
+  }
+  dailyTick();
+  if (checkAch()) persist();
+  setInterval(dailyTick, 60000);
   requestAnimationFrame(loop);
   // Sahifa yopilayotganda profilni saqlaymiz (o'yin holati har yurish boshida saqlanadi)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) store.set(Object.assign(store.get(), { profile }));
+    else dailyTick();   // qaytganda yangi kun bo'lgan bo'lishi mumkin
     // Ilova yashirilganda musiqa va ovozlar to'xtaydi, qaytganda davom etadi
     try { if (actx) document.hidden ? actx.suspend() : actx.resume(); } catch {}
   });
