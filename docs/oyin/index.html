@@ -2003,8 +2003,8 @@
     if (o && sprBudget <= 0 && o.st === st && o.s === s) return o.c;   // bu kadr navbati tugagan — eskisi qoladi
     sprBudget -= st === 'rock' ? 0.5 : 0.25;
     const px = Math.ceil((s + 8) * scale), c = o ? o.c : document.createElement('canvas');
-    if (c.width !== px) c.width = c.height = px; else c.getContext('2d').clearRect(0, 0, px, px);
     const g = c.getContext('2d'), dq = b / CRACK_STEPS;
+    if (c.width !== px) c.width = c.height = px; else { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, px, px); }
     g.setTransform(scale, 0, 0, scale, 4 * scale, 4 * scale);
     crackPaint(g, 0, 0, s, cell, col, hl, dq);
     if (st === 'rock' && dq > 0.4) {   // yoriqlar ichidan issiq yadro porlaydi (yorug'lik qo'shiladi)
