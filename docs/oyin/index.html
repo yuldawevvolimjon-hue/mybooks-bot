@@ -1755,12 +1755,38 @@
     }
     const lz = zoneAnim && zoneAnim.t < 0.5 ? zoneAnim.from : game.zone;
     if (LIGHT.z !== lz || LIGHT.dkey !== DAY.key) {
-      const old = LIGHT.key;
-      LIGHT = computeLight(lz);
+      const old = LIGHT.key, next = LIGHT_NEXT;
+      LIGHT = next && next.z === lz && next.dkey === DAY.key ? next : computeLight(lz);
+      LIGHT_NEXT = null;
       LIQ_CACHE.clear();
-      if (LIGHT.key !== old) { SPR.clear(); BALL_SPR.clear(); }
+      // oldindan tayyorlangan (prewarm) spraytlar saqlanadi — eskilari LRU navbatida o'z-o'zidan chiqib ketadi
+      if (LIGHT.key !== old) { if (LIGHT !== next) SPR.clear(); BALL_SPR.clear(); }
     }
     SKIN_COL = (SKINS.find(q => q.id === profile.skin) || SKINS[0]).color;
+  }
+  // Qatlam almashinuvining birinchi yarmida yangi qatlam g'ishtlarining spraytlari har kadrda 2 tadan
+  // oldindan chiziladi — o'rtada (uslub almashganda) hammasi bir kadrda chizilib, o'yin qotib qolmaydi.
+  let LIGHT_NEXT = null;
+  function prewarm() {
+    if (!zoneAnim || zoneAnim.t >= 0.5) return;
+    const to = zoneAnim.to, st = ZONES[to].style;
+    if (!LIGHT_NEXT || LIGHT_NEXT.z !== to || LIGHT_NEXT.dkey !== DAY.key) LIGHT_NEXT = computeLight(to);
+    const keep = LIGHT, keepB = sprBudget;
+    LIGHT = LIGHT_NEXT; sprBudget = 1e9;
+    let n = 2;
+    for (let r = 0; r < ROWS && n > 0; r++) for (let c = 0; c < COLS && n > 0; c++) {
+      const cell = game.grid[r][c];
+      if (!cell || (cell.t === 'boss' && (cell.dx || cell.dy))) continue;
+      const o = cell.t === 'boss' ? cell.ref : cell.t === 'brick' && cell.k !== 'chest' ? cell : null;
+      if (!o) continue;
+      const sz = cell.t === 'boss' ? CELL * 2 : CELL, t = st === 'liquid' ? 0 : o.tv ?? tOf(o);
+      if (SPR.has(sprKey(st, o, t, sz))) continue;
+      brickSprite(st, o, t, sz); n--;
+      const s = sz - GAP * 2, ink = CRACK_INK[st];
+      if (ink) crackLayer(st, o, s, ink[0], ink[1]);
+      if (LIGHT.under) underSpr(o, st, s);
+    }
+    LIGHT = keep; sprBudget = keepB;
   }
 
   // G'ishtning rang darajasi joriy levelga nisbatan: 0.08 — sinish arafasida, 1 — to'la, 1..2 — ikki barobar.
@@ -1965,6 +1991,8 @@
   // Yoriqlar keshi (tuproq, tosh, asteroid): har g'isht uchun alohida shaffof kanvas, faqat shikast bosqichi
   // (1/24 qadam) o'zgarganda qayta chiziladi. Har kadrda yoriq chiziqlari o'rniga bitta drawImage.
   const CRACK_SPR = new WeakMap();
+  // yoriq ranglari: [chiziq, yoritilgan qirrasi]
+  const CRACK_INK = { soil: ['rgba(35,18,6,.8)', 'rgba(255,225,180,.22)'], stone: ['rgba(20,16,26,.85)', 'rgba(255,255,255,.18)'], rock: ['rgba(20,14,10,.8)', 'rgba(255,255,255,.12)'] };
   const CRACK_STEPS = 24;
   function crackLayer(st, cell, s, col, hl) {
     const d = dmgOf(cell);
@@ -2041,10 +2069,15 @@
   // ---------- G'isht spraytlari (statik qatlamlar bir marta chiziladi) ----------
   // SPR — LRU kesh: kalit → kanvas. Har kadrda faqat bir nechta yangi sprayt chiziladi (qolgani keyingi kadrda).
   const SPR = new Map(), LAST_SPR = new WeakMap();
-  function brickSprite(st, cell, t, sz) {
-    const s = sz - GAP * 2, tb = Math.round(Math.min(2, Math.max(0, t)) * 8);
+  function sprKey(st, cell, t, sz) {
+    const tb = Math.round(Math.min(2, Math.max(0, t)) * 8);
+    // shisha yoriqlari shisha old qatlami bilan birga pishiriladi (cb — shikast bosqichi)
     const dm = st === 'liquid' ? dmgOf(cell) : 0, cb = dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS);
-    const key = `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${cb}`;
+    return `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${cb}`;
+  }
+  function brickSprite(st, cell, t, sz) {
+    const s = sz - GAP * 2, key = sprKey(st, cell, t, sz);
+    const dm = st === 'liquid' ? dmgOf(cell) : 0, cb = dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS);
     let c = SPR.get(key);
     if (c) { SPR.delete(key); SPR.set(key, c); LAST_SPR.set(cell, c); return c; }
     if (sprBudget <= 0) {   // bu kadrda chizish navbati tugagan — eski spraytni vaqtincha ishlatamiz
@@ -2629,11 +2662,11 @@
     number(cell.hp, x + sz / 2 + sh, y + sz / 2, NUM_INK[st], cell);
   }
   // Yer osti: tuproq bo'lagi — mayda toshlar, ildizlar; zarba olgan sari yoriladi va uvalanadi.
-  function drawSoil(x, y, cell, t, sz = CELL) { drawSolid('soil', x, y, cell, t, sz, 'rgba(35,18,6,.8)', 'rgba(255,225,180,.22)', SPR_EDGE.soil); }
+  function drawSoil(x, y, cell, t, sz = CELL) { drawSolid('soil', x, y, cell, t, sz, CRACK_INK.soil[0], CRACK_INK.soil[1], SPR_EDGE.soil); }
   // Chuqurlik: qirrali tosh, ichida porlayotgan kristallar.
-  function drawStone(x, y, cell, t, sz = CELL) { drawSolid('stone', x, y, cell, t, sz, 'rgba(20,16,26,.85)', 'rgba(255,255,255,.18)', SPR_EDGE.stone); }
+  function drawStone(x, y, cell, t, sz = CELL) { drawSolid('stone', x, y, cell, t, sz, CRACK_INK.stone[0], CRACK_INK.stone[1], SPR_EDGE.stone); }
   // Koinot: asteroid bo'lagi — yorug'lik tomondan yoritilgan kraterlar bilan.
-  function drawRock(x, y, cell, t, sz = CELL) { drawSolid('rock', x, y, cell, t, sz, 'rgba(20,14,10,.8)', 'rgba(255,255,255,.12)', SPR_EDGE.rock); }
+  function drawRock(x, y, cell, t, sz = CELL) { drawSolid('rock', x, y, cell, t, sz, CRACK_INK.rock[0], CRACK_INK.rock[1], SPR_EDGE.rock); }
 
   // Osmon: bulut bo'lagi — yorug' va soya tomoni, tekis tagi, kumush hoshiyasi. Zarba olgan sari siyraklashadi.
   function drawCloud(x, y, cell, t, sz = CELL) {
@@ -2786,6 +2819,7 @@
 
   function draw() {
     ensureCaches();
+    prewarm();
     sprBudget = 4;   // bir kadrda qayta chiziladigan spraytlar "narxi" (qolgani keyingi kadrlarda, eskisi ko'rinib turadi)
     FX_BUSY = phase === 'fire' && flying.length > 60;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
