@@ -5226,6 +5226,12 @@
         } else {
           const v = addS(10);
           showBanner('🌟 Cho\'qqi bonusi', '+' + v + ' S tanga');
+          // Oddiy rejimda cho'qqida bemalol yurgan o'yinchiga bir marta qiyin rejimni taklif qilamiz
+          game.peaks = (game.peaks || 0) + 1;
+          if (diffId() === 'oddiy' && game.peaks === 3 && !profile.hardTip) {
+            profile.hardTip = true;
+            toast("🔥 Juda osonmi? Menyudan Qiyin rejimni sinab ko'ring");
+          }
         }
       }
     }
