@@ -8,14 +8,16 @@
   /* Ranglar joriy qatlamga qarab JS orqali almashtiriladi */
   :root {
     --top: #bfe6ff;      /* HUD foni (osmon / tuproq / koinot) */
-    --ground: #7a5232;   /* maydon ostidagi yer */
+    --seam: #5aa83c;     /* maydon ostidagi tasmaning boshi — kanvas pastki qatori bilan bir xil */
+    --ground: #7a5232;   /* maydon ostidagi yer (o'rta tus) */
+    --ground2: #4a3020;  /* eng pastki to'q tus */
     --ink: #14324a;      /* HUD matni */
     --ink2: #fff;        /* pastki tugmalar matni */
     --green: #2fb34a;
     --blue: #5aa5f5;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ground);
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ground2);
                touch-action: none; user-select: none; -webkit-user-select: none; }
   body { font-family: Roboto, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); }
 
@@ -249,10 +251,10 @@
   // Pastki qatlamlarda g'ishtlar yengilroq (hpK) — yiqilgan o'yinchi qaytib chiqa olishi uchun.
   const ZONES = {
     '-2': { name: 'Chuqurlik', icon: '💎', style: 'stone',
-            top: '#3b3640', ground: '#4a1608', ink: '#f1e9ff', ink2: '#ffd7b0',
+            top: '#2f2a36', ground: '#4a1608', ink: '#f1e9ff', ink2: '#ffd7b0',
             maxB: 3, coin: 0.08, gem: 0.2, dbl: 0, hpK: 0.6 },
     '-1': { name: 'Yer osti', icon: '🪱', style: 'soil',
-            top: '#8a6240', ground: '#3e2918', ink: '#fff3dc', ink2: '#fff3dc',
+            top: '#4a3628', ground: '#3e2918', ink: '#fff3dc', ink2: '#fff3dc',
             maxB: 3, coin: 0.1, gem: 0.14, dbl: 0, hpK: 0.8 },
     '0':  { name: 'Yer usti', icon: '🌳', style: 'liquid',
             top: '#bfe6ff', ground: '#7a5232', ink: '#14324a', ink2: '#fff',
@@ -403,20 +405,32 @@
   let scale = 1;
   const bgCache = {};
 
+  let FIELD_CSS_H = 0;   // maydonning CSS balandligi (pastki tasma shu chiziqdan boshlanadi)
   function resize() {
     const availW = Math.min(window.innerWidth, 520);
     const availH = wrap.clientHeight - 64;   // pastda boshqarish tugmalari uchun joy
     let cssW = availW, cssH = cssW * H / W;
     if (cssH > availH) { cssH = Math.max(availH, 200); cssW = cssH * W / H; }
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = window.devicePixelRatio || 1, cw = Math.round(cssW * dpr), ch = Math.round(cssH * dpr);
+    // O'lcham o'zgarmagan bo'lsa (telefonda manzil satri yashirinishi) fonlar qayta chizilmaydi — qotish bo'lmaydi
+    const same = resize.done && cw === canvas.width && ch === canvas.height;
     canvas.style.width = cssW + 'px';
     canvas.style.height = cssH + 'px';
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    if (!same) { canvas.width = cw; canvas.height = ch; }
     scale = canvas.width / W;
     ctrl.style.top = (cssH + 10) + 'px';
-    wrap.style.background = `linear-gradient(to bottom, transparent ${cssH - 1}px, var(--ground) ${cssH - 1}px)`;
+    FIELD_CSS_H = cssH; paintGround();
+    if (same) return;
+    resize.done = true;
     for (const z in ZONES) bgCache[z] = renderBg(+z);
+    buildDeepSprites();
+  }
+  // Maydon ostidagi tasma: kanvas pastki qatori rangidan (--seam) boshlanib, pastga qarab qorayadi
+  function paintGround() {
+    const h = FIELD_CSS_H, z = paintGround.z || 0;
+    let bg = `linear-gradient(to bottom, transparent ${h - 1}px, var(--seam) ${h - 1}px, var(--ground) ${h + 56}px, var(--ground2) 100%)`;
+    if (z === -2) bg = `radial-gradient(140% 70px at 50% ${h}px, rgba(255,140,40,.45), transparent), ` + bg;   // lava yog'dusi
+    wrap.style.background = bg;
   }
   window.addEventListener('resize', resize);
 
@@ -482,9 +496,22 @@
     let top = Z.top, ink = Z.ink, ink2 = Z.ink2;
     if (z === 0) { top = DAY.top; ink = DAY.dark ? '#f2f6ff' : '#14324a'; }
     if (z === 1) { top = skyTop(); ink = '#ffffff'; ink2 = DAY.dark ? '#ffffff' : Z.ink2; }
-    const ground = z === 1 && DAY.dark ? '#4c5878' : Z.ground;
-    st.setProperty('--top', top); st.setProperty('--ground', ground);
+    // Maydon ostidagi tasma: [chok — kanvas pastki qatori, o'rta tus, eng pastki tus]
+    const band = z === 0 ? [nat({ summer: '#5aa83c', spring: '#68b443', autumn: '#8a8a3a', winter: '#dce6f0' }[DAY.season]), nat('#7a5232'), nat('#4a3020')]
+      : z === 1 ? (DAY.dark ? ['#9aa6c4', '#4c5878', '#2e3654'] : ['#ffffff', '#eaf4ff', '#c9dcf2'])
+      : z === 2 ? (DAY.night ? ['#0a1634', '#081126', '#03060f'] : ['#0f3a7e', '#0c2f66', '#06142e'])
+      : z === -1 ? ['#3b3640', '#2c2622', '#15110f'] : ['#e2581a', '#5a1606', '#1a0604'];
+    // Yer usti va osmonda chok fon keshining pastki qatoridan o'qiladi — manzara qanday chizilmasin, chok ko'rinmaydi
+    if ((z === 0 || z === 1) && bgCache[z]) try {
+      const c = bgCache[z], d = c.getContext('2d').getImageData(0, c.height - 1, c.width, 1).data, s = [0, 0, 0];
+      let n = 0;
+      for (let i = 0; i < d.length; i += 20) { s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; n++; }
+      if (n) band[0] = rgbHex(s.map(q => q / n));
+    } catch {}
+    st.setProperty('--top', top); st.setProperty('--ground', band[1]);
+    st.setProperty('--seam', band[0]); st.setProperty('--ground2', band[2]);
     st.setProperty('--ink', ink); st.setProperty('--ink2', ink2);
+    paintGround.z = z; paintGround();
   }
   // Har daqiqada vaqt tekshiriladi; o'zgargan bo'lsa yer usti va osmon foni qayta chiziladi
   setInterval(() => {
@@ -1555,76 +1582,1258 @@
   }
 
   function bgSpace(g, rand) {
-    vgrad(g, [[0, '#050818'], [0.7, '#0e1838'], [1, '#1a2f66']]);
-    glow(g, W * 0.3, H * 0.35, 260, 'rgba(120,70,200,.18)');
-    glow(g, W * 0.75, H * 0.6, 220, 'rgba(40,140,220,.12)');
-    for (let i = 0; i < 160; i++) {
-      g.globalAlpha = 0.3 + rand() * 0.7;
-      puff(g, rand() * W, rand() * (H - 60), 0.5 + rand() * 1.4, '#ffffff');
+    // Koinot: kuchli qonunli yulduz maydoni, Somon yo'li / tumanlik / gaz giganti, halqali sayyora va Yer
+    const v = bgVar(arguments[2], 2);   // renderBg variantni uchinchi argument sifatida uzatadi
+    const kind = v % 3, n = vnoise(1 + Math.floor(rand() * 1e6)), P2 = Math.PI * 2;
+    SPACE_TW.length = 0; SPACE_ASTRO = null;
+    vgrad(g, [[0, '#03050f'], [0.6, '#0a1230'], [1, '#14244f']]);
+    // Avval joylar: oy, sayyora, tumanlik — miltillovchi yulduzlar ularning ustiga tushmasin
+    const avoid = [];
+    if (kind < 2) avoid.push([W - 95, 62, 70]); else avoid.push([570, 30, 175]);
+    if (kind === 0) avoid.push([88, 70, 36]);
+    let nb = null;
+    if (kind === 0) milkyWay(g, rand);
+    else if (kind === 1) { nb = [[110, 230], [110, 620], [490, 620]][Math.floor(rand() * 3)]; nebula(g, rand, n, nb[0], nb[1]); }
+    // Maydon yulduzlari: r = .35 + 1.5 rand^7, rang og'irliklari bilan
+    const SC = [['157,180,255', 0.08], ['196,210,255', 0.17], ['246,244,255', 0.4], ['255,242,223', 0.2], ['255,217,168', 0.1], ['255,189,122', 0.05]];
+    const pickC = () => { let r = rand(), i = 0; while (i < SC.length - 1 && (r -= SC[i][1]) > 0) i++; return SC[i][0]; };
+    const free = (x, y) => y < H - 110 && !avoid.some(([ax, ay, ar]) => Math.hypot(ax - x, ay - y) < ar);
+    let med = 0;
+    for (let i = 0; i < 450; i++) {
+      const x = rand() * W, y = rand() * (H - 30), r = 0.35 + 1.5 * Math.pow(rand(), 7), c = pickC();
+      g.fillStyle = `rgba(${c},${0.45 + rand() * 0.55})`;
+      if (r < 0.8) g.fillRect(x - r, y - r, r * 2, r * 2); else { g.beginPath(); g.arc(x, y, r, 0, P2); g.fill(); }
+      if (r > 0.85 && med < 14 && free(x, y)) { med++; SPACE_TW.push({ x, y, r, c: `rgb(${c})`, ph: rand() * P2, sp: 0.02 + rand() * 0.04 }); }
     }
-    g.globalAlpha = 1;
-    // halqali sayyora
-    const px = 120, py = 150;
-    const pg = g.createRadialGradient(px - 10, py - 10, 4, px, py, 34);
-    pg.addColorStop(0, '#ffd59a'); pg.addColorStop(1, '#c46d3b');
-    g.fillStyle = pg; g.beginPath(); g.arc(px, py, 30, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(255,220,170,.7)'; g.lineWidth = 3;
-    g.beginPath(); g.ellipse(px, py, 52, 12, -0.35, 0, Math.PI * 2); g.stroke();
-    // Yer sharining egri cheti
-    const eg = g.createRadialGradient(W / 2, H + 1500, 1460, W / 2, H + 1500, 1545);
-    eg.addColorStop(0, '#2a63b8'); eg.addColorStop(0.9, '#5aa2ee'); eg.addColorStop(1, 'rgba(127,200,255,0)');
-    g.fillStyle = eg; g.beginPath(); g.arc(W / 2, H + 1500, 1545, 0, Math.PI * 2); g.fill();
-    g.fillStyle = 'rgba(90,170,90,.55)';
-    g.beginPath(); g.ellipse(W * 0.3, H - 6, 90, 14, 0.05, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.ellipse(W * 0.78, H - 2, 70, 10, -0.05, 0, Math.PI * 2); g.fill();
+    // 10 ta yorqin yulduz nuri bilan, eng yorqin 4 tasida difraksiya nurlari
+    const bright = [];
+    for (let i = 0; i < 10; i++) {
+      let x = 0, y = 0;
+      for (let k = 0; k < 12; k++) { x = 20 + rand() * (W - 40); y = 20 + rand() * (H - 160); if (free(x, y)) break; }
+      bright.push([x, y, 1.3 + rand() * 0.9, pickC()]);
+    }
+    bright.sort((a, b) => b[2] - a[2]);
+    for (let i = 0; i < 10; i++) {
+      const [x, y, r, c] = bright[i];
+      glow(g, x, y, 7 + rand() * 4, `rgba(${c},.32)`); puff(g, x, y, r, `rgb(${c})`);
+      if (i < 4) {
+        const L = 10 + rand() * 9;
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+          const sg = g.createLinearGradient(x - dx * L, y - dy * L, x + dx * L, y + dy * L);
+          sg.addColorStop(0, `rgba(${c},0)`); sg.addColorStop(0.5, `rgba(${c},.75)`); sg.addColorStop(1, `rgba(${c},0)`);
+          g.fillStyle = sg; g.fillRect(dx ? x - L : x - 0.5, dy ? y - L : y - 0.5, dx ? 2 * L : 1, dy ? 2 * L : 1);
+        }
+      }
+      SPACE_TW.push({ x, y, r, c: `rgb(${c})`, ph: rand() * P2, sp: 0.03 + rand() * 0.05 });
+    }
+    if (kind === 1) {   // tumanlik ichida yosh yulduzlar va kometa
+      for (let i = 0; i < 7; i++) { const x = nb[0] + gaussR(rand) * 45, y = nb[1] + gaussR(rand) * 45; glow(g, x, y, 6, 'rgba(190,215,255,.35)'); puff(g, x, y, 0.9 + rand() * 0.6, '#eef4ff'); }
+      const cr = nb[0] < W / 2, chx = cr ? 470 + rand() * 50 : 80 + rand() * 50, chy = 300 + rand() * 180;
+      comet(g, chx, chy, cr ? -0.6 - rand() * 0.3 : -Math.PI + 0.6 + rand() * 0.3, 110 + rand() * 50);
+    }
+    if (kind === 0) {
+      const ph = typeof moonPhase === 'function' ? moonPhase() : ((((Date.now() / 864e5) - 10962.76) % 29.530589) + 29.530589) % 29.530589 / 29.530589;
+      if (typeof drawMoon === 'function') drawMoon(g, 88, 70, 22, ph, '#060816'); else spaceMoon(g, 88, 70, 22, ph, 'rgba(6,8,22,.86)');
+    }
+    if (kind < 2) ringPlanet(g, W - 95, 62, 24, -0.35, undefined, 1, rand);
+    else ringPlanet(g, 570, 30, 140, 0.45, ['#c4a47c', '#9c7a56', '#d6bd96', '#836446'], 0.5, rand, [0.8, -0.6]);   // yorug' o'ngdan — maydonga qaragan qismi soyada
+    earthLayer(g, rand, n);
+    placeFinds(g, 2, rand, { avoid });
+    return ["Somon yo'li", 'Tumanlik', 'Gaz giganti'][kind];
   }
 
-  function bgSoil(g, rand) {
-    vgrad(g, [[0, '#8a6240'], [0.55, '#6b4a2e'], [1, '#4e331f']]);
-    // qatlamlar
-    for (let i = 0; i < 6; i++) {
-      const base = 120 + i * 140 + rand() * 40;
-      g.fillStyle = i % 2 ? 'rgba(40,22,10,.13)' : 'rgba(255,220,170,.06)';
-      g.beginPath(); g.moveTo(0, base);
-      for (let x = 0; x <= W; x += 20) g.lineTo(x, base + Math.sin(x / 70 + i) * 10);
-      g.lineTo(W, base + 50); for (let x = W; x >= 0; x -= 20) g.lineTo(x, base + 50 + Math.sin(x / 90 + i * 2) * 8);
-      g.closePath(); g.fill();
+  // ---------- Yer osti, chuqurlik va koinot: statik fon ----------
+  // Fon chizilayotgan paytdagi level (o'yin hali yuklanmagan bo'lsa — saqlangan o'yindan)
+  const bgLv = () => game ? game.level : (saved.game && saved.game.level) || 1;
+  // Variant: qatlamga necha marta kelinganiga qarab (renderBg uzatmasa — profildan olinadi)
+  const bgVar = (v, z) => v != null ? v | 0 : ((profile.visits || {})[z] || 0);
+  const smoothK = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const gaussR = rand => (rand() + rand() + rand() - 1.5) * 2;
+  // Qurilma aniqligidagi yordamchi kanvas (ichida mantiqiy o'lchamda chiziladi)
+  function offCanvas(w, h, k = scale) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(w * k)); c.height = Math.max(1, Math.ceil(h * k));
+    const g = c.getContext('2d'); g.setTransform(k, 0, 0, k, 0, 0);
+    return [c, g];
+  }
+
+  // Panjarali qiymat shovqini: har tugunga xesh qiymat, oralig'i silliq (smoothstep) to'ldiriladi
+  function vnoise(seed) {
+    const h = (i, j) => {
+      let n = Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(seed, 1442695041) | 0;
+      n = Math.imul(n ^ n >>> 13, 1274126177);
+      return ((n ^ n >>> 16) >>> 0) / 4294967296;
+    };
+    return (x, y = 0) => {
+      const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+      const u = fx * fx * (3 - 2 * fx), w = fy * fy * (3 - 2 * fy);
+      const a = h(i, j), b = h(i + 1, j), c = h(i, j + 1), d = h(i + 1, j + 1);
+      return a + (b - a) * u + (c - a) * w + (a - b - c + d) * u * w;
+    };
+  }
+  // Fraktal shovqin: oktavalar yig'indisi (amplituda .5^k), natija 0..1 oralig'ida
+  function fbm(n, x, y = 0, oct = 4) {
+    let s = 0, a = 1, f = 1, t = 0;
+    for (let k = 0; k < oct; k++) { s += a * n(x * f + k * 31.7, y * f + k * 17.3); t += a; a *= 0.5; f *= 2; }
+    return s / t;
+  }
+  // Kichik shovqin kanvasi (ko'pi bilan 80x120): drawImage bilan cho'zilganda o'zi silliqlanadi
+  function noiseCanvas(w, h, fn) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'), im = g.createImageData(w, h), d = im.data;
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) {
+      const p = fn(x, y); d[i] = p[0]; d[i + 1] = p[1]; d[i + 2] = p[2]; d[i + 3] = p[3];
     }
-    for (let i = 0; i < 70; i++) {
-      g.fillStyle = rand() < 0.5 ? 'rgba(160,140,120,.45)' : 'rgba(40,25,12,.35)';
-      g.beginPath(); g.ellipse(rand() * W, rand() * H, 2 + rand() * 6, 1.5 + rand() * 4, rand() * 3, 0, Math.PI * 2); g.fill();
+    g.putImageData(im, 0, 0);
+    return c;
+  }
+  // Donadorlik: 128x128 tasodifiy kulrang (alfa 40), 'overlay' bilan takrorlanadi
+  let GRAIN = null;
+  function grainTile() {
+    if (!GRAIN) GRAIN = noiseCanvas(128, 128, () => { const v = Math.random() * 255 | 0; return [v, v, v, 40]; });
+    return GRAIN;
+  }
+  function grainFill(g, a = 1) {
+    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = a;
+    g.fillStyle = g.createPattern(grainTile(), 'repeat'); g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+  // Dog'lanish: past aniqlikdagi fbm, ±k alfa bilan yorug' / qorong'i dog'lar
+  function mottle(g, n, w, h, k, fq = 7, light = [255, 232, 200], dark = [18, 10, 6]) {
+    const c = noiseCanvas(w, h, (i, j) => {
+      const t = Math.max(-1, Math.min(1, (fbm(n, i / w * fq, j / w * fq) - 0.5) * 4));
+      return t > 0 ? [light[0], light[1], light[2], t * k * 255] : [dark[0], dark[1], dark[2], -t * k * 255];
+    });
+    g.drawImage(c, 0, 0, W, H);
+  }
+  // Silliq yopiq shakl (nuqtalar o'rtasidan kvadratik egri)
+  function blobPath(g, pts) {
+    const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], n = pts.length;
+    let s = m(pts[n - 1], pts[0]);
+    g.beginPath(); g.moveTo(s[0], s[1]);
+    for (let i = 0; i < n; i++) { const q = m(pts[i], pts[(i + 1) % n]); g.quadraticCurveTo(pts[i][0], pts[i][1], q[0], q[1]); }
+    g.closePath();
+  }
+
+  // ---------- Topilmalar ----------
+  // Fon chizilganda chetlarga yashiringan qadimiy (yoki kosmik) narsalar; birinchi ko'rilganda e'lon qilinadi
+  const FINDS = [
+    { id: 'ammonit', name: 'Ammonit', icon: '🐚', zone: -1, minLv: 1, w: 1 },
+    { id: 'baliq', name: 'Baliq skeleti', icon: '🐟', zone: -1, minLv: 1, w: 1 },
+    { id: 'tanga', name: 'Qadimgi tanga', icon: '🪙', zone: -1, minLv: 10, w: 1 },
+    { id: 'sopol', name: 'Rishton sopoli', icon: '🏺', zone: -1, minLv: 10, w: 1 },
+    { id: 'kalit', name: 'Zanglagan kalit', icon: '🗝️', zone: -1, minLv: 20, w: 1 },
+    { id: 'dino', name: 'Dinozavr suyagi', icon: '🦴', zone: -1, minLv: 40, w: 0.6 },
+    { id: 'mamont', name: 'Mamont tishi', icon: '🦣', zone: -1, minLv: 70, w: 0.4 },
+    { id: 'trilobit', name: 'Trilobit', icon: '🪲', zone: -2, minLv: 1, w: 1 },
+    { id: 'xazina', name: "Xazina sandig'i", icon: '💰', zone: -2, minLv: 60, w: 0.3 },
+    { id: 'zond', name: 'Kosmik zond', icon: '🛰️', zone: 2, minLv: 15, w: 1 },
+    { id: 'kosmonavt', name: 'Kosmonavt', icon: '👨‍🚀', zone: 2, minLv: 30, w: 1 },
+    { id: 'nuj', name: 'NUJ', icon: '🛸', zone: 2, minLv: 90, w: 0.2 },
+  ];
+  // Har topilmaning yarim eni va yarim bo'yi (bo'shliq va joylashtirish uchun)
+  const FIND_SZ = { ammonit: [15, 15], baliq: [22, 8], tanga: [9, 9], sopol: [14, 11], kalit: [16, 6], dino: [19, 8],
+    mamont: [19, 12], trilobit: [10, 13], xazina: [13, 10], zond: [20, 10], kosmonavt: [9, 13], nuj: [16, 8] };
+  const BG_FIND = {};        // qatlam -> shu fondagi eng noyob topilma id
+  let SPACE_ASTRO = null;    // koinotda suzib yuruvchi kosmonavt (jonli chiziladi)
+
+  function drawFind(g, id, x, y, s = 1) {
+    const P = Math.PI, dot = (cx, cy, r) => { g.moveTo(cx + r, cy); g.arc(cx, cy, r, 0, P * 2); };
+    g.save(); g.translate(x, y); g.scale(s, s); g.lineCap = 'round'; g.lineJoin = 'round';
+    if (id === 'ammonit') {   // logarifmik spiral va qovurg'alar
+      const sp = t => 1.05 * Math.exp(0.2 * t);
+      const gr = g.createRadialGradient(-5, -5, 1, 0, 0, 16); gr.addColorStop(0, '#e2cfa4'); gr.addColorStop(1, '#9a825e');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 14.6, 0, P * 2); g.fill();
+      g.strokeStyle = 'rgba(92,72,46,.55)'; g.lineWidth = 0.8; g.beginPath();
+      for (let t = P * 2; t < P * 4.2; t += 0.26) { const r0 = sp(t - P * 2), r1 = sp(t) * 0.97; g.moveTo(Math.cos(t) * r0, Math.sin(t) * r0); g.lineTo(Math.cos(t) * r1, Math.sin(t) * r1); }
+      g.stroke();
+      g.strokeStyle = 'rgba(70,52,32,.8)'; g.lineWidth = 1.1; g.beginPath();
+      for (let t = 0; t <= P * 4.2; t += 0.15) { const r = sp(t); t ? g.lineTo(Math.cos(t) * r, Math.sin(t) * r) : g.moveTo(r, 0); }
+      g.stroke();
+    } else if (id === 'baliq') {   // baliq skeleti
+      g.strokeStyle = '#e4d8bd'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(-17, 0); g.quadraticCurveTo(-2, -1.5, 12, 0); g.stroke();
+      g.lineWidth = 0.9; g.beginPath();
+      for (let i = 0; i < 9; i++) {
+        const xx = -12 + i * 2.7, h = 6.5 * Math.sin(P * (i + 1) / 10) + 1;
+        g.moveTo(xx, -0.5); g.quadraticCurveTo(xx + 1.6, -h * 0.6, xx + 3, -h);
+        g.moveTo(xx, 0.5); g.quadraticCurveTo(xx + 1.6, h * 0.6, xx + 3, h);
+      }
+      g.moveTo(-17, 0); g.lineTo(-22, -5); g.moveTo(-17, 0); g.lineTo(-22.5, 0); g.moveTo(-17, 0); g.lineTo(-22, 5);
+      g.stroke();
+      g.fillStyle = 'rgba(228,216,189,.9)'; g.beginPath(); g.moveTo(12, -5.5); g.quadraticCurveTo(19, -3, 20.5, 0.5); g.lineTo(12, 5); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(40,26,14,.85)'; g.beginPath(); dot(15, -1, 1.3); g.fill();
+    } else if (id === 'tanga') {   // o'rtasi to'rtburchak teshikli qadimgi tanga
+      const gr = g.createRadialGradient(-3, -3, 1, 0, 0, 10); gr.addColorStop(0, '#d9b060'); gr.addColorStop(1, '#86601f');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 9, 0, P * 2); g.fill();
+      g.fillStyle = 'rgba(80,160,130,.5)'; g.beginPath(); dot(4.2, 3.4, 2.4); dot(-5, 4, 1.5); dot(-4, -5, 1.2); g.fill();
+      g.strokeStyle = 'rgba(70,48,18,.7)'; g.lineWidth = 0.8; g.beginPath(); g.arc(0, 0, 7.3, 0, P * 2);
+      g.moveTo(-1.5, -5.6); g.lineTo(1.5, -5.6); g.moveTo(5.6, -1.5); g.lineTo(5.6, 1.5); g.moveTo(-1.5, 5.6); g.lineTo(1.5, 5.6); g.moveTo(-5.6, -1.5); g.lineTo(-5.6, 1.5);
+      g.stroke();
+      g.fillStyle = '#21140a'; g.fillRect(-2.5, -2.5, 5, 5);
+    } else if (id === 'sopol') {   // Rishton sopolining siniq parchasi: ko'k sir va naqsh
+      g.beginPath(); g.moveTo(-14, -5); g.lineTo(-3, -11); g.lineTo(13, -6); g.lineTo(10, 8); g.lineTo(-1, 6); g.lineTo(-9, 10); g.closePath();
+      g.fillStyle = '#2e6db3'; g.fill(); g.strokeStyle = '#b8683c'; g.lineWidth = 2.2; g.stroke();
+      g.strokeStyle = 'rgba(235,245,255,.85)'; g.lineWidth = 1; g.beginPath(); g.arc(1, 0, 5, -2.6, 0.6); g.moveTo(-9, -1); g.quadraticCurveTo(-5, -6, 0, -7.5); g.stroke();
+      g.strokeStyle = '#5fd0d8'; g.beginPath(); g.moveTo(-6, 5); g.quadraticCurveTo(0, 1.5, 7, 3); g.stroke();
+      g.fillStyle = 'rgba(235,245,255,.9)'; g.beginPath(); dot(1, 0, 1.3); dot(6, -4, 0.9); dot(-6, 2, 0.9); g.fill();
+    } else if (id === 'kalit') {   // zanglagan kalit
+      g.strokeStyle = '#7e4426'; g.lineWidth = 2.4;
+      g.beginPath(); g.arc(-11, 0, 4.4, 0, P * 2); g.moveTo(-6.6, 0); g.lineTo(13, 0); g.stroke();
+      g.fillStyle = '#7e4426'; g.fillRect(8.5, 0, 2.2, 5.2); g.fillRect(12, 0, 2, 3.6);
+      g.fillStyle = 'rgba(200,124,66,.85)'; g.beginPath(); dot(-13, -2.5, 0.8); dot(2, -0.6, 0.7); dot(9.5, 3, 0.6); g.fill();
+      g.fillStyle = 'rgba(52,24,10,.7)'; g.beginPath(); dot(-8.4, 2.4, 0.7); dot(5, 0.5, 0.6); g.fill();
+    } else if (id === 'dino') {   // dinozavr son suyagi
+      g.fillStyle = '#d6c59c'; g.beginPath(); g.rect(-14, -2.8, 28, 5.6);
+      for (const [a, b] of [[-15, -3.4], [-15, 3.4], [15, -3.4], [15, 3.4]]) dot(a, b, 4.2);
+      g.fill();
+      g.fillStyle = 'rgba(96,74,42,.3)'; g.fillRect(-13, 0.8, 26, 2);
+      g.strokeStyle = 'rgba(96,74,42,.45)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(-6, -1.4); g.lineTo(-2, -1); g.moveTo(4, 1); g.lineTo(8, 1.6); g.stroke();
+    } else if (id === 'mamont') {   // mamont tishi (egilgan fil suyagi)
+      const gr = g.createLinearGradient(-18, 8, 18, -8); gr.addColorStop(0, '#bba273'); gr.addColorStop(1, '#f1e7cf');
+      g.fillStyle = gr; g.beginPath(); g.moveTo(-18, 4); g.quadraticCurveTo(-4, -16, 19, -8); g.quadraticCurveTo(-2, -8, -15, 12); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(120,98,66,.45)'; g.lineWidth = 0.7; g.beginPath();
+      for (let k = 1; k <= 3; k++) { const t = k * 0.22; g.moveTo(-17 + t * 4, 6 + t * 6); g.quadraticCurveTo(-3, -9 + k * 1.6, 12 - k * 2, -7 + k * 0.3); }
+      g.stroke();
+      g.strokeStyle = 'rgba(86,66,40,.8)'; g.lineWidth = 1.3; g.beginPath(); g.moveTo(-18, 4); g.lineTo(-16.5, 8); g.lineTo(-15, 12); g.stroke();
+    } else if (id === 'trilobit') {   // trilobit: bosh qalqoni, uch bo'lakli tana, bo'g'imlar
+      g.fillStyle = '#8a8274'; g.beginPath(); g.ellipse(0, 1.5, 8.5, 11.5, 0, 0, P * 2); g.fill();
+      g.fillStyle = '#9d9587'; g.beginPath(); g.ellipse(0, -6.5, 10, 6, 0, P, 0); g.closePath(); g.fill();
+      g.fillStyle = '#665f53'; g.beginPath(); g.ellipse(0, 2, 2.6, 10, 0, 0, P * 2); g.fill();
+      g.strokeStyle = 'rgba(40,36,30,.6)'; g.lineWidth = 0.7; g.beginPath();
+      for (let yy = -3; yy < 12; yy += 1.9) { const hw = 8.3 * Math.sqrt(Math.max(0, 1 - ((yy - 1.5) / 11.5) ** 2)); g.moveTo(-hw, yy); g.lineTo(hw, yy); }
+      g.stroke();
+      g.fillStyle = '#3a342c'; g.beginPath(); dot(-4.4, -8, 1.2); dot(4.4, -8, 1.2); g.fill();
+    } else if (id === 'xazina') {   // xazina sandig'i, qopqog'i qiya ochiq
+      g.fillStyle = '#6e3c1a'; g.fillRect(-12, -3, 24, 12);
+      g.fillStyle = '#ffd24a'; g.fillRect(-11, -5, 22, 2.6);
+      g.fillStyle = '#8a4e24'; g.beginPath(); g.moveTo(-12, -6); g.quadraticCurveTo(0, -13, 12, -6); g.lineTo(12, -4.6); g.lineTo(-12, -4.6); g.closePath(); g.fill();
+      g.fillStyle = '#d9a82a'; g.fillRect(-9, -3, 2.4, 12); g.fillRect(6.6, -3, 2.4, 12); g.fillRect(-1.8, -1, 3.6, 4.6);
+      g.fillStyle = '#fff3b0'; g.beginPath(); dot(-4, -4.4, 0.9); dot(3, -4.6, 0.8); g.fill();
+    } else if (id === 'zond') {   // kosmik zond: likopcha antenna, oltin plyonkali tana, tayoq
+      g.strokeStyle = '#bfc4cc'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(3, 1); g.lineTo(18, 5); g.moveTo(-1, 3); g.lineTo(-5, 9); g.stroke();
+      g.fillStyle = '#c9a24a'; g.fillRect(-2.5, -2, 6, 5);
+      g.fillStyle = '#e9e9e4'; g.beginPath(); g.ellipse(-7, -3, 8, 3.4, -0.45, 0, P * 2); g.fill();
+      g.strokeStyle = 'rgba(120,125,135,.85)'; g.lineWidth = 0.6; g.beginPath(); g.moveTo(-7, -3); g.lineTo(-11, -9.5); g.stroke();
+      g.fillStyle = '#8a8f98'; g.fillRect(16.5, 3.6, 3.5, 2.6);
+    } else if (id === 'nuj') {   // uchar likopcha
+      g.fillStyle = 'rgba(160,255,220,.07)'; g.beginPath(); g.moveTo(-6, 3); g.lineTo(6, 3); g.lineTo(14, 24); g.lineTo(-14, 24); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(150,230,255,.85)'; g.beginPath(); g.ellipse(0, -2.5, 6.5, 5.5, 0, P, 0); g.closePath(); g.fill();
+      const gr = g.createLinearGradient(0, -4, 0, 5); gr.addColorStop(0, '#d8dce4'); gr.addColorStop(1, '#5e6474');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, 16, 4.6, 0, 0, P * 2); g.fill();
+      g.fillStyle = '#ffe066'; g.beginPath(); dot(-10, 1.6, 1); dot(0, 2.2, 1); dot(10, 1.6, 1); g.fill();
+      g.fillStyle = '#7fffd4'; g.beginPath(); dot(-5, 2, 1); dot(5, 2, 1); g.fill();
+    } else if (id === 'kosmonavt') {   // skafandrdagi kosmonavt
+      g.fillStyle = '#c3c8d0'; g.fillRect(-7, -4, 4, 10);
+      g.strokeStyle = '#eceef2'; g.lineWidth = 3; g.beginPath();
+      g.moveTo(-1, 0); g.lineTo(5, -3); g.moveTo(0, 2); g.lineTo(6, 5); g.moveTo(-1.5, 6); g.lineTo(-3.5, 12); g.moveTo(1.5, 6); g.lineTo(4, 11.5);
+      g.stroke();
+      g.fillStyle = '#f4f5f7'; g.beginPath(); g.ellipse(0, 2, 3.9, 5, 0, 0, P * 2); dot(0.5, -6, 4.2); g.fill();
+      g.fillStyle = '#d99a3a'; g.beginPath(); g.ellipse(1.8, -6, 2.6, 2.1, 0, 0, P * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(1.1, -7.5, 1.3, 0.9);
     }
-    // tepadan tushgan ildizlar
-    g.strokeStyle = 'rgba(60,36,18,.7)'; g.lineCap = 'round';
-    for (let i = 0; i < 7; i++) {
-      let x = 30 + rand() * (W - 60), y = 0, w = 4;
-      for (let s = 0; s < 6; s++) {
-        const nx = x + (rand() - 0.5) * 30, ny = y + 18 + rand() * 18;
-        g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
-        if (rand() < 0.4) { g.lineWidth = w * 0.5; g.beginPath(); g.moveTo(nx, ny); g.lineTo(nx + (rand() - 0.5) * 40, ny + 20); g.stroke(); }
-        x = nx; y = ny; w = Math.max(1, w - 0.6);
+    g.restore();
+  }
+  // Bo'shliq: topilmadan 4 px kattaroq qorong'i oval, yuqori qirrasi yorug'
+  function findCavity(g, x, y, rx, ry) {
+    g.fillStyle = 'rgba(14,8,6,.5)'; g.beginPath(); g.ellipse(x, y, rx + 4, ry + 4, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,232,200,.16)'; g.lineWidth = 1.2;
+    g.beginPath(); g.ellipse(x, y, rx + 4, ry + 4, 0, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+  }
+  // Topilma joyi: faqat chetlar (x<100 yoki x>500), 0-qator yoki y 700-780 tasmasi; band joylar chetlab o'tiladi
+  function findSpot(rand, sx, sy, o = {}) {
+    for (let k = 0; k < 20; k++) {
+      const r = rand(); let x, y;
+      if (r < 0.42) {
+        const lo = o.side ? o.side[0] : 6;
+        x = lo + sx + rand() * Math.max(1, 96 - lo - 2 * sx); if (rand() < 0.5) x = W - x;
+        y = 130 + rand() * 540;
+      } else if (r < 0.7 && !o.noTop) { x = 30 + sx + rand() * (W - 60 - 2 * sx); y = 8 + sy + rand() * Math.max(1, 84 - 2 * sy); }
+      else { x = 30 + sx + rand() * (W - 60 - 2 * sx); y = 704 + sy + rand() * Math.max(1, 72 - 2 * sy); }
+      if (!(o.avoid || []).some(([ax, ay, ar]) => Math.hypot(ax - x, ay - y) < ar + sx)) return [x, y];
+    }
+    return [40, 740];
+  }
+  // 2 ta oddiy va ehtimol 1 ta noyob (level yetgan bo'lsa) topilma joylashtiriladi
+  function placeFinds(g, z, rand, o = {}) {
+    BG_FIND[z] = null;
+    const lv = bgLv(), el = FINDS.filter(f => f.zone === z && f.minLv <= lv);
+    const com = el.filter(f => f.w >= 1), rare = el.filter(f => f.w < 1), pick = [];
+    for (let i = com.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [com[i], com[j]] = [com[j], com[i]]; }
+    // koinotda bir xil zond ikki marta turmasin; qazilmalar (trilobit kabi) takrorlanishi tabiiy
+    for (let i = 0; i < (z === 2 ? Math.min(2, com.length) : 2) && com.length; i++) pick.push(com[i % com.length]);
+    if (rare.length && rand() < 0.5) {
+      let t = rand() * rare.reduce((s, f) => s + f.w, 0);
+      for (const f of rare) if ((t -= f.w) <= 0) { pick.push(f); break; }
+    }
+    const placed = [], avoid = (o.avoid || []).slice();
+    for (const f of pick) {
+      const [sx, sy] = FIND_SZ[f.id], [x, y] = findSpot(rand, sx, sy, Object.assign({}, o, { avoid }));
+      avoid.push([x, y, 40]); placed.push(f);
+      if (f.id === 'kosmonavt') { SPACE_ASTRO = { x, y }; continue; }
+      if (z < 0) findCavity(g, x, y, sx, sy);
+      g.globalAlpha = 0.6 + rand() * 0.2;
+      drawFind(g, f.id, x, y, 1, rand);
+      g.globalAlpha = 1;
+    }
+    // Eng noyobi (hali topilmaganlari orasidan) — birinchi ko'rilganda e'lon qilinadi
+    const found = profile.finds || [];
+    placed.sort((a, b) => (found.includes(a.id) - found.includes(b.id)) || (a.w - b.w) || (b.minLv - a.minLv));
+    if (placed.length) BG_FIND[z] = placed[0].id;
+  }
+
+  // ---------- Yer osti ----------
+  const SOIL_TIPS = [];     // ildiz uchlari (y < 320): tomchilar shu yerdan tomadi
+  const SOIL_TUNNEL = [];   // [0] chuvalchang, [1] chumolilar yo'li: { pts (40 nuqta), cum (uzunliklar), total }
+  // Qatlam chegarasi: katta to'lqin (fbm) va mayda notekislik
+  function horizonY(n, x, y0) { return y0 + 22 * (2 * fbm(n, x / 170) - 1) * 1.5 + 5 * (2 * n(x / 28, 3.3) - 1); }
+  // Shag'al: kontakt soyasi, chap-yuqoridan yoritilgan radial tana va yaltiroq nuqta
+  function pebble(g, x, y, r, col, rand) {
+    const ry = r * (0.62 + rand() * 0.3), rot = (rand() - 0.5) * 1.2, P2 = Math.PI * 2;
+    g.fillStyle = 'rgba(10,6,4,.3)'; g.beginPath(); g.ellipse(x + r * 0.18, y + r * 0.3, r * 1.06, ry * 1.04, rot, 0, P2); g.fill();
+    const gr = g.createRadialGradient(x - r * 0.35, y - ry * 0.45, r * 0.1, x, y, r * 1.15);
+    gr.addColorStop(0, lerpHex(col, '#ffffff', 0.26)); gr.addColorStop(0.55, col); gr.addColorStop(1, lerpHex(col, '#000000', 0.45));
+    g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, r, ry, rot, 0, P2); g.fill();
+    if (r > 2.2) { g.fillStyle = 'rgba(255,255,255,.28)'; g.beginPath(); g.ellipse(x - r * 0.38, y - ry * 0.45, r * 0.2, r * 0.12, -0.5, 0, P2); g.fill(); }
+  }
+  // Ildiz: 7 px qadam, gravitropizm (pastga intiladi), eni uchiga qarab ingichkalashadi — bitta ko'pburchak
+  function rootPath(g, x, y, ang, w, steps, depth, rand) {
+    const L = [], Rt = [], kids = [];
+    for (let i = 0; i <= steps; i++) {
+      const hw = w * (1 - 0.85 * i / steps) / 2, nx = -Math.sin(ang), ny = Math.cos(ang);
+      L.push(x + nx * hw, y + ny * hw); Rt.push(x - nx * hw, y - ny * hw);
+      if (i === steps) break;
+      if (depth < 3 && i > 2 && i < steps - 4 && rand() < 0.09)
+        kids.push([x, y, ang + (rand() < 0.5 ? -1 : 1) * (0.5 + rand() * 0.6), hw * 1.5, Math.max(4, Math.floor((steps - i) * (0.35 + rand() * 0.4)))]);
+      ang += (rand() - 0.5) * 0.35 + (Math.PI / 2 - ang) * 0.06;
+      x += Math.cos(ang) * 7; y += Math.sin(ang) * 7;
+    }
+    for (const k of kids) rootPath(g, k[0], k[1], k[2], k[3], k[4], depth + 1, rand);
+    const gr = g.createLinearGradient(L[0], L[1], x, y); gr.addColorStop(0, lerpHex('#b89268', '#55402f', 0.22)); gr.addColorStop(1, lerpHex('#8d6b4a', '#55402f', 0.22));   // tuproqqa biroz singdirilgan (g'ishtlardan to'qroq)
+    g.fillStyle = gr; g.beginPath(); g.moveTo(L[0], L[1]);
+    for (let i = 2; i < L.length; i += 2) g.lineTo(L[i], L[i + 1]);
+    g.lineTo(x + Math.cos(ang) * 2, y + Math.sin(ang) * 2);
+    for (let i = Rt.length - 2; i >= 0; i -= 2) g.lineTo(Rt[i], Rt[i + 1]);
+    g.closePath(); g.fill();
+    // o'ng chet qorong'i, chap chet yorug'
+    const edge = (A, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(A[0], A[1]); for (let i = 2; i < A.length; i += 2) g.lineTo(A[i], A[i + 1]); g.stroke(); };
+    edge(Rt, 'rgba(40,24,12,.55)', Math.max(0.6, w * 0.14));
+    edge(L, 'rgba(255,238,205,.3)', Math.max(0.5, w * 0.09));
+    // uchidagi tukchalar
+    g.strokeStyle = 'rgba(226,206,170,.35)'; g.lineWidth = 0.5; g.beginPath();
+    for (let k = 0; k < 7; k++) {
+      const t = 1 + k * 1.6, bx = x - Math.cos(ang) * t, by = y - Math.sin(ang) * t, a = ang + (k % 2 ? 1 : -1) * (0.9 + rand() * 0.6), l = 3 + rand() * 4;
+      g.moveTo(bx, by); g.lineTo(bx + Math.cos(a) * l, by + Math.sin(a) * l);
+    }
+    g.stroke();
+    if (y < 320) SOIL_TIPS.push([x, y]);
+  }
+
+  // Yer osti: tuproq kesimi — A, B, C gorizontlar va tub jins; har kelishda boshqa xil tuproq
+  function bgSoil(g, rand, v) {
+    v = bgVar(v, -1);
+    const kind = v % 3, winter = DAY.season === 'winter', P2 = Math.PI * 2;
+    const n = vnoise(1 + Math.floor(rand() * 1e6)), n2 = vnoise(7 + Math.floor(rand() * 1e6));
+    const Bc = ['#5e4330', '#6a3f2c', '#7d6a48'][kind];
+    SOIL_TIPS.length = 0; SOIL_TUNNEL.length = 0;
+    const lines = [130, 470, 760].map((y0, i) => { const p = []; for (let x = -6; x <= W + 6; x += 6) p.push([x, horizonY(n, x + i * 977, y0)]); return p; });
+    const path = (pts, dy = 0) => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y + dy) : g.moveTo(x, y + dy)); };
+    const fillBelow = (pts, y0, y1, c0, c1) => {
+      const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+      g.fillStyle = gr; path(pts); g.lineTo(W + 6, H + 2); g.lineTo(-6, H + 2); g.closePath(); g.fill();
+    };
+    // Gorizontlar: A (chirindili), B (to'planish), C (nurash), R (tub jins)
+    vgrad(g, [[0, '#4a3628'], [0.15, '#55402f'], [1, '#55402f']]);
+    fillBelow(lines[0], 100, 470, lerpHex('#55402f', Bc, 0.55), Bc);
+    fillBelow(lines[1], 440, 770, lerpHex(Bc, '#574a40', 0.55), '#574a40');
+    fillBelow(lines[2], 740, H, '#44404a', '#3b3640');
+    mottle(g, n2, 75, 112, 0.18);
+    if (kind === 1) {   // qizil loy: kulrang gley dog'lari va shag'al linzasi
+      for (let i = 0; i < 26; i++) {
+        const x = rand() * W, y = 150 + rand() * 300, rx = 6 + rand() * 18;
+        g.fillStyle = `rgba(150,160,172,${0.08 + rand() * 0.1})`; g.beginPath(); g.ellipse(x, y, rx, rx * (0.35 + rand() * 0.3), (rand() - 0.5) * 0.6, 0, P2); g.fill();
+      }
+      const lx = 140 + rand() * 320, ly = 250 + rand() * 150;
+      g.fillStyle = 'rgba(30,18,10,.18)'; g.beginPath(); g.ellipse(lx, ly, 98, 21, 0, 0, P2); g.fill();
+      for (let i = 0; i < 40; i++) {
+        const a = rand() * P2, d = Math.sqrt(rand());
+        pebble(g, lx + Math.cos(a) * d * 88, ly + Math.sin(a) * d * 16, 2 + rand() * 2.6, ['#8e8478', '#a08c74', '#7a6c60', '#a89884'][Math.floor(rand() * 4)], rand);
+      }
+    } else if (kind === 2) {   // qadimgi dengiz tubi: qiya qatlamlanish va chig'anoqlar
+      for (let s = 0; s < 4; s++) {
+        const x0 = 10 + rand() * (W - 230), y0 = 170 + s * 125 + rand() * 40, w = 140 + rand() * 80, h = 30 + rand() * 22;
+        const sg = rand() < 0.5 ? 1 : -1, run = h / Math.tan((15 + rand() * 10) * Math.PI / 180), m = 6 + Math.floor(rand() * 3);
+        g.save(); g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+        g.strokeStyle = 'rgba(255,235,190,.08)'; g.lineWidth = 1; g.beginPath();
+        for (let i = 0; i < m; i++) {
+          const xs = x0 + (i - 1) * (w + run) / m - (sg < 0 ? 0 : run * 0.5);
+          g.moveTo(xs, y0); g.quadraticCurveTo(xs + sg * run * 0.55, y0 + h * 0.75, xs + sg * run * 1.2, y0 + h);
+        }
+        g.stroke(); g.restore();
+        g.strokeStyle = 'rgba(255,235,190,.1)'; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + w, y0 + (rand() - 0.5) * 4); g.moveTo(x0, y0 + h); g.lineTo(x0 + w, y0 + h); g.stroke();
+      }
+      for (let i = 0; i < 14; i++) {
+        const x = rand() * W, y = 160 + rand() * 560, r = 3 + rand() * 4;
+        g.save(); g.translate(x, y); g.rotate(rand() * P2);
+        g.fillStyle = 'rgba(232,218,190,.42)'; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, -2.7, -0.45); g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(110,92,62,.4)'; g.lineWidth = 0.5; g.beginPath();
+        for (let k = 0; k < 5; k++) { const a = -2.6 + k * 0.5; g.moveTo(0, 0); g.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+        g.stroke(); g.restore();
       }
     }
-    g.fillStyle = 'rgba(30,18,8,.35)'; g.fillRect(0, H - 10, W, 10);
+    // Chegaralar: yumshoq chok va bir necha mayda qatlam chiziqlari
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    for (const pts of lines) {
+      g.strokeStyle = 'rgba(22,13,8,.16)'; g.lineWidth = 10; path(pts, 2); g.stroke();
+      g.strokeStyle = 'rgba(255,226,190,.06)'; g.lineWidth = 1.2; path(pts, -3); g.stroke();
+      const m = 5 + Math.floor(rand() * 4);
+      for (let k = 0; k < m; k++) {
+        const dy = 7 + k * (4 + rand() * 7), a = 0.04 + rand() * 0.05, x0 = rand() * W * 0.6, x1 = x0 + 140 + rand() * 360;
+        g.strokeStyle = rand() < 0.5 ? `rgba(255,228,196,${a})` : `rgba(14,8,4,${a * 1.8})`; g.lineWidth = 0.6 + rand() * 0.9;
+        g.beginPath(); let first = true;
+        for (const [x, y] of pts) { if (x < x0 || x > x1) continue; const yy = y + dy + 2.5 * Math.sin(x / 41 + k * 2.1); if (first) g.moveTo(x, yy); else g.lineTo(x, yy); first = false; }
+        g.stroke();
+      }
+    }
+    // R: yoriqli tub jins — qatlam bo'ylab va ko'ndalang yoriqlar
+    g.save(); path(lines[2], 6); g.lineTo(W + 6, H + 2); g.lineTo(-6, H + 2); g.closePath(); g.clip();
+    let yTop = 760;
+    for (let y0 = 778 + rand() * 8, j = 0; y0 < H - 8; y0 += 26 + rand() * 18, j++) {
+      if (j % 2) { g.fillStyle = 'rgba(255,255,255,.025)'; g.fillRect(0, yTop, W, y0 - yTop); }
+      g.strokeStyle = 'rgba(14,10,18,.42)'; g.lineWidth = 1.5; g.beginPath();
+      for (let x = -6; x <= W + 6; x += 12) { const y = y0 + 4 * (2 * n(x / 60, j * 5.1 + 40) - 1); if (x < 0) g.moveTo(x, y); else g.lineTo(x, y); }
+      for (let x = rand() * 60; x < W; x += 50 + rand() * 70) { g.moveTo(x, yTop + 3); g.lineTo(x + (rand() - 0.5) * 10, y0); }
+      g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = 1; g.beginPath();
+      for (let x = -6; x <= W + 6; x += 12) { const y = y0 + 1.6 + 4 * (2 * n(x / 60, j * 5.1 + 40) - 1); if (x < 0) g.moveTo(x, y); else g.lineTo(x, y); }
+      g.stroke();
+      yTop = y0;
+    }
+    g.restore();
+    // Muzloq (qish): yuqori 150 px da muz linzalari, ustki qirrasi oq
+    if (winter) {
+      const fg = g.createLinearGradient(0, 0, 0, 70); fg.addColorStop(0, 'rgba(215,232,255,.16)'); fg.addColorStop(1, 'rgba(215,232,255,0)');
+      g.fillStyle = fg; g.fillRect(0, 0, W, 70);
+      for (let i = 0; i < 14; i++) {
+        const x = rand() * W, y = 16 + rand() * 130, rx = 10 + rand() * 26, ry = 1.4 + rand() * 2.4;
+        g.fillStyle = 'rgba(200,230,255,.25)'; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, P2); g.fill();
+        g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1; g.beginPath(); g.ellipse(x, y, rx, ry, 0, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+      }
+    }
+    // 0-14 px: o't ildizlarining mayda tukchalari
+    g.strokeStyle = 'rgba(214,186,140,.22)'; g.lineWidth = 0.6; g.beginPath();
+    for (let i = 0; i < 140; i++) { const x = rand() * W, l = 4 + rand() * 10, b = (rand() - 0.5) * 7; g.moveTo(x, 0); g.quadraticCurveTo(x + b * 0.2, l * 0.6, x + b, l); }
+    g.stroke();
+    // Qum donalari, C dagi burchakli tosh parchalari, shag'al va toshlar (chuqurlashgan sari ko'p)
+    const local = y => y < 130 ? '#55402f' : y < 470 ? Bc : y < 760 ? '#574a40' : '#423e48';
+    for (let i = 0; i < 150; i++) {
+      const x = rand() * W, y = H * Math.pow(rand(), 0.7), s = 0.7 + rand() * 1.1;
+      g.fillStyle = rand() < 0.5 ? `rgba(225,205,175,${0.12 + rand() * 0.2})` : `rgba(12,7,4,${0.2 + rand() * 0.25})`; g.fillRect(x, y, s, s);
+    }
+    for (let i = 0; i < 34; i++) {
+      const y = 480 + 270 * Math.pow(rand(), 0.6), dk = (y - 470) / 290, x = rand() * W, r = 2.5 + rand() * 7 * (0.4 + dk), m = 4 + Math.floor(rand() * 3), a0 = rand() * P2;
+      g.beginPath();
+      for (let k = 0; k < m; k++) { const a = a0 + k / m * P2, rr = r * (0.6 + rand() * 0.5); if (k) g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+      g.closePath(); g.fillStyle = lerpHex('#6c6258', '#544c46', rand()); g.globalAlpha = 0.8; g.fill(); g.globalAlpha = 1;
+      g.strokeStyle = 'rgba(18,12,10,.35)'; g.lineWidth = 0.8; g.stroke();
+    }
+    const PEB = ['#8a7a68', '#7a6e64', '#9a8670', '#6e6258', '#a08a72'];
+    for (let i = 0; i < 35; i++) {
+      const y = H * Math.pow(rand(), 0.7), x = rand() * W, r = 2 + rand() * 3.4, c = PEB[Math.floor(rand() * 5)];
+      if (y < H - 30) pebble(g, x, y, r, lerpHex(c, local(y), 0.35), rand);
+    }
+    for (let i = 0; i < 8; i++) {
+      const y = 480 + (H - 520) * Math.pow(rand(), 0.7), side = rand() < 0.65, l = rand() < 0.5;
+      const x = side ? (l ? 14 + rand() * 76 : W - 14 - rand() * 76) : 100 + rand() * 400;
+      pebble(g, x, y, 8 + rand() * 7, lerpHex(PEB[Math.floor(rand() * 5)], local(y), 0.3), rand);
+    }
+    // Ildizlar
+    for (let i = 0; i < 6; i++) {
+      const x = (i + 0.2 + 0.6 * rand()) / 6 * W;
+      rootPath(g, x, -2, Math.PI / 2 + (rand() - 0.5) * 0.5, 5 + rand() * 3, 26 + Math.floor(rand() * 32), 0, rand);
+    }
+    if (!SOIL_TIPS.length) for (let i = 0; i < 4; i++) SOIL_TIPS.push([60 + rand() * (W - 120), 8 + rand() * 6]);
+    // Inlar: [0] chuvalchang yo'li, [1] chumolilar yo'li (oxirida kamera)
+    for (let k = 0; k < 2; k++) {
+      const x0 = k ? 300 + rand() * 110 : 20 + rand() * 80, len = Math.min(W - 24 - x0, k ? 170 + rand() * 90 : 260 + rand() * 90);
+      const yb = 585 + rand() * 100, amp = 7 + rand() * 9, ph = rand() * P2, sl = (rand() - 0.5) * 0.12, fq = 0.8 + rand() * 1.1;
+      const pts = [], cum = [0];
+      for (let i = 0; i < 40; i++) {
+        const u = i / 39, x = x0 + u * len, y = Math.max(560, Math.min(720, yb + sl * u * len + amp * Math.sin(u * P2 * fq + ph)));
+        pts.push([x, y]); if (i) cum.push(cum[i - 1] + Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]));
+      }
+      g.strokeStyle = 'rgba(28,18,10,.5)'; g.lineWidth = 16; path(pts); g.stroke();
+      if (k) { const [ex, ey] = pts[39]; g.fillStyle = 'rgba(28,18,10,.5)'; g.beginPath(); g.ellipse(ex + 6, ey, 15, 9, 0, 0, P2); g.fill(); }
+      g.strokeStyle = 'rgba(14,8,4,.3)'; g.lineWidth = 8; path(pts, 1.5); g.stroke();
+      g.strokeStyle = 'rgba(255,226,186,.13)'; g.lineWidth = 1.2; path(pts, -8); g.stroke();
+      SOIL_TUNNEL[k] = { pts, cum, total: cum[39] };
+    }
+    placeFinds(g, -1, rand);
+    grainFill(g, 0.7);
+    // Pastki qator CSS dagi --seam (#3b3640) bilan aynan bir xil bo'lsin
+    const fg = g.createLinearGradient(0, H - 10, 0, H - 1); fg.addColorStop(0, 'rgba(59,54,64,0)'); fg.addColorStop(1, '#3b3640');
+    g.fillStyle = fg; g.fillRect(0, H - 10, W, 10);
+    return winter ? ['Muzloq tuproq', 'Muzloq loy', 'Muzloq dengiz tubi'][kind] : ['Tuproq', 'Qizil loy', 'Qadimgi dengiz tubi'][kind];
   }
 
-  function bgDeep(g, rand) {
-    vgrad(g, [[0, '#3b3640'], [0.6, '#2a2530'], [1, '#201c24']]);
-    for (let i = 0; i < 40; i++) {
-      const x = rand() * W, y = rand() * H, r = 15 + rand() * 40;
-      g.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.15)';
-      g.beginPath();
-      for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2, rr = r * (0.7 + rand() * 0.4); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-      g.closePath(); g.fill();
+  // ---------- Chuqurlik ----------
+  const DEEP_TIPS = [];    // stalaktit uchlari (tomchilar)
+  const DEEP_CRY = [];     // kristall uchlari (yaltirash)
+  const DEEP_MUSH = [];    // nurli qo'ziqorinlar [x, y, o'lcham]
+  const DEEP_WORMS = [];   // shiftdagi nurli qurtchalar
+  const DEEP_ROOST = [];   // ko'rshapalaklar osilib turadigan joylar
+  let DEEP_BUILD = 0;
+  // Devor qirrasi: x(y) = 18 + 26 fbm + 10 fbm (biroz kuchaytirilgan kontrast bilan)
+  function wallProfile(n, y) {
+    const s = f => 0.5 + (f - 0.5) * 1.8;
+    return 18 + 26 * s(fbm(n, y / 120)) + 10 * s(fbm(n, y / 30 + 50));
+  }
+  // Stalaktit: asosi kengayib shiftga qo'shiladi, bo'g'im-bo'g'im ingichkalashadi (kvadratik egrilar bilan)
+  function stalactite(g, x, y, L, hw, tilt, drop, rand) {
+    const n = 9, ph = rand() * 6, Lp = [], Rp = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, w = hw * Math.pow(1 - t, 1.3) * (1 + 0.12 * Math.sin(t * 10 + ph)) * (1 + 0.45 * Math.pow(1 - t, 8)), cx = x + tilt * t * t;
+      Lp.push([cx - w, y + L * t]); Rp.push([cx + w, y + L * t]);
     }
-    for (let i = 0; i < 8; i++) crystal(g, rand() * W, 60 + rand() * (H - 160), 0.6 + rand() * 0.6, rand() < 0.5 ? '#9b7bff' : '#5fe0ff', rand);
-    // tosh tokcha va lava
-    const lg = g.createLinearGradient(0, H - 26, 0, H);
-    lg.addColorStop(0, '#ff9a2a'); lg.addColorStop(1, '#b3200a');
-    g.fillStyle = lg; g.fillRect(0, H - 22, W, 22);
-    g.fillStyle = '#17141b'; g.beginPath(); g.moveTo(0, H - 18);
-    for (let x = 0; x <= W; x += 25) g.lineTo(x, H - 14 - rand() * 8);
-    g.lineTo(W, H - 8); g.lineTo(0, H - 8); g.closePath(); g.fill();
+    const pts = Lp.concat(Rp.reverse()), m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const gr = g.createLinearGradient(x - hw, 0, x + hw, 0);
+    gr.addColorStop(0, '#6a6175'); gr.addColorStop(0.45, '#4a4354'); gr.addColorStop(1, '#262130');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(pts[0][0], pts[0][1] - 2);
+    for (let i = 0; i < pts.length - 1; i++) { const q = m(pts[i], pts[i + 1]); g.quadraticCurveTo(pts[i][0], pts[i][1], q[0], q[1]); }
+    g.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1] - 2); g.closePath(); g.fill();
+    // o'sish halqalari
+    g.strokeStyle = 'rgba(20,16,26,.22)'; g.lineWidth = 0.8; g.beginPath();
+    for (const t of [0.3, 0.55]) { const yy = y + L * t, ww = hw * Math.pow(1 - t, 1.3) * 0.9, cx = x + tilt * t * t; g.moveTo(cx - ww, yy); g.quadraticCurveTo(cx, yy + 2, cx + ww, yy); }
+    g.stroke();
+    // nam yaltiroq
+    g.strokeStyle = 'rgba(220,214,255,.24)'; g.lineWidth = 1; g.beginPath();
+    g.moveTo(x - hw * 0.5, y + 3); g.quadraticCurveTo(x - hw * 0.25 + tilt * 0.2, y + L * 0.5, x + tilt - 0.5, y + L - 3); g.stroke();
+    if (drop) {
+      g.fillStyle = 'rgba(190,220,255,.7)'; g.beginPath(); g.arc(x + tilt, y + L + 1.6, 1.7, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.8)'; g.fillRect(x + tilt - 0.9, y + L + 0.6, 0.8, 0.8);
+    }
+    return [x + tilt, y + L + 1];
+  }
+  // Kristall to'dasi: 3-6 ta ikki qirrali prizma, qirra yaltirog'i, qorong'i uya va 'lighter' nur
+  function crystalCluster(g, x, y, ang, k, col, rand) {
+    const light = lerpHex(col, '#ffffff', 0.35), dark = lerpHex(col, '#000000', 0.35), [cr, cg, cb] = hexRgb(col);
+    g.save(); g.globalCompositeOperation = 'lighter';
+    glow(g, x + Math.cos(ang) * 14 * k, y + Math.sin(ang) * 14 * k, 46 * k, `rgba(${cr},${cg},${cb},.2)`);
+    g.restore();
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.beginPath(); g.ellipse(x, y, 9 * k, 4.5 * k, ang + Math.PI / 2, 0, Math.PI * 2); g.fill();
+    const m = 3 + Math.floor(rand() * 4), pr = [];
+    for (let i = 0; i < m; i++) {
+      const a = ang + (m > 1 ? i / (m - 1) - 0.5 : 0) * 1.1 + (rand() - 0.5) * 0.25;
+      pr.push({ a, len: (13 + rand() * 20) * k * (i === m >> 1 ? 1.3 : 1), w: (2.6 + rand() * 2.4) * k, ox: (rand() - 0.5) * 6 * k, oy: (rand() - 0.5) * 6 * k });
+    }
+    pr.sort((p, q) => q.len - p.len);
+    for (const p of pr) {
+      const cx = Math.cos(p.a), cy = Math.sin(p.a), nx = -cy, ny = cx, bx = x + p.ox, by = y + p.oy;
+      const sx = bx + cx * p.len * 0.78, sy = by + cy * p.len * 0.78, tx = bx + cx * p.len, ty = by + cy * p.len;
+      // yorug' qirra lava tomonida (pastda), qorong'isi qarshi tomonda
+      g.fillStyle = ny > 0 ? light : dark; g.beginPath(); g.moveTo(bx + nx * p.w, by + ny * p.w); g.lineTo(sx + nx * p.w, sy + ny * p.w); g.lineTo(tx, ty); g.lineTo(sx, sy); g.lineTo(bx, by); g.closePath(); g.fill();
+      g.fillStyle = ny > 0 ? dark : light; g.beginPath(); g.moveTo(bx - nx * p.w, by - ny * p.w); g.lineTo(sx - nx * p.w, sy - ny * p.w); g.lineTo(tx, ty); g.lineTo(sx, sy); g.lineTo(bx, by); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(bx, by); g.lineTo(sx, sy); g.lineTo(tx, ty); g.stroke();
+      DEEP_CRY.push([tx, ty]);
+    }
+  }
+  // Nurli qo'ziqorin: poya, gradientli qalpoq, plastinkalar, dog'lar va nur
+  function glowMushroom(g, x, y, s, rand) {
+    const lean = (rand() - 0.5) * 0.5, h = (9 + rand() * 7) * s, cw = (6 + rand() * 3) * s, ch = cw * 0.62, tx = x + lean * h, ty = y - h;
+    g.save(); g.globalCompositeOperation = 'lighter'; glow(g, tx, ty - ch * 0.3, 26 * s, 'rgba(127,246,255,.2)'); g.restore();
+    g.strokeStyle = '#cfeef2'; g.lineWidth = 2.2 * s; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + lean * h * 0.2, y - h * 0.5, tx, ty); g.stroke();
+    const gr = g.createLinearGradient(0, ty - ch, 0, ty); gr.addColorStop(0, '#7ff6ff'); gr.addColorStop(1, '#2fa6c8');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(tx, ty, cw, ch, lean * 0.4, Math.PI, 0); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(10,50,70,.55)'; g.lineWidth = 0.6; g.beginPath();
+    for (let k = 0; k < 5; k++) { const u = (k / 4 - 0.5) * 1.6 * cw; g.moveTo(tx + u, ty); g.lineTo(tx + u * 0.3, ty + 1.8 * s); }
+    g.stroke();
+    g.fillStyle = 'rgba(230,255,255,.75)'; g.beginPath();
+    for (let k = 0; k < 3; k++) { const px = tx + (rand() - 0.5) * cw * 1.1, py = ty - ch * (0.3 + rand() * 0.4); g.moveTo(px + 0.9 * s, py); g.arc(px, py, 0.9 * s, 0, Math.PI * 2); }
+    g.fill();
+    return [tx, ty - ch * 0.4];
+  }
+  // Chuqurlik: qorong'i devorlar, shiftdan stalaktitlar, pastda lava (jonli); kristallar faqat devor va shiftda
+  function bgDeep(g, rand, v) {
+    v = bgVar(v, -2);
+    const kind = v % 3, P = Math.PI, P2 = P * 2;
+    const nL = vnoise(1 + Math.floor(rand() * 1e6)), nR = vnoise(5 + Math.floor(rand() * 1e6)), n2 = vnoise(9 + Math.floor(rand() * 1e6));
+    DEEP_TIPS.length = 0; DEEP_CRY.length = 0; DEEP_MUSH.length = 0; DEEP_WORMS.length = 0; DEEP_ROOST.length = 0; DEEP_BUILD++;
+    vgrad(g, [[0, '#2f2a36'], [0.55, '#26212c'], [1, '#1e1a22']]);
+    mottle(g, n2, 60, 90, 0.12, 6, [190, 175, 225], [5, 3, 8]);
+    grainFill(g, 0.8);
+    // pastdan lava yoritadi
+    const lg = g.createLinearGradient(0, H - 250, 0, H - 20); lg.addColorStop(0, 'rgba(255,100,30,0)'); lg.addColorStop(1, 'rgba(255,100,30,.18)');
+    g.fillStyle = lg; g.fillRect(0, H - 250, W, 230);
+    const wl = y => wallProfile(nL, y), wr = y => W - wallProfile(nR, y), ceil = x => 11 + 9 * fbm(nL, x / 45 + 40, 2.5);
+    const LW = [], RW = [];
+    for (let y = -6; y <= H + 6; y += 6) { LW.push([wl(y), y]); RW.push([wr(y), y]); }
+    const edge = pts => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); };
+    const wallPath = (pts, x0, more) => { if (!more) g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.lineTo(x0, H + 6); g.lineTo(x0, -6); g.closePath(); };
+    // Ikki yon devor va shift
+    g.fillStyle = '#16131b';
+    wallPath(LW, -2); g.fill(); wallPath(RW, W + 2); g.fill();
+    g.beginPath(); g.moveTo(-2, -2); for (let x = -2; x <= W + 2; x += 6) g.lineTo(x, ceil(x)); g.lineTo(W + 2, -2); g.closePath(); g.fill();
+    // devor yuzasi: mayda yoriqlar
+    g.save(); wallPath(LW, -2); wallPath(RW, W + 2, true); g.clip();
+    g.strokeStyle = 'rgba(255,255,255,.035)'; g.lineWidth = 1; g.beginPath();
+    for (let i = 0; i < 26; i++) { const y = rand() * H, l = rand() < 0.5, x = l ? rand() * 30 : W - rand() * 30; g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 16, y + 8 + rand() * 18); }
+    g.stroke();
+    if (kind === 1) {   // lava ustaxonasi: devorlar ichida magma tomirlari
+      g.globalCompositeOperation = 'lighter'; g.lineCap = 'round'; g.lineJoin = 'round';
+      for (let i = 0; i < 8; i++) {
+        const left = i % 2 === 0; let y = 40 + rand() * (H - 140);
+        let x = left ? wl(y) * (0.25 + rand() * 0.5) : W - (W - wr(y)) * (0.25 + rand() * 0.5), a = P / 2 + (rand() - 0.5);
+        const pts = [[x, y]];
+        for (let k = 0; k < 14; k++) { a += (rand() - 0.5) * 0.9; x += Math.cos(a) * 2.6; y += Math.sin(a) * 8 + 2; pts.push([x, y]); }
+        g.strokeStyle = 'rgba(255,90,20,.12)'; g.lineWidth = 6; edge(pts); g.stroke();
+        g.strokeStyle = 'rgba(255,110,30,.45)'; g.lineWidth = 1.6; edge(pts); g.stroke();
+      }
+    }
+    g.restore();
+    // ichki soya va qirra yorug'i (tepada sovuq binafsha, pastda lava apelsini)
+    g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = 22; edge(LW); g.stroke(); edge(RW); g.stroke();
+    const rg = g.createLinearGradient(0, 0, 0, H); rg.addColorStop(0, 'rgba(150,130,255,.18)'); rg.addColorStop(1, 'rgba(255,120,40,.55)');
+    g.strokeStyle = rg; g.lineWidth = 2; edge(LW); g.stroke(); edge(RW); g.stroke();
+    g.strokeStyle = 'rgba(150,130,255,.14)'; g.lineWidth = 1.5; g.beginPath();
+    for (let x = 0; x <= W; x += 6) if (x) g.lineTo(x, ceil(x)); else g.moveTo(x, ceil(x));
+    g.stroke();
+    // Devor yonidagi xarsanglar
+    const nb = 6 + Math.floor(rand() * 3);
+    for (let i = 0; i < nb; i++) {
+      const left = i % 2 === 0, y = 150 + Math.pow(rand(), 0.7) * (H - 250), r = 10 + rand() * 12, x = left ? wl(y) + r * 0.35 : wr(y) - r * 0.35, pts = [];
+      for (let k = 0; k < 12; k++) { const a = k / 12 * P2, rr = r * (0.8 + 0.35 * rand()); pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.82]); }
+      blobPath(g, pts);
+      const bg = g.createLinearGradient(0, y - r, 0, y + r); bg.addColorStop(0, '#3a3344'); bg.addColorStop(0.55, '#221d29'); bg.addColorStop(1, '#3d2219');
+      g.fillStyle = bg; g.fill();
+      const bs = g.createLinearGradient(0, y - r, 0, y + r); bs.addColorStop(0, 'rgba(160,140,255,.2)'); bs.addColorStop(0.5, 'rgba(0,0,0,0)'); bs.addColorStop(1, 'rgba(255,130,50,.5)');
+      g.strokeStyle = bs; g.lineWidth = 1.4; g.stroke();
+    }
+    // Kristallar: faqat devorlarda (yon tomonga) yoki shiftda (pastga qarab)
+    const nc = kind === 0 ? 9 : 6 + Math.floor(rand() * 2);
+    for (let i = 0; i < nc; i++) {
+      const r = rand(), col = r < 0.45 ? '#9b7bff' : r < 0.9 ? '#5fe0ff' : rand() < 0.5 ? '#ffd060' : '#59e39a';
+      const k = (kind === 0 ? 1.25 : 0.95) * (0.8 + rand() * 0.45), where = i < (kind === 0 ? 2 : 1) ? 2 : i % 2;
+      if (where === 2) { const x = 110 + rand() * (W - 220); crystalCluster(g, x, ceil(x) - 1, P / 2 + (rand() - 0.5) * 0.3, k * 0.75, col, rand); }
+      else {
+        const y = 130 + rand() * (H - 280);
+        if (where === 0) crystalCluster(g, wl(y) - 1, y, -0.3 + (rand() - 0.5) * 0.4, k, col, rand);
+        else crystalCluster(g, wr(y) + 1, y, P + 0.3 + (rand() - 0.5) * 0.4, k, col, rand);
+      }
+    }
+    // 12 ta stalaktit (0-qatorda) — uchlari tomchilar uchun saqlanadi
+    for (let i = 0; i < 12; i++) {
+      const x = 50 + (W - 100) * (i + 0.5) / 12 + (rand() - 0.5) * 26, L = 20 + 66 * rand() * rand(), hw = 4 + L * 0.11 + rand() * 3;
+      DEEP_TIPS.push(stalactite(g, x, ceil(x) - 2, L, hw, (rand() - 0.5) * 5, rand() < 0.3, rand));
+      if (DEEP_ROOST.length < 5 && rand() < 0.55) DEEP_ROOST.push([x + (rand() < 0.5 ? -1 : 1) * (hw + 5), ceil(x) - 1]);
+    }
+    while (DEEP_ROOST.length < 5) { const x = 70 + rand() * (W - 140); DEEP_ROOST.push([x, ceil(x) - 1]); }
+    // Shiftdagi nurli qurtchalar (ingichka ip uchida)
+    for (let i = 0; i < 10; i++) {
+      const x = 40 + rand() * (W - 80), y = ceil(x), l = 4 + rand() * 9;
+      g.strokeStyle = 'rgba(190,255,235,.16)'; g.lineWidth = 0.5; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + l); g.stroke();
+      g.fillStyle = 'rgba(160,255,220,.75)'; g.beginPath(); g.arc(x, y + l, 0.9, 0, P2); g.fill();
+      if (DEEP_WORMS.length < 5) DEEP_WORMS.push([x, y + l, rand() * P2]);
+    }
+    // Tokchalardagi nurli qo'ziqorinlar (qo'ziqorinli g'orda 3 barobar ko'p) va sovuq yorug'lik dog'lari
+    const nm = kind === 2 ? 4 : 2, per = kind === 2 ? 3 : 2;
+    for (let i = 0; i < nm; i++) {
+      const left = i % 2 === 0, y = 230 + (i / nm) * 470 + rand() * 70, x0 = left ? wl(y) : wr(y), dir = left ? 1 : -1, len = 20 + rand() * 12;
+      if (i < 2) glow(g, x0 + dir * 26, y - 14, 80 + rand() * 20, 'rgba(90,200,255,.07)');
+      g.fillStyle = '#1b1720'; g.beginPath(); g.moveTo(x0 - dir * 4, y - 2); g.lineTo(x0 + dir * len, y - 1); g.lineTo(x0 + dir * (len - 6), y + 4); g.lineTo(x0 - dir * 4, y + 7); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(150,130,255,.22)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, y - 1.8); g.lineTo(x0 + dir * len, y - 1); g.stroke();
+      for (let k = 0; k < per; k++) {
+        const mx = x0 + dir * (5 + (len - 9) * (k + 0.5) / per), s = 0.7 + rand() * 0.45, top = glowMushroom(g, mx, y - 1.5, s, rand);
+        DEEP_MUSH.push([top[0], top[1], s]);
+      }
+    }
+    // Stalagmitlar faqat chetlarda (x<90 yoki x>510), pastki 40% i lava bilan yoritilgan
+    for (let i = 0; i < 5; i++) {
+      const left = i % 2 === 0, x = left ? 48 + rand() * 40 : W - 48 - rand() * 40, h = 24 + rand() * 46, hw = 6 + h * 0.16, b = H - 18, tl = (rand() - 0.5) * 6;
+      g.beginPath(); g.moveTo(x - hw, b); g.quadraticCurveTo(x - hw * 0.3 + tl * 0.3, b - h * 0.55, x + tl, b - h); g.quadraticCurveTo(x + hw * 0.3 + tl * 0.3, b - h * 0.55, x + hw, b); g.closePath();
+      const sg = g.createLinearGradient(x - hw, 0, x + hw, 0); sg.addColorStop(0, '#4a4354'); sg.addColorStop(0.5, '#332d3c'); sg.addColorStop(1, '#1d1924');
+      g.fillStyle = sg; g.fill();
+      const lr = g.createLinearGradient(0, b, 0, b - h * 0.4); lr.addColorStop(0, 'rgba(255,120,40,.55)'); lr.addColorStop(1, 'rgba(255,120,40,0)');
+      g.fillStyle = lr; g.fill();
+    }
+    placeFinds(g, -2, rand, { side: [4], noTop: true });
+    // Lava osti (jonli lava tasmasi buni to'liq yopadi; pastki qator --seam bilan bir xil)
+    const lv = g.createLinearGradient(0, H - 24, 0, H);
+    lv.addColorStop(0, '#ffe27a'); lv.addColorStop(0.25, '#ff9a2a'); lv.addColorStop(0.62, '#e2430f'); lv.addColorStop(1, '#e2581a');
+    g.fillStyle = lv; g.fillRect(0, H - 24, W, 24);
+    return ["Kristall g'or", 'Lava ustaxonasi', "Qo'ziqorinli g'or"][kind];
+  }
+
+  // ---------- Koinot ----------
+  const SPACE_TW = [];   // miltillovchi yulduzlar (10 yorqin + 14 o'rtacha)
+  // Oy (A paketidagi drawMoon bo'lmasa — o'zimizniki): faza bo'yicha soya
+  function spaceMoon(g, x, y, r, ph, sky) {
+    const gr = g.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r); gr.addColorStop(0, '#f6f3e8'); gr.addColorStop(1, '#d9d6cb');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(140,140,155,.22)';
+    for (const [dx, dy, rx, ry] of [[-0.3, -0.25, 0.28, 0.2], [0.2, -0.1, 0.22, 0.18], [0.05, 0.32, 0.3, 0.16], [-0.38, 0.22, 0.15, 0.12]]) { g.beginPath(); g.ellipse(x + dx * r, y + dy * r, rx * r, ry * r, 0, 0, Math.PI * 2); g.fill(); }
+    const k = Math.cos(2 * Math.PI * ph);
+    g.save(); if (ph > 0.5) { g.translate(x, 0); g.scale(-1, 1); g.translate(-x, 0); }
+    g.beginPath(); g.arc(x, y, r, Math.PI / 2, Math.PI * 1.5); g.ellipse(x, y, r * Math.abs(k), r, 0, Math.PI * 1.5, Math.PI / 2, k < 0);
+    g.globalAlpha = 0.92; g.fillStyle = sky; g.fill(); g.restore();
+  }
+  // Halqali sayyora: orqa yarim halqa → tana (chiziqlar, terminator, halqa soyasi) → old yarim halqa
+  // lt — sayyora koordinatalaridagi yorug'lik yo'nalishi (yoritilgan tomon)
+  function ringPlanet(g, x, y, r, rot = -0.35, pal = ['#e3c08a', '#c9955e', '#f0d7a8', '#a8784a'], ra = 1, rand = Math.random, lt = [-0.7, -0.7]) {
+    const k = r / 24, P = Math.PI, rings = [[40, 3.4, 0.2], [46, 5.2, 0.36], [54, 3.2, 0.28]];   // 46 va 54 orasida Kassini tirqishi
+    const ringPass = (a0, a1) => { for (const [rx, lw, a] of rings) { g.strokeStyle = `rgba(226,206,168,${a * ra})`; g.lineWidth = lw * k; g.beginPath(); g.ellipse(0, 0, rx * k, rx * k * 0.23, 0, a0, a1); g.stroke(); } };
+    g.save(); g.translate(x, y); g.rotate(rot);
+    ringPass(P, P * 2);
+    g.save(); g.beginPath(); g.arc(0, 0, r, 0, P * 2); g.clip();
+    g.fillStyle = pal[0]; g.fillRect(-r, -r, 2 * r, 2 * r);
+    for (let i = 0, yy = -r * 0.95; yy < r; i++) {
+      const h = r * (0.06 + rand() * 0.09), amp = r * 0.012 * (1 + i % 3);
+      g.fillStyle = pal[1 + i % 3]; g.globalAlpha = 0.5 + rand() * 0.25; g.beginPath(); g.moveTo(-r, yy);
+      for (let xx = -r; xx <= r; xx += r / 12) g.lineTo(xx, yy + Math.sin(xx / r * 7 + i) * amp);
+      for (let xx = r; xx >= -r; xx -= r / 12) g.lineTo(xx, yy + h + Math.sin(xx / r * 6 + i * 2) * amp);
+      g.closePath(); g.fill();
+      yy += h * (1.6 + rand());
+    }
+    g.globalAlpha = 1;
+    if (r > 60) { g.fillStyle = 'rgba(176,96,58,.7)'; g.beginPath(); g.ellipse(-r * 0.35, r * 0.3, r * 0.16, r * 0.075, 0, 0, P * 2); g.fill(); }
+    const sg = g.createRadialGradient(lt[0] * r * 0.64, lt[1] * r * 0.64, r * 0.05, lt[0] * r * 0.14, lt[1] * r * 0.14, r * 1.5);
+    sg.addColorStop(0, 'rgba(255,255,255,.16)'); sg.addColorStop(0.36, 'rgba(0,0,0,0)'); sg.addColorStop(0.66, 'rgba(3,5,15,.62)'); sg.addColorStop(1, 'rgba(3,5,15,.94)');
+    g.fillStyle = sg; g.fillRect(-r, -r, 2 * r, 2 * r);
+    g.strokeStyle = `rgba(3,5,15,${0.4 * ra + 0.1})`; g.lineWidth = 4 * k; g.beginPath(); g.ellipse(0, r * 0.22, 47 * k, 47 * k * 0.23, 0, 0, P); g.stroke();
+    g.restore();
+    ringPass(0, P);
+    g.restore();
+  }
+  // Somon yo'li: aylantirilgan tasma — 'lighter' bulutchalar (jami alfa ≤ .12), gauss yulduzlari, qorong'i chang yo'llari
+  function milkyWay(g, rand) {
+    const ang = -0.95 + (rand() - 0.5) * 0.3, cx = W * (0.45 + rand() * 0.1), cy = H * 0.42, ca = Math.cos(ang), sa = Math.sin(ang);
+    const at = (u, w) => [cx + u * ca - w * sa, cy + u * sa + w * ca];
+    const [oc, o] = offCanvas(W, H, 0.5);
+    for (let i = 0; i < 70; i++) {
+      const [x, y] = at((rand() - 0.5) * 1300, gaussR(rand) * 40);
+      glow(o, x, y, 40 + rand() * 90, `rgba(${rand() < 0.6 ? '255,240,225' : '200,215,255'},${0.25 + rand() * 0.25})`);
+    }
+    // chang yo'llari: tasma o'qi bo'ylab cho'zilgan yumshoq qorong'i dog'lar
+    o.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 26; i++) {
+      const [x, y] = at((rand() - 0.5) * 1100, gaussR(rand) * 9);
+      o.save(); o.translate(x, y); o.rotate(ang); o.scale(1, 0.2 + rand() * 0.12);
+      glow(o, 0, 0, 30 + rand() * 50, `rgba(0,0,0,${0.35 + rand() * 0.35})`); o.restore();
+    }
+    g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.12; g.drawImage(oc, 0, 0, W, H); g.restore();
+    for (let i = 0; i < 650; i++) {
+      const [x, y] = at((rand() - 0.5) * 1300, gaussR(rand) * 45);
+      if (x < 0 || x > W || y < 0 || y > H - 40) continue;
+      g.fillStyle = `rgba(235,238,255,${0.2 + rand() * 0.45})`; g.fillRect(x, y, 0.7, 0.7);
+    }
+  }
+  // Tumanlik: yarim aniqlikda tasodifiy yurish ipidan 'lighter' bulutchalar, fbm niqobi bilan yirtilgan
+  function nebula(g, rand, n, cx, cy) {
+    const [oc, o] = offCanvas(W, H, 0.5), PAL = [[255, 90, 140], [70, 210, 220]];
+    // ip: ikki yo'nalishda tasodifiy yurish; yadrosi pushti (vodorod), chetlari firuza (kislorod)
+    for (const sgn of [1, -1]) {
+      let x = cx, y = cy, a = rand() * Math.PI * 2 * sgn;
+      for (let i = 0; i < 70; i++) {
+        a += (rand() - 0.5) * 0.7; x += Math.cos(a) * 6 + (cx - x) * 0.05; y += Math.sin(a) * 6 + (cy - y) * 0.05;
+        const d = Math.hypot(x - cx, y - cy) / 110, t = Math.min(1, smoothK(0.45, 0.7, fbm(n, x / 90, y / 90)) * 0.7 + d * 0.5);
+        const c = PAL[0].map((q, j) => Math.round(q + (PAL[1][j] - q) * t));
+        glow(o, x, y, 14 + rand() * 34, `rgba(${c[0]},${c[1]},${c[2]},${0.18 + rand() * 0.16})`);
+      }
+    }
+    const mask = noiseCanvas(80, 120, (i, j) => [255, 255, 255, 255 * smoothK(0.42, 0.72, fbm(n, i / 80 * 11 + 3, j / 80 * 11 + 5))]);
+    o.globalCompositeOperation = 'destination-in'; o.drawImage(mask, 0, 0, W, H);
+    // chang: yumshoq qorong'i tolalar
+    o.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 12; i++) {
+      o.save(); o.translate(cx + gaussR(rand) * 50, cy + gaussR(rand) * 50); o.rotate(rand() * 3); o.scale(1, 0.25);
+      glow(o, 0, 0, 14 + rand() * 26, `rgba(0,0,0,${0.4 + rand() * 0.4})`); o.restore();
+    }
+    g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.62; g.drawImage(oc, 0, 0, W, H); g.restore();
+  }
+  // Statik kometa: koma, egilgan chang dumi va to'g'ri ion dumi
+  function comet(g, x, y, ang, len) {
+    g.save(); g.translate(x, y); g.rotate(ang);
+    let gr = g.createLinearGradient(0, 0, len, 0); gr.addColorStop(0, 'rgba(255,240,210,.32)'); gr.addColorStop(1, 'rgba(255,240,210,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(0, -2); g.quadraticCurveTo(len * 0.5, -3, len, -len * 0.26 - 8); g.lineTo(len, -len * 0.26 + 12); g.quadraticCurveTo(len * 0.5, 7, 0, 2.5); g.closePath(); g.fill();
+    gr = g.createLinearGradient(0, 0, len * 1.2, 0); gr.addColorStop(0, 'rgba(140,190,255,.38)'); gr.addColorStop(1, 'rgba(140,190,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(0, -1.2); g.lineTo(len * 1.2, -3); g.lineTo(len * 1.2, 3); g.lineTo(0, 1.2); g.closePath(); g.fill();
+    g.restore();
+    glow(g, x, y, 13, 'rgba(220,240,255,.5)'); puff(g, x, y, 1.7, '#ffffff');
+  }
+  // Yer: atmosfera, okean, qit'alar, bulutlar; tunda shahar chiroqlari, qishda (yoki ba'zan) qutb yog'dusi
+  function earthLayer(g, rand, n) {
+    const lv = bgLv(), ER = Math.max(600, 1480 / (1 + lv / 250)), ex = W / 2, ey = H - 60 + ER, top = H - 60, P2 = Math.PI * 2;
+    const night = DAY.night, seam = night ? '#0a1634' : '#0f3a7e';
+    const ag = g.createRadialGradient(ex, ey, ER - 2, ex, ey, ER + 40), A = night ? 0.4 : 1;
+    [[0, 0.95], [0.12, 0.7], [0.35, 0.25], [0.65, 0.07], [1, 0]].forEach(([o, a]) => ag.addColorStop(o, `rgba(110,170,255,${a * A})`));
+    g.fillStyle = ag; g.beginPath(); g.arc(ex, ey, ER + 40, 0, P2); g.fill();
+    g.save(); g.beginPath(); g.arc(ex, ey, ER, 0, P2); g.clip();
+    const og = g.createLinearGradient(0, top, 0, H); og.addColorStop(0, '#2a6ccc'); og.addColorStop(1, '#0f3a7e');
+    g.fillStyle = og; g.fillRect(0, top - 2, W, H - top + 4);
+    // 3 ta qit'a: 22 burchakli fbm shakl, ufqqa yaqinlashgan sari yassilanadi
+    const conts = [];
+    for (let i = 0; i < 3; i++) {
+      const cx = W * (i + 0.15 + 0.7 * rand()) / 3, cy = top + 16 + rand() * 40, R0 = 50 + rand() * 60, sq = 0.18 + 0.2 * (cy - top) / 60, pts = [];
+      for (let k = 0; k < 22; k++) { const a = k / 22 * P2, rr = R0 * (0.5 + 1.0 * fbm(n, Math.cos(a) * 1.4 + i * 9, Math.sin(a) * 1.4 + i * 5)); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * sq]); }
+      const p = new Path2D(), m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      let s = m(pts[21], pts[0]); p.moveTo(s[0], s[1]);
+      for (let k = 0; k < 22; k++) { const q = m(pts[k], pts[(k + 1) % 22]); p.quadraticCurveTo(pts[k][0], pts[k][1], q[0], q[1]); }
+      p.closePath(); conts.push(p);
+      g.strokeStyle = 'rgba(120,200,235,.35)'; g.lineWidth = 4; g.stroke(p);
+      g.fillStyle = '#4b8a3e'; g.fill(p);
+      g.save(); g.clip(p);
+      g.fillStyle = 'rgba(194,164,101,.8)'; g.beginPath(); g.ellipse(cx + (rand() - 0.5) * R0, cy + (rand() - 0.3) * R0 * sq, R0 * (0.25 + rand() * 0.25), R0 * sq * 0.5, 0, 0, P2); g.fill();
+      g.fillStyle = 'rgba(40,96,40,.5)'; g.beginPath(); g.ellipse(cx + (rand() - 0.5) * R0, cy + (rand() - 0.5) * R0 * sq, R0 * 0.3, R0 * sq * 0.35, 0, 0, P2); g.fill();
+      g.restore();
+    }
+    // 30 ta bulut va bitta siklon
+    for (let i = 0; i < 30; i++) {
+      const x = rand() * W, y = top + rand() * (H - top), f = 0.35 + 0.65 * (y - top) / 60;
+      g.fillStyle = `rgba(255,255,255,${0.35 + rand() * 0.35})`; g.beginPath(); g.ellipse(x, y, 8 + rand() * 28, (1.5 + rand() * 3.5) * f, (rand() - 0.5) * 0.15, 0, P2); g.fill();
+    }
+    const sx = 150 + rand() * 300, sy = top + 26 + rand() * 18;
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 2.4; g.beginPath();
+    for (let arm = 0; arm < 3; arm++) for (let t = 0; t <= 1; t += 0.05) {
+      const r = 2 + t * 16, a = t * 4.2 + arm * 2.1, px = sx + Math.cos(a) * r, py = sy + Math.sin(a) * r * 0.32;
+      if (t === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+    // ufq tumanligi
+    const hz = g.createRadialGradient(ex, ey, ER - 24, ex, ey, ER); hz.addColorStop(0, 'rgba(180,215,255,0)'); hz.addColorStop(1, `rgba(180,215,255,${night ? 0.18 : 0.5})`);
+    g.fillStyle = hz; g.fillRect(0, top - 2, W, H - top + 4);
+    if (night) {   // tun: qorong'i qoplama va qit'alardagi shahar chiroqlari
+      g.fillStyle = 'rgba(9,13,34,.8)'; g.fillRect(0, top - 2, W, H - top + 4);
+      g.globalCompositeOperation = 'lighter';
+      for (let i = 0, tries = 0; i < 140 && tries < 2400; tries++) {
+        const x = rand() * W, y = top + rand() * (H - top);
+        if (!conts.some(p => g.isPointInPath(p, x * scale, y * scale))) continue;
+        i++;
+        g.fillStyle = `rgba(255,205,130,${0.5 + rand() * 0.4})`; g.fillRect(x, y, 1, 0.8);
+        if (rand() < 0.25) { g.fillStyle = 'rgba(255,170,80,.16)'; g.beginPath(); g.arc(x, y, 2.6, 0, P2); g.fill(); }
+      }
+      g.globalCompositeOperation = 'source-over';
+    } else if (DAY.golden) {   // tong/shom: terminator chizig'i
+      const am = DAY.h < 12, tg = g.createLinearGradient(am ? 0 : W, 0, am ? W : 0, 0);
+      tg.addColorStop(0, 'rgba(4,8,24,.6)'); tg.addColorStop(0.42, 'rgba(4,8,24,.15)'); tg.addColorStop(0.5, 'rgba(255,150,70,.16)'); tg.addColorStop(0.62, 'rgba(255,150,70,0)');
+      g.fillStyle = tg; g.fillRect(0, top - 2, W, H - top + 4);
+    }
+    g.restore();
+    if (night) {
+      g.save(); g.globalCompositeOperation = 'lighter';
+      g.strokeStyle = 'rgba(110,255,160,.16)'; g.lineWidth = 2.5; g.beginPath(); g.arc(ex, ey, ER + 6, 0, P2); g.stroke();
+      if (DAY.season === 'winter' || rand() < 0.4) {   // qutb yog'dusi: ufq ustida ingichka nurli tasmalar
+        const [ac, a2] = offCanvas(3, 60);
+        const sg = a2.createLinearGradient(0, 60, 0, 0); sg.addColorStop(0, 'rgba(90,255,150,.5)'); sg.addColorStop(0.5, 'rgba(110,230,190,.22)'); sg.addColorStop(1, 'rgba(170,90,255,0)');
+        a2.fillStyle = sg; a2.fillRect(0, 0, 3, 60);
+        const x0 = 40 + rand() * 200, span = 180 + rand() * 160;
+        for (let x = x0; x < x0 + span; x += 2.5) {
+          const yl = ey - Math.sqrt(Math.max(0, ER * ER - (x - ex) ** 2)), h = (18 + 46 * fbm(n, x / 40, 9.1)) * Math.sin(Math.PI * (x - x0) / span);
+          g.globalAlpha = 0.6 + 0.4 * fbm(n, x / 12, 4.4); g.drawImage(ac, x, yl - 6 - h, 2.5, h);
+        }
+      }
+      g.restore();
+    }
+    // pastki qator CSS dagi --seam bilan aynan bir xil
+    const [r, gg, b] = hexRgb(seam), fg = g.createLinearGradient(0, H - 10, 0, H - 1);
+    fg.addColorStop(0, `rgba(${r},${gg},${b},0)`); fg.addColorStop(1, seam);
+    g.fillStyle = fg; g.fillRect(0, H - 10, W, 10);
+  }
+
+  // ---------- Pastki qatlamlar va koinot: jonli qism ----------
+  let LAVA = null, SHORE = null, DGLOW = null, SPACE_SPR = null;
+  // Chuqurlik spraytlari: oqayotgan lava tasmasi (2W x 24), qirg'oq toshlari va yumshoq nur doiralari
+  function buildDeepSprites() {
+    const rand = prng(4242), P2 = Math.PI * 2;
+    const [lc, lg] = offCanvas(2 * W, 24);
+    const gr = lg.createLinearGradient(0, 0, 0, 24);
+    gr.addColorStop(0, '#ffe27a'); gr.addColorStop(0.25, '#ff9a2a'); gr.addColorStop(0.62, '#e2430f'); gr.addColorStop(1, '#e2581a');
+    lg.fillStyle = gr; lg.fillRect(0, 0, 2 * W, 24);
+    // oqim chiziqlari (W davr bilan takrorlanadi — choksiz aylanadi)
+    lg.strokeStyle = 'rgba(255,236,140,.35)'; lg.lineWidth = 1; lg.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const y = 14 + rand() * 7, x0 = rand() * W, l = 30 + rand() * 60;
+      for (const o of [-W, 0, W]) { lg.moveTo(x0 + o, y); lg.quadraticCurveTo(x0 + o + l / 2, y - 1.5, x0 + o + l, y + 0.5); }
+    }
+    lg.stroke();
+    // 16 ta qotgan po'stloq plitasi (8 tasi bir davrda, ikki marta) — orasidagi choklar yonib turadi
+    // har plita notekis ko'pburchak: yuqori qirrasi biroz qiyshiq, pastki qirrasi tishli
+    const plates = [];
+    let px = rand() * 6;
+    for (let i = 0; i < 8; i++) {
+      const w = W / 8 * (0.55 + rand() * 0.4), h = 5 + rand() * 7, pts = [];
+      pts.push([0, 2.6 + rand() * 1.4], [w * (0.25 + rand() * 0.15), 1 + rand()], [w * (0.6 + rand() * 0.15), 1.2 + rand() * 1.2], [w, 2.2 + rand() * 1.6]);
+      pts.push([w - 1 - rand() * 3, 2.5 + h * (0.6 + rand() * 0.3)]);
+      for (let k = 3; k >= 1; k--) pts.push([w * k / 4 + (rand() - 0.5) * 5, 2.5 + h * (0.75 + rand() * 0.35)]);
+      pts.push([1 + rand() * 3, 2.5 + h * (0.5 + rand() * 0.3)]);
+      plates.push([px, pts, h]);
+      px += W / 8 + (rand() - 0.5) * 6;
+      if (rand() < 0.6) plates.push([px - W / 16 + (rand() - 0.5) * 8, [[0, 3], [5 + rand() * 4, 2.2], [9 + rand() * 4, 3.4], [6, 5.5 + rand() * 2], [1.5, 5]], 4]);   // mayda parcha
+    }
+    for (const o of [-W, 0, W]) for (const [x0, pts, h] of plates) {
+      const x = x0 + o;
+      lg.beginPath(); pts.forEach(([a, b], i) => i ? lg.lineTo(x + a, b) : lg.moveTo(x + a, b)); lg.closePath();
+      const pg = lg.createLinearGradient(0, 0, 0, 3 + h); pg.addColorStop(0, '#3e0c04'); pg.addColorStop(1, '#7a1606');
+      lg.fillStyle = pg; lg.fill();
+      lg.strokeStyle = 'rgba(255,200,90,.9)'; lg.lineWidth = 1.1; lg.stroke();
+      if (h > 4) { lg.strokeStyle = 'rgba(255,170,80,.3)'; lg.lineWidth = 0.6; lg.beginPath(); lg.moveTo(x + pts[1][0], 2 + h * 0.2); lg.lineTo(x + pts[1][0] + 4, 2 + h * 0.7); lg.stroke(); }
+    }
+    LAVA = lc;
+    // Qirg'oq toshlari: faqat x<110 va x>490, pastdan lava bilan yoritilgan; pastki 10 px lava ko'rinib turadi
+    const [sc, sg] = offCanvas(W, 70);
+    sg.save(); sg.beginPath(); sg.rect(0, 0, W, 60); sg.clip();
+    for (const left of [true, false]) for (let i = 0; i < 4; i++) {
+      const r = 24 - i * 4 + rand() * 6, cx = left ? 6 + i * 24 + rand() * 8 : W - 6 - i * 24 - rand() * 8, cy = 62 - rand() * 4, pts = [];
+      if ((left && cx + r * 0.9 > 110) || (!left && cx - r * 0.9 < 490)) continue;
+      for (let k = 0; k < 12; k++) { const a = k / 12 * P2, rr = r * (0.8 + 0.35 * rand()); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.85]); }
+      blobPath(sg, pts);
+      const rg = sg.createLinearGradient(0, cy - r, 0, 60); rg.addColorStop(0, '#2c2632'); rg.addColorStop(0.55, '#1c1820'); rg.addColorStop(1, '#5a2410');
+      sg.fillStyle = rg; sg.fill();
+      const rs = sg.createLinearGradient(0, cy - r, 0, 60); rs.addColorStop(0, 'rgba(150,130,255,.16)'); rs.addColorStop(0.5, 'rgba(255,140,50,.1)'); rs.addColorStop(1, 'rgba(255,150,60,.8)');
+      sg.strokeStyle = rs; sg.lineWidth = 1.4; sg.stroke();
+    }
+    sg.globalCompositeOperation = 'source-atop';
+    const wg = sg.createLinearGradient(0, 48, 0, 60); wg.addColorStop(0, 'rgba(255,140,40,0)'); wg.addColorStop(1, 'rgba(255,160,60,.6)');
+    sg.fillStyle = wg; sg.fillRect(0, 48, W, 12);
+    sg.restore();
+    SHORE = sc;
+    const [wc, wgc] = offCanvas(64, 64), [cc, cgc] = offCanvas(64, 64);
+    glow(wgc, 32, 32, 32, 'rgba(255,140,50,1)'); glow(cgc, 32, 32, 32, 'rgba(120,240,255,1)');
+    DGLOW = { warm: wc, cool: cc };
+    SPACE_SPR = null;
+  }
+  // Koinot spraytlari: meteor dumi (2 ta gradient chiziq) va yaltirash
+  function spaceSprites() {
+    if (SPACE_SPR && SPACE_SPR.sc === scale) return SPACE_SPR;
+    const tail = rgb => {
+      const [c, g] = offCanvas(160, 14);
+      let gr = g.createLinearGradient(0, 0, 150, 0); gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(1, `rgba(${rgb},.35)`);
+      g.strokeStyle = gr; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(4, 7); g.lineTo(150, 7); g.stroke();
+      gr = g.createLinearGradient(40, 0, 152, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,.95)');
+      g.strokeStyle = gr; g.lineWidth = 1.4; g.beginPath(); g.moveTo(40, 7); g.lineTo(152, 7); g.stroke();
+      glow(g, 152, 7, 6, `rgba(${rgb},.9)`);
+      return c;
+    };
+    const [gc, gg] = offCanvas(32, 32); glow(gg, 16, 16, 16, 'rgba(255,255,255,.95)');
+    SPACE_SPR = { sc: scale, met: tail('200,220,255'), fire: tail('120,255,150'), glint: gc };
+    return SPACE_SPR;
+  }
+
+  const SOIL_LIVE = { t: null, drips: [] };
+  const DEEP_LIVE = { t: null, b: -1, bub: [], rings: [], drips: [], steam: [], bats: [], glint: null, gNext: 0, seq: -1 };
+  const SPACE_LIVE = { t: null, next: 0, ev: [], q: [], seq: -1, al: 0, dk: '', rad: null };
+  // Oxirgi chaqiruvdan beri o'tgan mantiqiy qadamlar (kadr tezligiga bog'liq bo'lmasin)
+  const liveDt = S => { const d = S.t === null ? 1 : Math.max(0, Math.min(4, tick - S.t)); S.t = tick; return d; };
+  // Topilma birinchi marta ko'rilganda: profilga yoziladi va e'lon qilinadi (bir marta)
+  function checkFind(z) {
+    const id = BG_FIND[z];
+    if (!id || phase !== 'aim' || zoneAnim || banner || !game || game.zone !== z) return;
+    profile.finds = profile.finds || [];
+    if (profile.finds.includes(id)) return;
+    const f = FINDS.find(q => q.id === id); if (!f) return;
+    profile.finds.push(id); persist();
+    showBanner(f.icon + ' Yangi topilma!', f.name);
+  }
+  // In bo'ylab s masofadagi nuqta va yo'nalish
+  function tunnelAt(T, s) {
+    s = Math.max(0, Math.min(T.total, s));
+    let i = 1; while (i < 39 && T.cum[i] < s) i++;
+    const a = T.pts[i - 1], b = T.pts[i], u = (s - T.cum[i - 1]) / ((T.cum[i] - T.cum[i - 1]) || 1);
+    return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, Math.atan2(b[1] - a[1], b[0] - a[0])];
+  }
+
+  // Yer osti: chuvalchang inida sudraladi, chumolilar yuguradi, ildizlardan tomchi tomadi
+  function liveSoil() {
+    const S = SOIL_LIVE, dt = liveDt(S), P2 = Math.PI * 2;
+    checkFind(-1);
+    const T = SOIL_TUNNEL[0];
+    if (T) {   // chuvalchang: 12 bo'g'im, peristaltik to'lqin bilan oldinga (oxirida orqaga buriladi)
+      const body = 52, run = Math.max(1, T.total - body), c = (tick * 0.22) % (2 * run), fwd = c < run, head = fwd ? body + c : T.total - body - (c - run);
+      const seg = []; let d = 0;
+      for (let i = 0; i < 12; i++) { seg.push(tunnelAt(T, fwd ? head - d : head + d)); d += 4.2 + Math.sin(tick / 9 - i * 0.6); }
+      for (let i = 11; i >= 0; i--) {
+        ctx.fillStyle = i === 3 || i === 4 ? '#e3a39a' : '#c97c74';
+        ctx.beginPath(); ctx.arc(seg[i][0], seg[i][1], 4.2 - 1.6 * i / 11, 0, P2); ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,226,214,.45)';
+      for (let i = 0; i < 12; i += 2) { const r = 4.2 - 1.6 * i / 11; ctx.beginPath(); ctx.arc(seg[i][0] - r * 0.3, seg[i][1] - r * 0.38, r * 0.36, 0, P2); ctx.fill(); }
+    }
+    const T1 = SOIL_TUNNEL[1];
+    if (T1) {   // 5 ta chumoli: 3 ta nuqta va qimirlab turgan oyoqlar
+      const ants = [];
+      ctx.strokeStyle = 'rgba(26,16,9,.85)'; ctx.lineWidth = 0.6; ctx.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const dir = k % 2 ? -1 : 1, s = ((k * T1.total / 5 + dir * tick * (0.3 + k * 0.05)) % T1.total + T1.total) % T1.total;
+        const [x, y, a0] = tunnelAt(T1, s), a = dir > 0 ? a0 : a0 + Math.PI, ca = Math.cos(a), sa = Math.sin(a), wig = Math.sin(tick * 0.7 + k * 2) * 1.1;
+        ants.push([x, y, ca, sa]);
+        for (const j of [-1, 0, 1]) {
+          const bx = x + ca * j * 1.2, by = y + sa * j * 1.2, w = j ? wig : -wig;
+          ctx.moveTo(bx - sa * 2.6 + ca * w, by + ca * 2.6 + sa * w); ctx.lineTo(bx + sa * 2.6 - ca * w, by - ca * 2.6 - sa * w);
+        }
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#1c110a';
+      for (const [x, y, ca, sa] of ants) {
+        ctx.fillRect(x + ca * 2.6 - 0.8, y + sa * 2.6 - 0.8, 1.6, 1.6);
+        ctx.fillRect(x - 0.7, y - 0.7, 1.4, 1.4);
+        ctx.fillRect(x - ca * 2.7 - 1.1, y - sa * 2.7 - 1.1, 2.2, 2.2);
+      }
+    }
+    // Ildiz uchlaridan tomchilar (ko'pi bilan 3 ta): o'sadi, tushadi, sachraydi
+    if (SOIL_TIPS.length && S.drips.length < 3 && Math.random() < dt / 160) {
+      const [x, y] = SOIL_TIPS[Math.floor(Math.random() * SOIL_TIPS.length)];
+      S.drips.push({ x, y, r: 0, g: 2.6 / (150 + Math.random() * 150), vy: 0, st: 0, t: 0 });
+    }
+    for (let i = S.drips.length - 1; i >= 0; i--) {
+      const d = S.drips[i];
+      for (let k = 0; k < dt; k++) {
+        if (d.st === 0) { d.r += d.g; if (d.r >= 2.6) d.st = 1; }
+        else if (d.st === 1) { d.vy += 0.22; d.y += d.vy; if (d.y >= H - 4) { d.st = 2; d.y = H - 4; if (Music.drip) Music.drip(); } }
+        else d.t++;
+      }
+      if (d.st === 2 && d.t > 18) { S.drips.splice(i, 1); continue; }
+      if (d.st < 2) {
+        ctx.fillStyle = 'rgba(200,225,255,.7)'; ctx.beginPath();
+        if (d.st === 0) ctx.arc(d.x, d.y + d.r, Math.max(0.3, d.r), 0, P2); else ctx.ellipse(d.x, d.y, 2.2, 3.4, 0, 0, P2);
+        ctx.fill();
+      } else {
+        const t = d.t, a = 1 - t / 18;
+        ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(200,225,255,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(d.x, d.y, 1 + t * 0.6, 0.5 + t * 0.2, 0, 0, P2); ctx.stroke();
+        ctx.fillStyle = 'rgba(200,225,255,.85)';
+        for (let k = -1; k <= 1; k++) ctx.fillRect(d.x + k * t * 0.55 - 0.6, d.y - (2.2 * t - 0.11 * t * t) * (k ? 0.8 : 1) - 0.6, 1.2, 1.2);
+        ctx.globalAlpha = 1;
+      }
+    }
+    // 6 ta chang zarrasi
+    ctx.fillStyle = 'rgba(200,170,130,.45)';
+    for (let i = 0; i < 6; i++) ctx.fillRect(((i * 113 + Math.sin(tick / 90 + i) * 18) % W + W) % W, (tick * 0.3 + i * 160) % H, 1.6, 1.6);
+  }
+
+  // Ko'rshapalak: osilgan (yig'ilgan) yoki qanotlari qirqimli uchayotgan holda — umumiy yo'lga qo'shiladi
+  function batPath(b) {
+    const x = b.x, y = b.y;
+    if (b.st === 0) {
+      ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 3, y + 3, x + 1.6, y + 8.5); ctx.lineTo(x + 1.2, y + 10.5); ctx.lineTo(x, y + 9.4);
+      ctx.lineTo(x - 1.2, y + 10.5); ctx.lineTo(x - 1.6, y + 8.5); ctx.quadraticCurveTo(x - 3, y + 3, x, y); ctx.closePath();
+      return;
+    }
+    const f = Math.sin(b.ph);
+    ctx.moveTo(x + 2.5, y); ctx.ellipse(x, y, 2.5, 1.7, 0, 0, Math.PI * 2);
+    for (const s of [-1, 1]) {
+      ctx.moveTo(x + s * 2.6, y - 0.8);
+      ctx.quadraticCurveTo(x + s * 5.5, y - 2 - 5 * f, x + s * 11, y - 7 * f);
+      ctx.quadraticCurveTo(x + s * 9.6, y - 4.6 * f + 2.4, x + s * 7.6, y - 3.4 * f + 1.6);
+      ctx.quadraticCurveTo(x + s * 6.4, y - 2 * f + 3.4, x + s * 4.8, y - 1.6 * f + 1.4);
+      ctx.quadraticCurveTo(x + s * 3.6, y + 2.6, x + s * 2.6, y + 1);
+      ctx.closePath();
+    }
+  }
+  // Chuqurlik: issiqlik titrashi, oqayotgan lava, pufakchalar, uchqunlar, nurlar, tomchilar, ko'rshapalaklar
+  function liveDeep() {
+    const S = DEEP_LIVE, dt = liveDt(S), P2 = Math.PI * 2;
+    if (!LAVA) buildDeepSprites();
+    checkFind(-2);
+    if (S.b !== DEEP_BUILD) {
+      S.b = DEEP_BUILD; S.drips.length = 0; S.glint = null;
+      S.bats = DEEP_ROOST.map(([x, y], i) => ({ hx: x, hy: y, x, y, vx: 0, vy: 0, st: 0, t: 0, dur: 0, ph: i * 1.3, tx: x, ty: y }));
+    }
+    // (a) issiqlik titrashi: lava ustidagi fon tasmalari biroz siljiydi
+    if (!zoneAnim && game.zone === -2 && bgCache[-2]) for (let k = 0; k < 8; k++) {
+      const y = H - 26 - (k + 1) * 11, dx = Math.sin(tick * 0.12 + k * 0.9) * 1.4 * (1 - k / 8);
+      ctx.drawImage(bgCache[-2], 0, y * scale, canvas.width, 11 * scale, dx, y, W, 11);
+    }
+    // (b) lava tasmasi (po'stloqlar oqadi) va qirg'oq toshlari
+    const ox = (tick * 0.25) % W;
+    ctx.drawImage(LAVA, ox * scale, 0, W * scale, LAVA.height, 0, H - 24, W, 24);
+    ctx.drawImage(SHORE, 0, H - 70, W, 70);
+    // (d) pufakchalar (≤3, to'p yonida emas): 45 kadrda o'sib yoriladi
+    if (S.bub.length < 3 && Math.random() < dt / 70) {
+      const x = 120 + Math.random() * 360;
+      if (Math.abs(x - game.launchX) >= 30) S.bub.push({ x, t: 0 });
+    }
+    for (let i = S.bub.length - 1; i >= 0; i--) {
+      const b = S.bub[i], y = H - 21; b.t += dt;
+      if (Math.abs(b.x - game.launchX) < 30) { S.bub.splice(i, 1); continue; }
+      if (b.t >= 45) {
+        S.bub.splice(i, 1); S.rings.push({ x: b.x, y, t: 0 });
+        if (typeof pushFx === 'function') for (let k = 0; k < 4; k++) pushFx({ k: 'p', x: b.x, y: y - 2, vx: (Math.random() - 0.5) * 3, vy: -2 - Math.random() * 2.5, life: 24, color: k % 2 ? '#ffd27a' : '#ff8a2a', size: 2.4 });
+        if (Music.bubble) Music.bubble();
+        continue;
+      }
+      ctx.fillStyle = '#8a2208'; ctx.beginPath(); ctx.arc(b.x, y, 1.2 + 5 * b.t / 45, Math.PI, 0); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,214,120,.9)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 1.2;
+    for (let i = S.rings.length - 1; i >= 0; i--) {
+      const q = S.rings[i]; q.t += dt;
+      if (q.t > 14) { S.rings.splice(i, 1); continue; }
+      ctx.globalAlpha = 1 - q.t / 14; ctx.beginPath(); ctx.ellipse(q.x, q.y, 3 + q.t * 0.9, 1 + q.t * 0.3, 0, 0, P2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // (c) 3 ta issiq dog' — lava toshqinida (World.surge) kuchayadi; (f) qurtcha va qo'ziqorin nurlari; (g) kristall yaltirashi
+    const surge = 1 + 1.5 * (typeof World !== 'undefined' && World ? World.surge || 0 : 0);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const x = W * (0.2 + 0.3 * i) + Math.sin(tick / 260 + i * 2.1) * 36;
+      ctx.globalAlpha = Math.max(0, Math.min(1, (0.1 + 0.07 * Math.sin(tick / 47 + i * 1.7) + 0.03 * Math.sin(tick / 6.3 + i * 2.9)) * surge));
+      ctx.drawImage(DGLOW.warm, x - 90, H - 70, 180, 90);
+    }
+    for (let i = 0; i < DEEP_WORMS.length && i < 5; i++) {
+      const [x, y, ph] = DEEP_WORMS[i];
+      ctx.globalAlpha = 0.22 + 0.18 * Math.sin(tick / 50 + ph); ctx.drawImage(DGLOW.cool, x - 8, y - 8, 16, 16);
+    }
+    for (let i = 0; i < DEEP_MUSH.length && i < 6; i++) {
+      const [x, y, s] = DEEP_MUSH[i], r = 26 * s;
+      ctx.globalAlpha = 0.14 + 0.1 * Math.sin(tick / 70 + i * 1.9); ctx.drawImage(DGLOW.cool, x - r, y - r, 2 * r, 2 * r);
+    }
+    if (!S.glint && tick >= S.gNext && DEEP_CRY.length) { const c = DEEP_CRY[Math.floor(Math.random() * DEEP_CRY.length)]; S.glint = { x: c[0], y: c[1], t: 0 }; }
+    if (S.glint) {
+      const G = S.glint, a = Math.sin(Math.PI * Math.min(1, G.t / 36));
+      ctx.globalAlpha = a * 0.7; ctx.drawImage(DGLOW.cool, G.x - 7, G.y - 7, 14, 14);
+      ctx.globalAlpha = a; ctx.fillStyle = '#ffffff'; ctx.fillRect(G.x - 5 * a, G.y - 0.5, 10 * a, 1); ctx.fillRect(G.x - 0.5, G.y - 5 * a, 1, 10 * a);
+      G.t += dt; if (G.t >= 36) { S.glint = null; S.gNext = tick + 40 + Math.random() * 120; }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // (e) 10 ta uchqun ko'tariladi
+    ctx.fillStyle = '#ffb347';
+    for (let i = 0; i < 10; i++) {
+      const p = ((tick * (0.3 + (i % 4) * 0.1) + i * 53) % 180) / 180, x = ((i * 61 + 37 + Math.sin(tick / 40 + i) * 10) % W + W) % W;
+      ctx.globalAlpha = (1 - p) * (0.5 + 0.5 * Math.abs(Math.sin(tick * 0.21 + i * 2.3))); ctx.fillRect(x, H - 24 - p * 180, 1.7, 1.7);
+    }
+    ctx.globalAlpha = 1;
+    // (h) stalaktitlardan lavaga tomchilar — tushganda bug' chiqadi
+    if (DEEP_TIPS.length && S.drips.length < 2 && Math.random() < dt / 200) {
+      const [x, y] = DEEP_TIPS[Math.floor(Math.random() * DEEP_TIPS.length)];
+      S.drips.push({ x, y, r: 0, g: 2.2 / (120 + Math.random() * 120), vy: 0, st: 0 });
+    }
+    ctx.fillStyle = 'rgba(190,220,255,.75)';
+    for (let i = S.drips.length - 1; i >= 0; i--) {
+      const d = S.drips[i];
+      for (let k = 0; k < dt; k++) {
+        if (d.st === 0) { d.r += d.g; if (d.r >= 2.2) d.st = 1; }
+        else { d.vy += 0.22; d.y += d.vy; }
+      }
+      if (d.y >= H - 24) { S.drips.splice(i, 1); for (let k = 0; k < 3; k++) S.steam.push({ x: d.x + (k - 1) * 4, y: H - 26, t: -k * 5 }); continue; }
+      ctx.beginPath(); if (d.st === 0) ctx.arc(d.x, d.y + d.r, Math.max(0.3, d.r), 0, P2); else ctx.ellipse(d.x, d.y, 1.8, 3, 0, 0, P2); ctx.fill();
+    }
+    ctx.fillStyle = '#e4e2ec';
+    for (let i = S.steam.length - 1; i >= 0; i--) {
+      const q = S.steam[i]; q.t += dt;
+      if (q.t > 50) { S.steam.splice(i, 1); continue; }
+      if (q.t < 0) continue;
+      ctx.globalAlpha = 0.22 * (1 - q.t / 50); ctx.beginPath(); ctx.arc(q.x + Math.sin(q.t / 8) * 2, q.y - q.t * 0.4, 3 + q.t * 0.12, 0, P2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // (i) ko'rshapalaklar: portlash, zilzila yoki boss chiqqanda uchib ketadi, 400-700 qadamdan so'ng qaytadi
+    if (typeof World !== 'undefined' && World && World.seq !== S.seq) {
+      const L = World.last;
+      if (S.seq >= 0 && L && (L.type === 'boom' || L.type === 'quake' || L.type === 'boss') && !(L.tick < tick - 30))
+        for (const b of S.bats) if (b.st === 0) {
+          b.st = 1; b.t = 0; b.dur = 400 + Math.random() * 300; b.vx = (Math.random() - 0.5) * 3; b.vy = 1 + Math.random();
+          b.tx = 80 + Math.random() * 440; b.ty = 60 + Math.random() * 380;
+        }
+      S.seq = World.seq;
+    }
+    ctx.fillStyle = 'rgba(13,10,16,.92)'; ctx.beginPath();
+    for (const b of S.bats) {
+      for (let k = 0; k < dt && b.st === 1; k++) {
+        b.t++; b.ph += 0.45;
+        const home = b.t > b.dur - 150;
+        if (home) { b.tx = b.hx; b.ty = b.hy; } else if (b.t % 90 === 0) { b.tx = 80 + Math.random() * 440; b.ty = 50 + Math.random() * 400; }
+        const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy) || 1;
+        b.vx += dx / d * 0.12 + (Math.random() - 0.5) * 0.15; b.vy += dy / d * 0.12 + (Math.random() - 0.5) * 0.15;
+        const sp = Math.hypot(b.vx, b.vy), mx = home && d < 40 ? Math.max(0.5, d / 15) : 2.6;
+        if (sp > mx) { b.vx *= mx / sp; b.vy *= mx / sp; }
+        b.x += b.vx; b.y += b.vy;
+        if ((home && d < 3) || b.t > b.dur + 400) { b.st = 0; b.x = b.hx; b.y = b.hy; b.vx = b.vy = 0; }
+      }
+      batPath(b);
+    }
+    ctx.fill();
+  }
+
+  // Koinot: yulduzlar miltillaydi; vaqti-vaqti bilan meteor, sun'iy yo'ldosh, XKS yoki meteor yomg'iri
+  function spaceMeteor(rad) {
+    const sp = 7 + Math.random() * 3;
+    let x, y, a;
+    if (rad) { x = rad[0] + (Math.random() - 0.5) * 160; y = rad[1] + (Math.random() - 0.5) * 70; a = rad[2] + (Math.random() - 0.5) * 0.2; }
+    else { x = 80 + Math.random() * (W + 40); y = -20 + Math.random() * 180; a = Math.PI * (0.62 + Math.random() * 0.2); }
+    SPACE_LIVE.ev.push({ k: 'met', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, max: 40 + Math.random() * 40, fire: Math.random() < 0.15, len: 0.7 + Math.random() * 0.5 });
+  }
+  function spaceShower(n) {
+    const S = SPACE_LIVE;
+    S.rad = [200 + Math.random() * 380, -10 + Math.random() * 120, Math.PI * (0.64 + Math.random() * 0.14)];
+    for (let i = 0; i < n; i++) S.q.push(tick + i * (8 + Math.random() * 14));
+  }
+  function liveSpace() {
+    const S = SPACE_LIVE, gap = S.t === null ? 999 : tick - S.t, dt = liveDt(S), Sp = spaceSprites();
+    // Yer foni kun/tunga bog'liq: soat o'zgarsa maydon ostidagi tasma ham yangilansin
+    if (S.dk !== DAY.key) { if (S.dk && !zoneAnim && game.zone === 2) applyZoneColors(2); S.dk = DAY.key; }
+    checkFind(2);
+    for (const s of SPACE_TW) { ctx.globalAlpha = 0.15 + 0.45 * (0.5 + 0.5 * Math.sin(tick * s.sp + s.ph)); puff(ctx, s.x, s.y, s.r * 1.25, s.c); }
+    ctx.globalAlpha = 1;
+    // O'yin voqealariga javob: katta kombo — meteorlar, boss yengilsa — 12 ta
+    if (typeof World !== 'undefined' && World) {
+      if (World.seq !== S.seq) {
+        const L = World.last;
+        if (S.seq >= 0 && L && !(L.tick < tick - 30)) {
+          if (L.type === 'bossDown') spaceShower(12);
+          else if (L.type === 'cheer' && L.p >= 2) spaceShower(Math.min(8, 2 + 2 * L.p));
+        }
+        S.seq = World.seq;
+      }
+      const al = World.alarm || 0;
+      if (gap <= 5 && S.al > 0.001 && al === 0 && !S.q.length) spaceShower(12);
+      S.al = al;
+    }
+    if (!S.next) S.next = tick + 480 + Math.random() * 600;
+    if (tick >= S.next) {
+      S.next = tick + (25 + Math.random() * 20) * 60;
+      const r = Math.random();
+      if (r < 0.45) spaceMeteor();
+      else if (r < 0.75) { const d = Math.random() < 0.5 ? 1 : -1; S.ev.push({ k: 'sat', x: d > 0 ? -10 : W + 10, y: 40 + Math.random() * 360, vx: d * 0.45, vy: (Math.random() - 0.5) * 0.1, t: 0 }); }
+      else if (r < 0.9) { const d = Math.random() < 0.5 ? 1 : -1; S.ev.push({ k: 'iss', x: d > 0 ? -20 : W + 20, y: 60 + Math.random() * 300, vx: d * 0.8, vy: (Math.random() - 0.5) * 0.12, t: 0, dur: (W + 40) / 0.8 }); }
+      else spaceShower(6);
+    }
+    // navbatdagi meteorlar (boshqa qatlamda o'tkazib yuborilganlari tashlab yuboriladi)
+    for (let i = S.q.length - 1; i >= 0; i--) if (tick >= S.q[i]) { const q = S.q.splice(i, 1)[0]; if (tick - q < 90) spaceMeteor(S.rad); }
+    for (let i = S.ev.length - 1; i >= 0; i--) {
+      const e = S.ev[i];
+      e.t += dt; e.x += e.vx * dt; e.y += e.vy * dt;
+      if (e.k === 'met') {
+        if (e.t > e.max) { S.ev.splice(i, 1); continue; }
+        ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(Math.atan2(e.vy, e.vx));
+        ctx.globalAlpha = Math.min(1, e.t / 6) * Math.sqrt(Math.max(0, 1 - e.t / e.max));
+        const th = e.fire ? 20 : 14;
+        ctx.drawImage(e.fire ? Sp.fire : Sp.met, -152 * e.len, -th / 2, 160 * e.len, th);
+        ctx.restore();
+      } else if (e.k === 'sat') {
+        if (e.x < -20 || e.x > W + 20) { S.ev.splice(i, 1); continue; }
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = '#5a7ab8'; ctx.fillRect(e.x - 6.4, e.y - 0.8, 4, 1.6); ctx.fillRect(e.x + 2.4, e.y - 0.8, 4, 1.6);
+        ctx.fillStyle = '#d8d2c0'; ctx.fillRect(e.x - 1.4, e.y - 1.4, 2.8, 2.8);
+        if ((e.t | 0) % 70 < 5) { ctx.fillStyle = '#ff3b3b'; ctx.fillRect(e.x - 0.8, e.y + 1.6, 1.6, 1.6); }
+      } else {
+        if (e.t > e.dur) { S.ev.splice(i, 1); continue; }
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#d6d6cf'; ctx.fillRect(e.x - 9, e.y - 0.5, 18, 1);
+        ctx.fillStyle = '#b8954a';
+        for (let k = 0; k < 4; k++) { const px = e.x - 7.5 + k * 5; ctx.fillRect(px - 1.3, e.y - 4.8, 2.6, 4); ctx.fillRect(px - 1.3, e.y + 0.8, 2.6, 4); }
+        ctx.fillStyle = '#f2f2ee'; ctx.fillRect(e.x - 2, e.y - 1.4, 4, 2.8);
+        const gl = Math.pow(Math.sin(Math.PI * e.t / e.dur), 8);
+        if (gl > 0.02) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = gl * 0.9; ctx.drawImage(Sp.glint, e.x - 14, e.y - 14, 28, 28); ctx.globalCompositeOperation = 'source-over'; }
+      }
+    }
+    ctx.globalAlpha = 1;
+    // Topilgan kosmonavt sekin suzib yuradi (tros bilan)
+    if (SPACE_ASTRO) {
+      const A = SPACE_ASTRO, x = ((A.x + tick * 0.15 + 40) % (W + 80) + (W + 80)) % (W + 80) - 40, y = A.y + Math.sin(tick / 120) * 5;
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = 'rgba(220,226,236,.55)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x - 5, y);
+      ctx.bezierCurveTo(x - 25, y + 14 + Math.sin(tick / 60) * 6, x - 45, y - 12, x - 62, y + 4 + Math.sin(tick / 80) * 4); ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(tick / 400) * 0.7); drawFind(ctx, 'kosmonavt', 0, 0, 1); ctx.restore();
+      ctx.globalAlpha = 1;
+    }
   }
   function crystal(g, x, y, k, col, rand) {
     g.save(); g.shadowColor = col; g.shadowBlur = 14;
