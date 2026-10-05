@@ -254,7 +254,7 @@
   <p>• 🏆 <b>Yutuqlar</b> — rekord, bosslar, sindirilgan g'ishtlar va kombo uchun doimiy nishonlar, har biriga S mukofot.</p>
   <p>• Statistika tugmasidagi <b style="color:#e8432e">qizil nuqta</b> — olinmagan mukofot bor degani.</p>
   <h3>Qiyinlik</h3>
-  <p>• Menyuda: 😐 <b>Oddiy</b> yoki 🔥 <b>Qiyin</b>. Qiyinda qatorlar deyarli to'la, g'isht joni ×1,25, halqa har qatorda emas, ko'tarilish qiyinroq — lekin tangalar 2 barobar. Rekord har daraja uchun alohida.</p>
+  <p>• Menyuda: 😐 <b>Oddiy</b> yoki 🔥 <b>Qiyin</b>. Qiyinda g'isht joni ×1,25, ikki barobar g'ishtlar ko'proq, halqa har qatorda emas, ko'tarilish qiyinroq — lekin tangalar 2 barobar. Rekord har daraja uchun alohida.</p>
   <h3>To'p kuchi</h3>
   <p>• Do'konda S tangaga: 💪 kritik zarba, 🚀 tezlik, 🧲 magnit, ➕ qo'shimcha to'p.</p>
   <p>• P bonusga maxsus zarbalar: 🔥 olovli (g'ishtni teshib o'tadi) va 🔩 po'lat (2× kuch). Otishdan oldin pastdagi tugmani bosing.</p>
@@ -339,7 +339,7 @@
             maxB: 5, coin: 0.25, gem: 0.1, dbl: 0.22, hpK: 1 },
   };
   // Keyingi qatlamga chiqish uchun kerakli ochko: yer ostidan chiqish osonroq, osmonda qiyinroq.
-  // Qiyinlik: oddiy — odatiy o'yin; qiyin — qatorlar deyarli to'la, jon ko'p, halqa kamroq, tanga 2 barobar
+  // Qiyinlik: oddiy — odatiy o'yin; qiyin — jon ko'p, ikki barobar g'isht ko'proq, halqa kamroq, tanga 2 barobar
   const DIFFS = {
     oddiy: { name: 'Oddiy', icon: '😐', hpK: 1, minB: 1, extraB: 0, ring: 1, dblAdd: 0, climbK: 1, coinK: 1 },
     qiyin: { name: 'Qiyin', icon: '🔥', hpK: 1.25, minB: 3, extraB: 1, ring: 0.7, dblAdd: 0.15, climbK: 1.5, coinK: 2 },
@@ -497,7 +497,8 @@
       row[c] = { t: 'boss', ref, dx: 0, dy: 1 };
       row[c + 1] = { t: 'boss', ref, dx: 1, dy: 1 };
       free = free.filter(k => k !== c && k !== c + 1);
-      showBanner('👑 ' + K.name, `${hp} jon — ${K.ab}`);
+      // ko'tarilish/yiqilish/parashyut banneri bo'lsa — uni yopmaymiz, boss tost bilan e'lon qilinadi
+      if (banner) toast('👑 ' + K.name + ' — ' + hp + ' jon'); else showBanner('👑 ' + K.name, `${hp} jon — ${K.ab}`);
       beep(110, 0.4, 0.07, 'square');
       if (typeof worldReact === 'function') worldReact('boss');
       if (K.id === 'root') {   // Ildiz ona: 2–4 qatorlardagi 3 tagacha g'isht ildiz otadi
@@ -4600,7 +4601,7 @@
   }
 
   function newBall(x, y, vx, vy, temp) {
-    flying.push({ x, y, vx, vy, s: 'fly', i: flying.length, hit: new Set(), temp,
+    flying.push({ x, y, vx, vy, s: 'fly', i: flying.length, hit: new Set(), temp, t0: turnTime,
       fire: shotBoost === 'fire', heavy: shotBoost === 'heavy' || game.ev?.id === 'quyosh', pierced: new Set(), tr: [] });
   }
 
@@ -4645,7 +4646,10 @@
 
   function moveBall(b) {
     const n = 3, sp0 = Math.hypot(b.vx, b.vy);
-    const wind = windNow(), hole = game.hole;
+    // ~60 s dan ortiq uchgan to'p (qora tuynuk atrofida aylanib qolgan) tortishdan chiqib, pastga buriladi
+    const stuck = turnTime - (b.t0 || 0) > 3600;
+    if (stuck) b.vy = Math.abs(b.vy) || 1;
+    const wind = windNow(), hole = stuck ? null : game.hole;
     b.tr.push(b.x, b.y); if (b.tr.length > 14) b.tr.splice(0, 2);   // harakat izi
     for (let s = 0; s < n; s++) {
       if (wind || hole) {   // tashqi kuchlar yo'nalishni buradi, tezlik o'zgarmaydi
@@ -4817,10 +4821,10 @@
     shake = 18;
     const S = Math.min(45, 15 + 2 * (game.bossN || 0));   // har yengilgan boss bilan sovg'a oshadi
     profile.bricks++; profile.bosses = (profile.bosses || 0) + 1;
-    profile.coins += S; profile.gems += 3; extraBalls += 2; game.climb += 3;
+    const gotS = addS(S); profile.gems += 3; extraBalls += 2; game.climb += 3;
     game.bossN = (game.bossN || 0) + 1;
     addKill(); addKill(); addKill();
-    showBanner("👑 Boss yengildi!", `+${S} S · +3 P · +2 to'p · +3 ko'tarilish`);
+    showBanner("👑 Boss yengildi!", `+${gotS} S · +3 P · +2 to'p · +3 ko'tarilish`);
     if (game.bossN % 3 === 0) {   // har 3-bossdan keyin bo'shagan katakda sandiq qoladi
       const spots = parts.filter(([r]) => r >= 1 && r <= ROWS - 2);
       if (spots.length) {
@@ -4937,10 +4941,13 @@
   }
 
   // Sandiq sovg'asi (E2 kunlik sandig'i ham chaqiradi). Sovg'a matnini qaytaradi.
+  // Tanga mukofoti: qiyinda ×coinK (menyuda va'da qilingan 'tanga ×2'). Haqiqatda qo'shilgan sonni qaytaradi
+  function addS(n) { const v = Math.round(n * diff().coinK); profile.coins += v; return v; }
+
   function rollLoot(x = W / 2, y = H * 0.45) {
     const p = Math.random(), lv = game ? game.level : 1;
     let str;
-    if (p < 0.4) { const n = 8 + rnd(13) + Math.floor(lv / 10); profile.coins += n; str = `+${n} S`; }
+    if (p < 0.4) { const n = addS(8 + rnd(13) + Math.floor(lv / 10)); str = `+${n} S`; }
     else if (p < 0.6) { const n = 2 + rnd(3); profile.gems += n; str = `+${n} P`; }
     else if (p < 0.75) { const k = Math.random() < 0.5 ? 'fire' : 'heavy'; profile.boost[k] = (profile.boost[k] || 0) + 1; str = k === 'fire' ? '+1 🔥' : '+1 🔩'; }
     else if (p < 0.85) { profile.chutes = (profile.chutes || 0) + 1; str = '+1 🪂'; }
@@ -5107,7 +5114,7 @@
       if (cell && cell.u) { game.grid[r][c] = null; effects.push({ k: 'c', x: c * CELL + CELL / 2, y: r * CELL + CELL / 2, life: 20, size: 14 }); }
     }
     const bonus = Math.floor(turnKills / 5);
-    if (bonus > 0) { profile.coins += bonus; text(W / 2, H * 0.62, `+${bonus} S kombo bonusi`, '#c98a00'); }
+    if (bonus > 0) { const v = addS(bonus); text(W / 2, H * 0.62, `+${v} S kombo bonusi`, '#c98a00'); }
     if (turnKills > profile.maxCombo) profile.maxCombo = turnKills;
     track('combo', turnKills);
     // Hodisa: yurishlar sanog'i kamayadi; yurishi ham, qatori ham qolmasa — tugaydi
@@ -5116,7 +5123,10 @@
       if ((game.ev.turns || 0) <= 0 && (game.ev.rows || 0) <= 0) game.ev = null;
     }
     updateCtrl();
-    if (game.freeze > 0) {   // muzlatilgan: g'ishtlar joyida qoladi
+    // muzlatilgan: g'ishtlar joyida qoladi. Keyingi level boss/hodisa/sandiq leveli bo'lsa muzlatish
+    // keyingi yurishga qoldiriladi — aks holda spawnRow chaqirilmay ular o'tkazib yuboriladi
+    const nx = game.level + 1;
+    if (game.freeze > 0 && nx % 10 !== 0 && !(nx >= 14 && nx % 7 === 0) && !(nx >= 12 && nx % 15 === 7)) {
       game.freeze--;
       game.level++;
       text(W / 2, H * 0.55, "❄ G'ishtlar muzlab qoldi", '#2a9fd6');
@@ -5149,7 +5159,7 @@
       } else if (isSolid(cell)) fell = true;
       else {   // pastga yetgan halqa va tangalar avtomatik yig'iladi, boshqalari yo'qoladi
         if (cell.t === 'ring') { game.balls++; profile.rings++; track('rings', 1); }
-        if (cell.t === 'coin') profile.coins++;
+        if (cell.t === 'coin') addS(1);   // qiyinda tanga ×2 — collect() bilan bir xil
         if (cell.t === 'gem') profile.gems++;
         last[c] = null;
       }
@@ -5197,13 +5207,15 @@
           if (typeof worldReact === 'function') worldReact('rise');
           track('climb', 1);
         } else {
-          profile.coins += 10;
-          showBanner('🌟 Cho\'qqi bonusi', '+10 S tanga');
+          const v = addS(10);
+          showBanner('🌟 Cho\'qqi bonusi', '+' + v + ' S tanga');
         }
       }
     }
     // Hodisa: har 7 levelda (boss levellaridan tashqari), qatlam o'zgarmagan va yiqilmagan bo'lsa
     if (!fell && to === from && !game.ev && lv >= 14 && lv % 7 === 0 && lv % 10 !== 0) startEvent(to);
+    // yangi qatlamda ruxsat etilmagan hodisa (masalan, yer ostida shamol) tugaydi
+    if (to !== from && game.ev && !evOk(EVENTS.find(e => e.id === game.ev.id) || {}, to)) game.ev = null;
     game.zone = to;
     if (to > profile.maxZone) profile.maxZone = to;
     spawnRow(to);
@@ -7039,9 +7051,15 @@
       ctx.fillStyle = 'rgba(255,255,255,.82)';
       roundRect(60, H * 0.36, W - 120, 130, 26); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,1)'; ctx.lineWidth = 3; ctx.stroke();
-      ctx.fillStyle = '#16222e'; ctx.font = '900 40px Roboto, Arial, sans-serif';
+      // uzun matn oq quti ichiga sig'ishi uchun shrift kichraytiriladi
+      const fit = (t, base, wt) => {
+        ctx.font = `${wt} ${base}px Roboto, Arial, sans-serif`;
+        const w = ctx.measureText(t).width, max = W - 150;
+        if (w > max) ctx.font = `${wt} ${Math.floor(base * max / w)}px Roboto, Arial, sans-serif`;
+      };
+      ctx.fillStyle = '#16222e'; fit(banner.text, 40, 900);
       ctx.fillText(banner.text, W / 2, H * 0.36 + 50);
-      ctx.fillStyle = '#4a5a6a'; ctx.font = '600 24px Roboto, Arial, sans-serif';
+      ctx.fillStyle = '#4a5a6a'; fit(banner.sub, 24, 600);
       ctx.fillText(banner.sub, W / 2, H * 0.36 + 94);
       ctx.globalAlpha = 1;
     }
@@ -7636,7 +7654,7 @@
     $('diffList').innerHTML = Object.entries(DIFFS).map(([id, D]) =>
       `<button data-diff="${id}" class="${id === diffId() ? 'sel' : ''} ${id === pendingDiff ? 'pending' : ''}">${D.icon} ${D.name}</button>`).join('');
     $('diffNote').textContent = pendingDiff ? "Yangi o'yin boshlanadi — tasdiqlash uchun yana bosing"
-      : diffId() === 'qiyin' ? "Qiyin: qatorlar to'la, jon ×1,25, halqa kamroq, tanga ×2" : "Oddiy: odatiy o'yin";
+      : diffId() === 'qiyin' ? "Qiyin: jon ×1,25, halqa kamroq, ko'tarilish qiyinroq, tanga ×2" : "Oddiy: odatiy o'yin";
   }
   function updateHud() {
     setRecord();
@@ -7699,7 +7717,8 @@
 
   function persist() {
     setRecord();
-    store.set({ profile, game });
+    // yurish o'rtasida: grid'dan olingan halqalar extraBalls'da turadi — saqlanadigan to'p soni grid bilan mos bo'lsin
+    store.set({ profile, game: phase === 'fire' ? { ...game, balls: game.balls + extraBalls } : game });
   }
 
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.remove('show')));
@@ -7720,7 +7739,8 @@
   $('diffList').addEventListener('click', ev => {
     const btn = ev.target.closest('[data-diff]'); if (!btn) return;
     const d = btn.dataset.diff;
-    if (d === diffId() && !pendingDiff) return;
+    // joriy darajani bosish — tanlovni bekor qiladi (o'yin qayta boshlanmaydi)
+    if (d === diffId()) { if (pendingDiff) { pendingDiff = null; renderDiffs(); } return; }
     if (pendingDiff !== d) { pendingDiff = d; renderDiffs(); return; }
     pendingDiff = null; hide('menuModal'); effects = []; banner = null; newGame(d);
     toast(`${DIFFS[d].icon} ${DIFFS[d].name} daraja`);
@@ -7771,7 +7791,7 @@
   function rollDaily() {
     const day = dayNum();
     if (profile.daily && profile.daily.day === day) return false;
-    const rand = prng(day), rec = profile.record || 1;
+    const rand = prng(day), rec = Math.max(profile.record || 1, profile.recordHard || 1);   // qiyin rekordi ham hisoblanadi
     const tier = rec < 30 ? 0 : rec < 80 ? 1 : 2;
     const pool = MISSIONS.filter(m => rec >= (m.min || 0)), list = [];
     while (list.length < 3 && pool.length) {
