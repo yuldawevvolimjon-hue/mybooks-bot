@@ -1564,15 +1564,15 @@
   function turnSteps() {
     if (fast) return 3;
     const many = game.balls >= 60, t2 = 60 * (many ? 3 : 6), t3 = 60 * (many ? 6 : 12);
-    // 100+ to'pda (to'plar oqimi uzun): tezlashish ertaroq boshlanadi va 4× gacha boradi — yurish ~4 soniyada tugaydi
-    const huge = game.balls >= 100;
-    if (shotsLeft === 0 && turnTime > 120) {   // deyarli hammasi qo'ngan — qolganlarini tez kutamiz
+    // 100+ to'pda (to'plar oqimi uzun): tezlashish ertaroq boshlanadi va 5× gacha boradi — yurish ~4 soniyada tugaydi
+    const k = game.balls >= 100 ? (turnTime > 480 ? 5 : turnTime > 240 ? 4 : turnTime > 120 ? 3 : turnTime > 60 ? 2 : 1)
+      : turnTime > t3 ? 3 : turnTime > t2 ? 2 : 1;
+    if (k < 3 && shotsLeft === 0 && turnTime > 120) {   // deyarli hammasi qo'ngan — qolganlarini tez kutamiz
       let n = 0, d = 0;
       for (const b of flying) if (!b.temp) { n++; if (b.s === 'done' || b.s === 'gone') d++; }
-      if (n && d >= n * 0.9) return huge && turnTime > 300 ? 4 : 3;
+      if (n && d >= n * 0.9) return 3;
     }
-    if (huge) return turnTime > 300 ? 4 : turnTime > 120 ? 3 : turnTime > 60 ? 2 : 1;
-    return turnTime > t3 ? 3 : turnTime > t2 ? 2 : 1;
+    return k;
   }
 
   // ---------- Hodisalar (har 7 levelda) ----------
