@@ -2353,17 +2353,18 @@
       g.fill();
       cloudPuffs(g, s, CLOUD_PUFFS, ls, bs);
       if (v === 3) cloudPuffs(g, s, CLOUD_EXTRA, ls, bs);   // momiq: qo'shimcha bo'laklar
-      if (v === 1) {   // qatlam: uchta yumshoq yo'l (yorug' ustki va soyali pastki qavat)
+      if (v === 1) {   // qatlam: uchta yumshoq yo'l (yorug' ustki va soyali pastki qavat); o'rtadagisi raqam ortida xira
         for (let i = 0; i < 3; i++) {
-          const yy = s * (0.2 + i * 0.3);
-          g.fillStyle = `rgba(${dark.join(',')},.26)`; g.beginPath(); g.ellipse(s / 2, yy + 5 * k, s * 0.66, 6 * k, 0, 0, Math.PI * 2); g.fill();
-          g.fillStyle = `rgba(${ls},.6)`; g.beginPath(); g.ellipse(s / 2, yy, s * 0.62, 5 * k, 0, 0, Math.PI * 2); g.fill();
+          const yy = s * (0.2 + i * 0.3), mid = i === 1;
+          g.fillStyle = `rgba(${dark.join(',')},${mid ? 0.16 : 0.26})`; g.beginPath(); g.ellipse(s / 2, yy + 5 * k, s * 0.66, 6 * k, 0, 0, Math.PI * 2); g.fill();
+          g.fillStyle = `rgba(${ls},${mid ? 0.3 : 0.6})`; g.beginPath(); g.ellipse(s / 2, yy, s * 0.62, 5 * k, 0, 0, Math.PI * 2); g.fill();
         }
       } else if (v === 2) {   // patli: ingichka par tolalari
         for (const [dy, c, lw] of [[3 * k, `rgba(${dark.join(',')},.22)`, 1.2], [0, 'rgba(255,255,255,.6)', 2]]) {
           const rand = prng((cell.s | 0) + 29);
           g.strokeStyle = c; g.lineWidth = lw * k; g.beginPath();
-          for (let i = 0; i < 4; i++) { const y = s * (0.12 + i * 0.25) + rand() * 6 * k + dy, x = rand() * s * 0.3; g.moveTo(x, y + 6 * k); g.quadraticCurveTo(x + s * 0.3, y - 6 * k, x + s * (0.55 + rand() * 0.2), y - 2 * k); }
+          // tolalar raqam turadigan o'rta qismdan tashqarida (tepada va pastda)
+          for (let i = 0; i < 4; i++) { const y = s * [0.1, 0.24, 0.8, 0.93][i] + rand() * 4 * k + dy, x = rand() * s * 0.3; g.moveTo(x, y + 6 * k); g.quadraticCurveTo(x + s * 0.3, y - 6 * k, x + s * (0.55 + rand() * 0.2), y - 2 * k); }
           g.stroke();
         }
       }
