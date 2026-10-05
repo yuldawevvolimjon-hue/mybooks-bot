@@ -391,7 +391,7 @@ def biznes_xabar(msg, db, pool):
             return
         if frm.get("is_bot") or not matn:
             return
-        if msg.get("video") or msg.get("video_note"):
+        if msg.get("video"):                      # oddiy video; dumaloq video va ovozliga javob boradi
             print("  video — javob yozilmaydi")
             return
         c["tarix"] = (c["tarix"] + [{"kim": "u", "matn": matn}])[-TARIX:]
