@@ -391,6 +391,9 @@ def biznes_xabar(msg, db, pool):
             return
         if frm.get("is_bot") or not matn:
             return
+        if msg.get("video") or msg.get("video_note"):
+            print("  video — javob yozilmaydi")
+            return
         c["tarix"] = (c["tarix"] + [{"kim": "u", "matn": matn}])[-TARIX:]
         c["ism"] = " ".join(x for x in (frm.get("first_name"), frm.get("last_name")) if x)
         c["username"] = frm.get("username") or ""
