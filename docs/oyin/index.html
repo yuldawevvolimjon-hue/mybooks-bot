@@ -523,44 +523,80 @@
     if (!zoneAnim && game.zone >= 0) applyZoneColors(game.zone);
   }, 60000);
 
-  // Fasl zarralari: kuzda barglar, qishda qor, bahorda gulbarglar, yozda (kechasi) yaltiroq qo'ng'izlar
+  // Fasl zarralari: kuzda barglar, qishda qor, bahorda gulbarglar, yozda (kechasi) yaltiroq qo'ng'izlar.
+  // Hammasi umumiy shamolga (WIND) bo'ysunadi; qor bo'ronida qor ancha ko'payadi.
   const seasonFx = [];
+  const DRIFT = [];   // qishki kuchli shamolda yer bo'ylab uchadigan qor yo'llari
   function updateSeason() {
+    // Eski sikl updateSeason() ni chaqirsa ham butun jonli dunyo shu tikda bir marta yangilanadi
+    if (lifeT !== tick) { updateLife(); return; }
     const z = zoneAnim ? zoneAnim.to : game.zone;
     // Osmonda faqat qishda qor yog'adi; barg, gul va qo'ng'izlar yer ustida
-    if (z !== 0 && !(z === 1 && DAY.season === 'winter')) { seasonFx.length = 0; return; }
-    const S = DAY.season, want = S === 'winter' ? 45 : S === 'autumn' ? 12 : S === 'spring' ? 10 : DAY.night ? 14 : 0;
-    if (seasonFx.length < want && Math.random() < 0.15) {
+    if (z !== 0 && !(z === 1 && DAY.season === 'winter')) { seasonFx.length = 0; DRIFT.length = 0; return; }
+    const S = DAY.season, wk = WEATHER.kind, storm = wk === "qor bo'roni";
+    const want = S === 'winter' ? (storm ? 100 : wk === 'qor' ? 45 : 15) : S === 'autumn' ? 12 : S === 'spring' ? 10 : DAY.night ? 14 : 0;
+    const v = WIND.v;
+    for (let n = storm ? 3 : 1; n > 0 && seasonFx.length < want; n--) {
+      if (!storm && Math.random() >= 0.15) break;
       const fly = S === 'summer';
+      // shamol kuchli bo'lsa zarralar shamol tomondagi chetdan ham kiradi
+      const up = Math.min(260, Math.abs(v) * 160);
       seasonFx.push({
-        x: Math.random() * W, y: fly ? H - 40 - Math.random() * 300 : -10, vx: (Math.random() - 0.5) * 0.6,
-        vy: S === 'winter' ? 0.6 + Math.random() * 0.9 : fly ? 0 : 0.5 + Math.random() * 0.6,
+        x: Math.random() * (W + up) - (v > 0 ? up : 0), y: fly ? H - 40 - Math.random() * 300 : -10, vx: (Math.random() - 0.5) * 0.6,
+        vy: S === 'winter' ? (0.6 + Math.random() * 0.9) * (storm ? 1.6 : 1) : fly ? 0 : 0.5 + Math.random() * 0.6,
         r: S === 'winter' ? 1.2 + Math.random() * 2.3 : 4 + Math.random() * 3, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.08,
         ph: Math.random() * 6, life: fly ? 400 : 9999,
         col: S === 'autumn' ? ['#e8822c', '#f2b33d', '#c9512a', '#a8742a'][rnd(4)] : S === 'spring' ? ['#ffc4d8', '#ffd9e6', '#fff0f5'][rnd(3)] : '#ffffff',
       });
     }
+    const gk = 1 + 3 * Math.min(1, WIND.gust);
     for (let i = seasonFx.length - 1; i >= 0; i--) {
       const f = seasonFx[i];
-      f.ph += 0.03; f.rot += f.vr; f.life--;
+      f.ph += 0.03; f.life--;
       if (S === 'summer') { f.x += Math.sin(f.ph) * 0.5; f.y += Math.cos(f.ph * 0.7) * 0.4; }
-      else { f.x += f.vx + Math.sin(f.ph) * (S === 'winter' ? 0.35 : 0.9); f.y += f.vy; }
-      if (f.y > H + 10 || f.life <= 0 || f.x < -20 || f.x > W + 20) seasonFx.splice(i, 1);
+      else if (S === 'winter') { f.x += f.vx + Math.sin(f.ph) * 0.35 + v * 0.9; f.y += f.vy; }
+      else {   // barg va gulbarglar: kattasi shamolga ko'proq beriladi, shamol zarbida aylanadi
+        f.rot += f.vr * gk;
+        f.x += f.vx + Math.sin(f.ph) * 0.9 + v * 1.4 * (0.6 + f.r / 7); f.y += f.vy;
+      }
+      if (f.y > H + 10 || f.life <= 0 || f.x < -40 || f.x > W + 40) seasonFx.splice(i, 1);
+    }
+    // Qishki shamol zarbasi: yer yuzasi bo'ylab qor yo'llari
+    if (S === 'winter' && z === 0 && WIND.gust > 0.8 && DRIFT.length < 6 && Math.random() < 0.2)
+      DRIFT.push({ x: v > 0 ? -70 : W + 70, y: H - 16 - Math.random() * 14, l: 30 + Math.random() * 50, life: 160 });
+    for (let i = DRIFT.length - 1; i >= 0; i--) {
+      const d = DRIFT[i];
+      d.x += v * 5 + Math.sign(v || 1); d.life--;
+      if (d.life <= 0 || d.x < -120 || d.x > W + 120) DRIFT.splice(i, 1);
     }
   }
   function drawSeason() {
-    for (const f of seasonFx) {
-      if (DAY.season === 'winter') { ctx.globalAlpha = 0.85; puff(ctx, f.x, f.y, f.r, '#ffffff'); }
-      else if (DAY.season === 'summer') {
+    if (!seasonFx.length && !DRIFT.length) return;
+    const S = DAY.season;
+    if (S === 'winter') {
+      // barcha qor parchalari bitta yo'lda — bitta to'ldirish
+      ctx.globalAlpha = 0.85; ctx.fillStyle = '#ffffff'; ctx.beginPath();
+      for (const f of seasonFx) { ctx.moveTo(f.x + f.r, f.y); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); }
+      ctx.fill();
+      if (DRIFT.length) {
+        const dir = Math.sign(WIND.v || 1);
+        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.beginPath();
+        for (const d of DRIFT) { ctx.moveTo(d.x, d.y); ctx.quadraticCurveTo(d.x - dir * d.l * 0.5, d.y - 3, d.x - dir * d.l, d.y + 1); }
+        ctx.stroke(); ctx.lineCap = 'butt';
+      }
+    } else if (S === 'summer') {
+      // yaltiroq qo'ng'izlar: tayyor yorug'lik dog'i (har kadrda gradient yaratilmaydi)
+      const spr = glowSprite('230,255,120');
+      for (const f of seasonFx) {
         const a = 0.4 + 0.6 * Math.max(0, Math.sin(f.ph * 3));
         ctx.globalAlpha = a * Math.min(1, f.life / 60);
-        const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 9);
-        g.addColorStop(0, 'rgba(230,255,120,1)'); g.addColorStop(1, 'rgba(230,255,120,0)');
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 9, 0, Math.PI * 2); ctx.fill();
-      } else {
+        ctx.drawImage(spr, f.x - 9, f.y - 9, 18, 18);
+      }
+    } else {
+      for (const f of seasonFx) {
         ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.rot); ctx.globalAlpha = 0.9;
         ctx.fillStyle = f.col; ctx.beginPath(); ctx.ellipse(0, 0, f.r, f.r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
-        if (DAY.season === 'autumn') { ctx.strokeStyle = 'rgba(90,50,20,.5)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-f.r, 0); ctx.lineTo(f.r, 0); ctx.stroke(); }
+        if (S === 'autumn') { ctx.strokeStyle = 'rgba(90,50,20,.5)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-f.r, 0); ctx.lineTo(f.r, 0); ctx.stroke(); }
         ctx.restore();
       }
     }
@@ -2851,90 +2887,1139 @@
   }
 
   // ---------- Fondagi jonli narsalar ----------
-  const walkers = Array.from({ length: 5 }, (_, i) => ({
-    x: Math.random() * W, v: (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.35),
-    h: 0.75 + Math.random() * 0.4, ph: Math.random() * 6,
-    col: ['#3d5a80', '#9c4f3d', '#4f7a3d', '#7a4f8c', '#c27b2a'][i],
-    child: i === 4,
-  }));
+  // Eski "walkers" o'rniga PEOPLE keldi; ro'yxat eski sikl mos kelishi uchun bo'sh qoldirilgan
+  const walkers = [];
+  // Qatlam hozir ekranda ko'rinadimi (qatlam almashish animatsiyasida ikkalasi ham)
+  const vis = z => game.zone === z || (!!zoneAnim && (zoneAnim.from === z || zoneAnim.to === z));
+  const dkHex = (c, k) => rgbHex(hexRgb(c).map(v => Math.max(0, Math.min(255, v * k))));
 
-  function liveBg(z) {
-    if (z === 0) {
-      ctx.globalAlpha = DAY.night ? 0.22 : 0.55;
-      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.15 + i * 0.07) + i * 260) % (W + 160)) - 80, 60 + i * 55, 0.8, DAY.golden ? '#ffe1cf' : '#ffffff');
-      ctx.globalAlpha = 1;
-      // mo'ridan tutun (sovuq faslda yoki kechqurun)
-      if (DAY.season === 'winter' || DAY.season === 'autumn' || DAY.darkK > 0) {
-        const cx = HOUSE_X + 13, cy = hillY(HOUSE_X, H - 110, 70, 1.2, 0.6) - 40;
-        for (let i = 0; i < 6; i++) {
-          const t = ((tick * 0.5 + i * 40) % 240) / 240;
-          ctx.globalAlpha = (1 - t) * 0.35; puff(ctx, cx + Math.sin(t * 6 + i) * 6 + t * 30, cy - t * 120, 4 + t * 14, DAY.night ? '#8a90a8' : '#e8e8ee');
+  // ---------- Dunyo markazi: o'yin voqealari tabiatga ta'sir qiladi ----------
+  // Boshqa qismlar worldReact(...) ni chaqiradi (bomba, kombo, boss...), World qiymatlarini o'qiydi.
+  const World = { fear: 0, joy: 0, alarm: 0, surge: 0, seq: 0, last: null };
+  const WORLD_Q = [];   // shu tikda kelgan voqealar (bir tikda bir nechtasi bo'lishi mumkin)
+  function worldReact(type, x = W / 2, y = H / 2, p = 1) {
+    let boom = false;
+    if (type === 'bossDown') { World.alarm = 0; World.joy = 1; worldReact('boom', x, y, p); boom = true; }
+    else if (type === 'boom') World.fear = Math.min(1, World.fear + 0.5 * p);
+    else if (type === 'cheer') World.joy = Math.max(World.joy, 0.4 + 0.2 * p);
+    else if (type === 'boss') World.alarm = 1;
+    else if (type === 'quake') World.fear = 1;
+    else if (type === 'rise') World.joy = Math.max(World.joy, 0.6);
+    else if (type === 'lava') World.surge = 1;
+    else if (type === 'worry') World.fear = Math.min(1, World.fear + 0.2);
+    World.seq++;
+    World.last = { type, x, y, p, tick, boom };
+    if (WORLD_Q.length < 8) WORLD_Q.push(World.last);
+  }
+
+  // Yumshoq yorug'lik dog'i: har rang uchun bitta 64x64 kanvas (har kadrda gradient yaratilmaydi)
+  function glowSprite(rgb) {
+    const C = glowSprite.c || (glowSprite.c = {});
+    if (C[rgb]) return C[rgb];
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${rgb},1)`); gr.addColorStop(0.3, `rgba(${rgb},.45)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return (C[rgb] = c);
+  }
+  const glowAt = (rgb, x, y, r, a) => { ctx.globalAlpha = a; ctx.drawImage(glowSprite(rgb), x - r, y - r, r * 2, r * 2); };
+
+  // ---------- Shamol: o't, tutun, barg, bulut, qush va yomg'ir bitta shamolga bo'ysunadi ----------
+  const WIND = { v: 0, gust: 0, gT: 0, gLen: 0, gAmp: 0, dir: 1, base: -1, cd: 1, str: null };
+  function updateWind() {
+    const ev = game.ev && game.ev.id === 'shamol' ? game.ev : null;   // "Shamol" hodisasi to'plarni ham suradi
+    let base = { summer: 0.15, spring: 0.3, autumn: 0.55, winter: 0.45 }[DAY.season] || 0.3;
+    if (WEATHER.kind === 'shamol' || WEATHER.kind === "qor bo'roni") base *= 2;
+    else if (WEATHER.kind === 'momaqaldiroq') base *= 1.4;
+    WIND.dir = ev ? (ev.dir < 0 ? -1 : 1) : WEATHER.dir;
+    if (ev) base = 0.9;
+    WIND.base = WIND.base < 0 ? base : WIND.base + (base - WIND.base) * 0.01;
+    // shamol zarbasi: kamdan-kam keladi, 2.5-5 soniya davom etadi
+    if (WIND.gLen) {
+      WIND.gT++;
+      WIND.gust = Math.sin(Math.PI * WIND.gT / WIND.gLen) * WIND.gAmp;
+      if (WIND.gT >= WIND.gLen) { WIND.gLen = 0; WIND.gust = 0; }
+    } else if (Math.random() < 1 / 400) { WIND.gT = 0; WIND.gLen = 150 + rnd(171); WIND.gAmp = 0.6 + Math.random() * 0.8; }
+    WIND.v = WIND.dir * (WIND.base + WIND.gust + 0.12 * Math.sin(tick * 0.013) + 0.08 * Math.sin(tick * 0.031));
+    WIND.cd += (WIND.dir - WIND.cd) * 0.004;   // bulut va tuman yo'nalishi sekin almashadi
+    // Shamol hodisasida ingichka shamol chiziqlari
+    if (ev) {
+      if (!WIND.str) WIND.str = Array.from({ length: 12 }, () => ({ x: Math.random() * W, y: 40 + Math.random() * (H - 140), l: 30 + Math.random() * 60 }));
+      for (const s of WIND.str) {
+        s.x += WIND.dir * 6;
+        if (s.x > W + 90 || s.x < -90) { s.x = WIND.dir > 0 ? -90 : W + 90; s.y = 40 + Math.random() * (H - 140); }
+      }
+    } else WIND.str = null;
+    if (tick % 6 === 0) Music.setWind(Math.abs(WIND.v));
+  }
+
+  // ---------- Ob-havo: har 6 levelda (kun va level bo'yicha) yangilanadi ----------
+  const WEATHER = { kind: 'ochiq', k: 1, wet: 0, after: 0, fog: 0, over: 0, dir: 1, forced: false, season: '', fo1: 0, fo2: 0,
+    drops: null, spl: [], pud: null, rip: [], st: { next: 240, pts: null, life: 0, flash: 0, th: 0 } };
+  const WNAME = { ochiq: '☀️ Ochiq havo', "yomg'ir": "🌧️ Yomg'ir", shamol: '🌬️ Shamol', momaqaldiroq: '⛈️ Momaqaldiroq',
+    tuman: '🌫️ Tuman', qor: '🌨️ Qor', "qor bo'roni": "❄️ Qor bo'roni" };
+  const WTABLE = {
+    summer: [['ochiq', 0.6], ["yomg'ir", 0.15], ['shamol', 0.15], ['momaqaldiroq', 0.1]],
+    spring: [['ochiq', 0.45], ["yomg'ir", 0.3], ['shamol', 0.15], ['tuman', 0.1]],
+    autumn: [['ochiq', 0.35], ["yomg'ir", 0.3], ['shamol', 0.25], ['tuman', 0.1]],
+    winter: [['qor', 0.4], ["qor bo'roni", 0.3], ['ochiq', 0.2], ['tuman', 0.1]],
+  };
+  const W_WET = { "yomg'ir": 1, momaqaldiroq: 0.8 };
+  const W_OVER = { "yomg'ir": 1, momaqaldiroq: 1.25, "qor bo'roni": 0.9, qor: 0.5, tuman: 0.45 };
+  const rainy = k => k === "yomg'ir" || k === 'momaqaldiroq';
+  function rollWeather(quiet) {
+    const d = new Date(), seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    const r = prng(seed * 31 + Math.floor(game.level / 6));
+    const T = WTABLE[DAY.season] || WTABLE.summer;
+    let x = r(), kind = T[0][0];
+    for (const [k, p] of T) { kind = k; if ((x -= p) < 0) break; }
+    const dir = r() < 0.5 ? -1 : 1;
+    // erta tongda vodiyda tuman bo'ladi
+    WEATHER.forced = DAY.h >= 5.6 && DAY.h < 8.2;
+    if (WEATHER.forced) kind = 'tuman';
+    WEATHER.season = DAY.season;
+    setWeather(kind, dir, quiet);
+  }
+  function setWeather(kind, dir, quiet) {
+    const w = WEATHER, prev = w.kind;
+    if (dir) w.dir = dir;
+    if (quiet) {   // birinchi yuklanishda ob-havo darhol to'liq bo'ladi
+      w.kind = kind; w.k = 1; w.wet = W_WET[kind] || 0; w.fog = kind === 'tuman' ? 1 : 0; w.over = W_OVER[kind] || 0; w.after = 0;
+      return;
+    }
+    if (kind === prev) return;
+    if (rainy(prev) && !rainy(kind)) w.after = 900;   // yomg'irdan keyin kamalak
+    if (rainy(kind)) w.after = 0;
+    w.kind = kind; w.k = 0;
+    const z = game.zone;
+    // osmonda (bulutlar ustida) yomg'ir va tuman ko'rinmaydi
+    if (z === 0 || (z === 1 && kind !== "yomg'ir" && kind !== 'tuman'))
+      toast(kind === 'ochiq' && DAY.night ? '🌙 Ochiq osmon' : WNAME[kind]);
+  }
+  function updateWeather() {
+    const w = WEATHER, kd = w.kind, sp = 1 / 300;
+    w.k = Math.min(1, w.k + sp);
+    const toward = (key, t) => { const d = t - w[key]; w[key] += Math.abs(d) <= sp ? d : Math.sign(d) * sp; };
+    toward('wet', W_WET[kd] || 0); toward('fog', kd === 'tuman' ? 1 : 0); toward('over', W_OVER[kd] || 0);
+    if (w.after > 0) w.after--;
+    w.fo1 = (w.fo1 + 0.1 * WIND.cd + 600) % 600; w.fo2 = (w.fo2 + 0.22 * WIND.cd + 600) % 600;
+    // Yomg'ir: 70 tomchi, yerga tekkanda chachrash, ko'lmaklarda doiralar
+    if (w.wet > 0.01 && vis(0)) {
+      if (!w.drops) w.drops = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, sp: 12 + Math.random() * 5 }));
+      if (!w.pud) {
+        const lx = game.launchX;
+        w.pud = [70, 185, 300, 415, 530].filter(x => Math.abs(x - lx) > 80).slice(0, 3).map(x => ({ x: x + (Math.random() - 0.5) * 30, rx: 18 + Math.random() * 9 }));
+      }
+      const n = Math.round(70 * w.wet), dx = WIND.v * 4;
+      for (let i = 0; i < n; i++) {
+        const d = w.drops[i];
+        d.y += d.sp; d.x += dx;
+        if (d.y > H - 8) {
+          if (w.spl.length < 24 && Math.random() < 0.6) w.spl.push({ x: d.x, life: 8 });
+          d.y = -Math.random() * 80; d.x = Math.random() * W - dx * 20;
         }
-        ctx.globalAlpha = 1;
+        if (d.x < -20) d.x += W + 40; else if (d.x > W + 20) d.x -= W + 40;
       }
-      // odamlar kunduzi yuradi (tunda uyda)
-      if (DAY.h >= 6.3 && DAY.h < 21.5) for (const w of walkers) drawWalker(w);
-    } else if (z === 1) {
-      ctx.globalAlpha = DAY.night ? 0.25 : 0.6;
-      for (let i = 0; i < 3; i++) cloudShape(ctx, ((tick * (0.25 + i * 0.1) + i * 230) % (W + 200)) - 100, 180 + i * 170, 1.1, DAY.golden ? '#ffe1cf' : '#ffffff');
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = 'rgba(30,60,100,.55)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-      if (!DAY.night) for (let i = 0; i < 3; i++) {
-        const x = ((tick * 0.6 + i * 45) % (W + 120)) - 60, y = 260 + i * 22 + Math.sin(tick / 40 + i) * 8;
-        const f = Math.sin(tick / 6 + i) * 5;
-        ctx.beginPath(); ctx.moveTo(x - 9, y - f); ctx.lineTo(x, y); ctx.lineTo(x + 9, y - f); ctx.stroke();
+      for (let i = w.spl.length - 1; i >= 0; i--) if (--w.spl[i].life <= 0) w.spl.splice(i, 1);
+      if (tick % 6 === 0 && w.pud.length && w.rip.length < 8) {
+        const p = w.pud[rnd(w.pud.length)];
+        w.rip.push({ x: p.x + (Math.random() - 0.5) * p.rx, r: 1, life: 24 });
       }
-    } else if (z === 2) {
-      for (let i = 0; i < 14; i++) {
-        const a = 0.5 + 0.5 * Math.sin(tick / 25 + i * 1.7);
-        ctx.globalAlpha = a; puff(ctx, (i * 137) % W, (i * 89) % (H - 120), 1.8, '#fff');
+      for (let i = w.rip.length - 1; i >= 0; i--) { const r = w.rip[i]; r.r += 0.35; if (--r.life <= 0) w.rip.splice(i, 1); }
+    } else if (w.wet <= 0.01) { w.spl.length = 0; w.rip.length = 0; w.pud = null; }
+    // Momaqaldiroq: 8-14 soniyada bir uzoq chaqmoq, so'ng 0.5-1.5 s dan keyin gumburlash
+    const S = w.st;
+    if (kd === 'momaqaldiroq' && w.k > 0.3 && (vis(0) || vis(1)) && --S.next <= 0) {
+      S.next = 480 + rnd(361); S.life = 6; S.flash = 3; S.th = 30 + rnd(61);
+      let x = 70 + Math.random() * (W - 140);
+      S.pts = [x];
+      for (let i = 0; i < 8; i++) { x += (Math.random() - 0.5) * 52; S.pts.push(x); }
+      S.br = 2 + rnd(3); S.bx = (Math.random() < 0.5 ? -1 : 1) * (24 + Math.random() * 20);   // bitta yon shox
+    }
+    if (S.life > 0) S.life--;
+    if (S.flash > 0) S.flash--;
+    if (S.th > 0 && --S.th === 0) Music.thunder();
+    if (tick % 30 === 0) Music.setRain(game.zone === 0 ? w.wet : 0);
+  }
+
+  // ---------- Rang keshi: nat() bilan bo'yalgan ranglar faqat vaqt o'zgarganda qayta hisoblanadi ----------
+  const LIFEPAL = { key: '', sc: 0 };
+  const P_TOPS = ['#e76f51', '#2a9d8f', '#e9c46a', '#457b9d', '#f4a261', '#8d5a97'];
+  const P_SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524'];
+  function buildLifePal() {
+    const P = LIFEPAL, win = DAY.season === 'winter';
+    P.key = DAY.key; P.sc = scale;
+    P.bird = nat('#2b3440'); P.crow = nat('#18191e'); P.goose = nat('#4a4640');
+    P.smoke = DAY.night ? '#8a90a8' : nat('#ececf2');
+    P.bf = ['#ffffff', '#ffe066', '#f29a3a'].map(nat);
+    P.sw = nat('#1d2a44'); P.bat = '#241f2b';
+    P.dog = nat('#9a6b45'); P.dogD = dkHex(P.dog, 0.8); P.dogE = nat('#5c3d26');
+    P.cloud = DAY.night ? '#aab4d0' : DAY.golden ? '#ffe1cf' : '#ffffff';
+    for (const p of PEOPLE) {
+      const top = nat(p.top), skin = nat(p.skin);
+      const coat = win ? nat(dkHex(p.top, 0.6)) : p.kind === 'chol' ? nat('#4b4f6b') : top;
+      const leg = nat(p.kind === 'ayol' ? dkHex(p.top, 0.5) : '#3b3f4a');
+      p.pal = {
+        top, topD: dkHex(top, 0.8), skin, skinD: dkHex(skin, 0.8), coat, coatD: dkHex(coat, 0.8), leg, legD: dkHex(leg, 0.8),
+        stripe: dkHex(coat, 1.3), belt: nat('#2b2b33'), hat: nat('#1f2329'), dot: nat('#d8d8d8'), beard: nat('#ececec'), hair: nat('#2a1d14'),
+        knit: nat(['#c0392b', '#2e86ab', '#f2c14e', '#6a4c93', '#3a7d44', '#d35400'][p.i]),
+        scarf: nat(['#d1495b', '#c8553d', '#2e86ab', '#f2a65a', '#6a994e', '#3d5a80'][p.i]),
+        umb: nat(['#2b4c7e', '#c0392b', '#2a9d8f', '#6a4c93', '#e76f51', '#264653'][p.i]), cane: nat('#6b4a2b'),
+      };
+    }
+    // nat() ga bog'liq spraytlar keyingi chizishda qayta yasaladi
+    TUFT_SPR = null; PLANE.spr = null; BALLOON_SPR.length = 0; CL_FALL = null;
+  }
+
+  // Manzara "langar"lari (A qismi SCENE_ANCHORS beradi); bo'lmasa eski tepalikdagi uy bo'yicha taxmin
+  let ANCH0 = null;
+  function anchors() {
+    if (typeof SCENE_ANCHORS !== 'undefined' && SCENE_ANCHORS) return SCENE_ANCHORS;
+    if (!ANCH0) {
+      const hx = typeof HOUSE_X !== 'undefined' ? HOUSE_X : W * 0.74, hy = hillY(hx, H - 110, 70, 1.2, 0.6) + 6;
+      ANCH0 = { smoke: [hx + 13, hy - 46], door: [hx, hy], wire: null, roof: null, pond: null, fall: null,
+        lights: [[hx - 8.5, hy - 14.5], [hx + 9.5, hy - 14.5]] };
+    }
+    return ANCH0;
+  }
+  // Quyosh/oy qayerda (A qismining skyLight'i bo'lsa o'shandan)
+  function lightPos(z) {
+    if (typeof skyLight === 'function') { try { const L = skyLight(z); if (L) return L; } catch (e) {} }
+    if (DAY.sun !== null) { const p = DAY.sun; return { x: W * (0.08 + 0.84 * p), y: 200, low: 1 - Math.sin(Math.PI * p), moon: false }; }
+    return { x: z === 1 ? W * 0.2 : W * 0.8, y: 150, low: 0, moon: true };
+  }
+
+  // ---------- Odamlar va it ----------
+  // erkak — chopon va do'ppi; ayol — ro'mol va uzun ko'ylak; bola — onasining qo'lini ushlagan; chol — hassa bilan
+  const P_KINDS = ['erkak', 'ayol', 'bola', 'chol', 'erkak', 'ayol'];
+  const P_LANE = [0, -1, -3, 1, -2, 2];   // kichik farq — kim oldinroq, kim orqaroq yuradi
+  const PEOPLE = [];
+  let PEOPLE_DRAW = null;   // chizish tartibi: uzoqdagisi oldin
+  const DOG = { x: 100, dir: 1, ph: 0, sn: 0, snIn: 500, wk: 0, a: 1, on: false };
+  function makePerson(kind, i) {
+    const child = kind === 'bola';
+    return {
+      kind, i, s: child ? 0.7 : 0.93 + Math.random() * 0.14, x: 30 + Math.random() * (W - 60),
+      dir: Math.random() < 0.5 ? -1 : 1, v: (kind === 'chol' ? 0.5 : 1) * (0.34 + Math.random() * 0.2),
+      ph: Math.random() * 6, by: H - 12 + P_LANE[i], st: 'walk', t: 0, idleIn: 200 + rnd(1000), mcd: 0, cw: 0,
+      wave: false, wk: 1, a: 1, edge: false, out: false, on: true, lamp: false, step: 0,
+      top: P_TOPS[i], skin: P_SKINS[(i * 3 + 1) % 4], pal: null, sx: 0, sy: 0, mom: null, kid: null,
+    };
+  }
+  function initPeople() {
+    P_KINDS.forEach((k, i) => PEOPLE.push(makePerson(k, i)));
+    PEOPLE[1].kid = PEOPLE[2]; PEOPLE[2].mom = PEOPLE[1];
+    PEOPLE[2].x = PEOPLE[1].x - PEOPLE[1].dir * 13;
+    PEOPLE_DRAW = [...PEOPLE].sort((a, b) => a.by - b.by);
+    DOG.x = PEOPLE[0].x - PEOPLE[0].dir * 18; DOG.dir = PEOPLE[0].dir;
+  }
+  // Kim ko'chada: kunduz hamma; kechqurun ikki kishi (biri fonus bilan); yarim tunda faqat fonusli qorovul
+  const peopleMode = () => DAY.h >= 6.3 && DAY.h < 19.5 ? 2 : DAY.h >= 19.5 && DAY.h < 22 ? 1 : 0;
+  function updatePeople() {
+    const mode = peopleMode(), rain = WEATHER.wet > 0.3;
+    for (const p of PEOPLE) {
+      const on = mode === 2 || p.i === 0 || (mode === 1 && p.i === 4);
+      if (on !== p.on) { p.on = on; if (on) { p.st = 'walk'; p.a = 1; } }
+      p.lamp = mode < 2 && p.i === 0;
+    }
+    const D = anchors().door, alarm = World.alarm > 0.5;
+    for (const p of PEOPLE) {
+      if (!p.on || p.mom) continue;
+      if (p.mcd > 0) p.mcd--;
+      const mul = (rain ? 1.3 : 1) * (p.kid ? 0.85 : 1);
+      // Boss chiqqanda hamma uyiga shoshiladi, boss yengilgach qaytib chiqadi
+      if (alarm && p.st !== 'home' && p.st !== 'in') p.st = 'home';
+      if (!alarm && (p.st === 'home' || p.st === 'in')) {
+        if (p.st === 'in') {
+          if (D) { p.x = D[0]; p.dir = Math.random() < 0.5 ? -1 : 1; p.out = true; p.a = 0; }
+          else { p.x = p.x < W / 2 ? -24 : W + 24; p.dir = p.x < 0 ? 1 : -1; p.a = 1; }
+        }
+        p.st = 'walk';
       }
-      const t = tick % 420;
-      if (t < 40) {
-        ctx.globalAlpha = 1 - t / 40; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-        const sx = 520 - t * 9, sy = 60 + t * 4;
-        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 50, sy - 22); ctx.stroke();
+      let go = 0;
+      switch (p.st) {
+        case 'walk':
+          go = mul;
+          if (--p.idleIn <= 0) { p.st = 'idle'; p.t = 80 + rnd(81); p.idleIn = 500 + rnd(901); }
+          break;
+        case 'idle': if (--p.t <= 0) { p.st = 'walk'; if (Math.random() < 0.3) p.dir = -p.dir; } break;
+        case 'meet': if (--p.t <= 0) { p.st = 'walk'; p.wave = false; } break;
+        case 'cheer': if (p.cw > 0) p.cw--; else if (--p.t <= 0) p.st = 'walk'; break;
+        case 'flinch': if (--p.t <= 0) { p.st = 'flee'; p.t = 120; } break;
+        case 'flee': go = 2.5 * mul; if (--p.t <= 0) p.st = 'walk'; break;
+        case 'home': {
+          const tx = D ? D[0] : (p.x < W / 2 ? -30 : W + 30), d = Math.abs(tx - p.x);
+          p.dir = tx > p.x ? 1 : -1; go = d > 1.5 ? 2 : 0;
+          if (D) { p.a = Math.min(1, d / 10); if (d <= 1.5) { p.st = 'in'; p.a = 0; } }
+          else if (d < 3) p.st = 'in';
+          break;
+        }
       }
-      ctx.globalAlpha = 1;
-    } else if (z === -1) {
-      // chuvalchang
-      const wx = (tick * 0.3) % (W + 80) - 40, wy = H - 30;
-      ctx.strokeStyle = '#d98a8a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-      ctx.beginPath();
-      for (let i = 0; i < 8; i++) ctx.lineTo(wx - i * 5, wy + Math.sin(tick / 8 - i * 0.8) * 3);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(200,170,130,.5)';
-      for (let i = 0; i < 6; i++) puff(ctx, (i * 113) % W, (tick * 0.4 + i * 160) % H, 1.5, 'rgba(200,170,130,.5)');
-    } else if (z === -2) {
-      const p = 0.5 + 0.5 * Math.sin(tick / 30);
-      const lg = ctx.createLinearGradient(0, H - 120, 0, H);
-      lg.addColorStop(0, 'rgba(255,90,20,0)'); lg.addColorStop(1, `rgba(255,90,20,${0.25 + p * 0.2})`);
-      ctx.fillStyle = lg; ctx.fillRect(0, H - 120, W, 120);
-      for (let i = 0; i < 5; i++) {
-        const y = H - 10 - ((tick * 0.5 + i * 37) % 60);
-        ctx.globalAlpha = 1 - (H - y) / 70;
-        puff(ctx, (i * 131 + 40) % W, y, 3, '#ffb347');
+      if (p.st === 'in') { p.step = 0; continue; }
+      const step = p.v * go;
+      p.step = step;
+      if (step > 0) { p.x += p.dir * step; p.ph += step * 0.2 / p.s; }
+      else p.ph += (Math.round(p.ph / Math.PI) * Math.PI - p.ph) * 0.12;   // to'xtaganda oyoqlar yig'iladi
+      p.wk += ((step > 0 ? 1 : 0) - p.wk) * 0.12;
+      if (p.out) { const d = D ? Math.abs(p.x - D[0]) : 99; p.a = Math.min(1, d / 10); if (d > 10) p.out = false; }
+      else if (p.st !== 'home') p.a = 1;
+      // Chekkada: 30% ortga buriladi, qolganlari narigi tomondan chiqadi
+      if (p.st === 'walk' || p.st === 'flee') {
+        if ((p.x < 6 && p.dir < 0) || (p.x > W - 6 && p.dir > 0)) {
+          if (!p.edge) { p.edge = true; if (p.st === 'walk' && Math.random() < 0.3) p.dir = -p.dir; }
+        } else if (p.x > 30 && p.x < W - 30) p.edge = false;
+        if (p.x < -26) p.x = W + 26; else if (p.x > W + 26) p.x = -26;
       }
-      ctx.globalAlpha = 1;
+    }
+    // Bola onasining yonida, qo'lini ushlab yuradi
+    const m = PEOPLE[1], c = PEOPLE[2];
+    c.on = m.on; c.dir = m.dir; c.a = m.a; c.wk = m.wk;
+    if (m.st === 'cheer' && c.st !== 'cheer') c.cw = m.cw + 4; else if (c.cw > 0) c.cw--;   // bola onasidan sal keyin sakraydi
+    c.st = m.st === 'meet' ? 'idle' : m.st; c.t = m.t;
+    const tx = m.x - m.dir * 13 * m.s;
+    c.x = Math.abs(tx - c.x) > 60 ? tx : c.x + (tx - c.x) * 0.15;
+    if (m.step > 0) c.ph += m.step * 0.2 / c.s; else c.ph += (Math.round(c.ph / Math.PI) * Math.PI - c.ph) * 0.12;
+    // Uchrashuv: bir-biriga qarab kelayotgan ikki kishi 26 px da to'xtab salomlashadi
+    for (let i = 0; i < PEOPLE.length; i++) {
+      const a = PEOPLE[i];
+      if (!a.on || a.mom || a.st !== 'walk' || a.mcd > 0 || a.x < 0 || a.x > W) continue;
+      for (let j = i + 1; j < PEOPLE.length; j++) {
+        const b = PEOPLE[j];
+        if (!b.on || b.mom || b.st !== 'walk' || b.mcd > 0 || a.dir === b.dir) continue;
+        if (Math.abs(a.x - b.x) > 26 || (b.x - a.x) * a.dir <= 0) continue;
+        a.st = b.st = 'meet'; a.t = b.t = 90; a.mcd = b.mcd = 700;
+        (Math.random() < 0.5 ? a : b).wave = true;
+        break;
+      }
+    }
+  }
+  function updateDog() {
+    const o = PEOPLE[0], d = DOG;
+    d.on = o.on && peopleMode() === 2;
+    if (!d.on) return;
+    d.a = o.st === 'in' ? 0 : o.a;
+    const tx = o.x - o.dir * 18, dx = tx - d.x;
+    if (Math.abs(dx) > 120) d.x = tx;   // egasi narigi chetdan chiqqanda
+    if (d.sn > 0) { d.sn--; d.wk += (0 - d.wk) * 0.15; return; }   // hidlab turibdi
+    if (--d.snIn <= 0 && o.st === 'walk') { d.sn = 50 + rnd(41); d.snIn = 400 + rnd(501); }
+    const sp = Math.min(Math.abs(dx) * 0.06, Math.max(0.6, o.v * 2.6 + 0.4));
+    if (Math.abs(dx) > 2 && sp > 0.05) { d.x += Math.sign(dx) * sp; d.dir = Math.sign(dx); d.ph += sp * 0.35; d.wk += (1 - d.wk) * 0.15; }
+    else { d.dir = o.dir; d.wk += (0 - d.wk) * 0.15; }
+  }
+  function peopleReact(e) {
+    if (!vis(0)) return;
+    if (e.type === 'cheer') {   // oldingi odamlar ketma-ket sakrab, qo'llarini V qilib ko'taradi
+      let n = 0;
+      for (const p of PEOPLE) if (p.on && !p.mom && p.x > -10 && p.x < W + 10 && (p.st === 'walk' || p.st === 'idle' || p.st === 'meet')) {
+        p.st = 'cheer'; p.cw = n++ * 6; p.t = 70 + rnd(31); p.wave = false;
+      }
+    } else {   // portlash: cho'chib, keyin portlash joyidan uzoqlashadi
+      for (const p of PEOPLE) if (p.on && !p.mom && p.st !== 'home' && p.st !== 'in') {
+        p.st = 'flinch'; p.t = 30; p.wave = false;
+        const dx = p.x - e.x; p.dir = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+      }
     }
   }
 
-  function drawWalker(w) {
-    const s = w.h * (w.child ? 0.7 : 1), base = H - 12, x = w.x;
-    const sw = Math.sin(w.ph) * 0.55;
-    ctx.globalAlpha = 0.75;
-    ctx.strokeStyle = w.col; ctx.fillStyle = w.col; ctx.lineCap = 'round';
-    const hipY = base - 16 * s, neckY = base - 32 * s;
-    ctx.lineWidth = 4 * s;
-    ctx.beginPath(); ctx.moveTo(x, hipY); ctx.lineTo(x, neckY); ctx.stroke();
-    ctx.lineWidth = 3 * s;
-    for (const k of [1, -1]) {
-      ctx.beginPath(); ctx.moveTo(x, hipY); ctx.lineTo(x + Math.sin(sw * k) * 16 * s, hipY + Math.cos(sw * k) * 16 * s); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x, neckY + 3 * s); ctx.lineTo(x - Math.sin(sw * k) * 12 * s, neckY + 3 * s + Math.cos(sw * k) * 12 * s); ctx.stroke();
+  // Bitta odam: yon tomondan, bo'g'imli (son, boldir, tirsak), to'ldirilgan siluet.
+  // Mahalliy koordinatalarda chiziladi: oyoq ostida y=0, yuz +x tomonga qaragan.
+  function drawPerson(p) {
+    const s = p.s, P = p.pal, k = p.kind, win = DAY.season === 'winter', wk = p.wk;
+    let jump = 0, crouch = 0, arms = 0;   // arms: 1 — V (xursandchilik), 2 — boshni yopish, 3 — qo'l silkitish
+    if (p.st === 'cheer' && !(p.cw > 0)) { jump = Math.abs(Math.sin(p.t * 0.21)) * 7 * s; arms = 1; }
+    else if (p.st === 'flinch') { crouch = 2.5 * s; arms = 2; }
+    else if (p.st === 'meet' && p.wave) arms = 3;
+    const ph = p.ph, b = 1.2 * (1 - wk) + Math.abs(Math.cos(ph)) * 1.2 * wk;
+    const hipY = -(14.4 + b) * s + crouch - jump, shY = hipY - 12.2 * s;
+    const lean = (k === 'chol' ? 1.6 : 0.6 * wk) * s;
+    const umb = WEATHER.wet > 0.3 && !p.lamp && k !== 'bola' && vis(0);
+    // dunyo koordinatasida yelka (bola va ona qo'l ushlashi uchun)
+    p.sx = p.x + p.dir * (lean - 0.3 * s); p.sy = p.by + shY + 0.5 * s;
+    ctx.save(); ctx.translate(p.x, p.by); if (p.dir < 0) ctx.scale(-1, 1);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 3.2 * s;
+    // Ona: bolaning qo'lini ushlagan qo'l (tanasidan oldin — orqadagi qo'l)
+    if (p.kid && p.kid.on && arms !== 1 && arms !== 2) {
+      const c = p.kid, cx = (c.sx - p.x) * p.dir, cy = c.sy - p.by, mx = lean - 0.4 * s, my = shY + 0.6 * s;
+      const hx = (mx + cx) / 2, hy = Math.max(my, cy) + 6 * s;
+      ctx.strokeStyle = P.coatD; ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.strokeStyle = c.pal.coatD; ctx.lineWidth = 3.2 * c.s; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.fillStyle = P.skin; ctx.beginPath(); ctx.arc(hx, hy, 1.6 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 3.2 * s;
     }
-    ctx.beginPath(); ctx.arc(x, neckY - 6 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+    // Oyoq: son va boldir (yurish fazasi bo'yicha), tizza orqaga bukiladi
+    const leg = kk => {
+      const q = ph + kk * Math.PI, a = Math.sin(q) * 0.45 * wk;
+      const kn = Math.max(0, Math.sin(q + Math.PI / 2)) * 0.7 * wk + (jump ? 0.35 : 0) + (crouch ? 0.5 : 0);
+      const kx = Math.sin(a) * 8 * s, ky = hipY + Math.cos(a) * 8 * s;
+      ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(kx, ky); ctx.lineTo(kx + Math.sin(a - kn) * 8 * s, ky + Math.cos(a - kn) * 8 * s); ctx.stroke();
+      return a;
+    };
+    // Qo'l: yelka va tirsak burchaklari pastdan hisoblanadi (oldinga musbat)
+    const arm = (kk, col, a) => {
+      let u = -0.8 * a, f = u + 0.35;
+      if (arms === 1) { u = kk ? Math.PI + 0.45 : Math.PI - 0.45; f = u; }
+      else if (arms === 2) { u = Math.PI - 0.7 - kk * 0.4; f = Math.PI + 1.1; }
+      else if (arms === 3 && !kk) { u = 2.5; f = 2.9 + 0.45 * Math.sin(tick * 0.35); }
+      else if (!kk && umb) { u = 0.55; f = 2.75; }
+      else if (!kk && p.lamp) { u = 0.3; f = 0.9; }
+      else if (!kk && k === 'chol') { u = 0.45; f = 0.9; }
+      const ex = lean + Math.sin(u) * 6.5 * s, ey = shY + Math.cos(u) * 6.5 * s;
+      const hx = ex + Math.sin(f) * 6 * s, hy = ey + Math.cos(f) * 6 * s;
+      ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(lean, shY); ctx.lineTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke();
+      return [hx, hy];
+    };
+    const longG = k !== 'bola' || win;   // uzun kiyim: ikkala oyoq ham kiyim ostida
+    ctx.strokeStyle = P.legD; const a1 = leg(1);
+    let a0 = 0;
+    if (longG) { ctx.strokeStyle = P.leg; a0 = leg(0); }
+    // orqadagi qo'l (ona va bola uchun u qo'l ushlashda band)
+    if ((!p.kid && !p.mom) || arms === 1 || arms === 2) arm(1, k === 'bola' && !win ? P.skinD : P.coatD, a1);
+    // Tana: chopon/palto tizzagacha, ayolning ko'ylagi to'pig'igacha
+    const spread = Math.abs(Math.sin(ph)) * 1.4 * s * wk, tw = 3.4 * s;
+    let hemY, hemW;
+    if (k === 'ayol') { hemY = hipY + 12 * s; hemW = 5.2 * s + spread; }
+    else if (longG) { hemY = hipY + 7.5 * s; hemW = 4.4 * s + spread; }
+    else { hemY = hipY + 1.2 * s; hemW = 3 * s; }
+    ctx.fillStyle = k === 'ayol' && !win ? P.top : P.coat;
+    ctx.beginPath(); ctx.moveTo(lean - tw, shY - 0.6 * s); ctx.lineTo(lean + tw, shY - 0.6 * s);
+    ctx.lineTo(hemW + 0.4 * s, hemY); ctx.lineTo(-hemW, hemY); ctx.closePath(); ctx.fill();
+    if ((k === 'erkak' || k === 'chol') && !win) {   // chopon yo'llari va belbog'
+      ctx.lineWidth = 0.9 * s; ctx.strokeStyle = P.stripe; ctx.beginPath();
+      ctx.moveTo(lean - 1.4 * s, shY + 0.5 * s); ctx.lineTo(-1.8 * s, hemY - 0.4 * s);
+      ctx.moveTo(lean + 1.3 * s, shY + 0.5 * s); ctx.lineTo(1.9 * s, hemY - 0.4 * s); ctx.stroke();
+      ctx.lineWidth = 1.5 * s; ctx.strokeStyle = P.belt; ctx.beginPath();
+      ctx.moveTo(-3.3 * s, hipY - 1.2 * s); ctx.lineTo(3.6 * s + lean * 0.3, hipY - 1.2 * s); ctx.stroke();
+      ctx.lineWidth = 3.2 * s;
+    }
+    if (!longG) { ctx.strokeStyle = P.leg; a0 = leg(0); }
+    const hand = arm(0, k === 'bola' && !win ? P.skin : P.coat, a0);
+    // Bosh va bosh kiyim
+    const hx = lean + 0.9 * s, hy = shY - 5.2 * s, hr = 4.2 * s;
+    ctx.fillStyle = P.skin; ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill();
+    if (k === 'ayol') {   // ro'mol: tepani va orqani yopadi, yuz ochiq
+      ctx.fillStyle = P.scarf; ctx.beginPath();
+      ctx.arc(hx, hy, hr + 0.9 * s, -0.35, -Math.PI - 0.5, true);
+      ctx.lineTo(hx - hr - 2.4 * s, hy + 6.5 * s); ctx.lineTo(hx + 0.8 * s, hy + hr + 0.8 * s); ctx.lineTo(hx + 2.2 * s, hy + 2 * s);
+      ctx.closePath(); ctx.fill();
+    } else if (win) {   // qishda to'qilgan shapka va popuk
+      ctx.fillStyle = P.knit; ctx.beginPath();
+      ctx.arc(hx, hy - 0.9 * s, hr + 0.5 * s, Math.PI, 0); ctx.lineTo(hx + hr + 0.5 * s, hy - 0.2 * s); ctx.lineTo(hx - hr - 0.5 * s, hy - 0.2 * s); ctx.closePath();
+      ctx.moveTo(hx + 1.5 * s, hy - hr - 2 * s); ctx.arc(hx, hy - hr - 2 * s, 1.5 * s, 0, Math.PI * 2); ctx.fill();
+    } else if (k === 'bola') {   // soch
+      ctx.fillStyle = P.hair; ctx.beginPath(); ctx.arc(hx, hy - 0.4 * s, hr + 0.3 * s, Math.PI + 0.25, -0.35); ctx.closePath(); ctx.fill();
+    } else {   // qora do'ppi (boshning tepasida), ikki mayda oq naqsh
+      ctx.fillStyle = P.hair; ctx.beginPath(); ctx.arc(hx - 0.6 * s, hy - 0.2 * s, hr, Math.PI * 0.62, Math.PI * 1.25); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = P.hat; ctx.beginPath();
+      ctx.moveTo(hx - 3.9 * s, hy - 2.3 * s); ctx.lineTo(hx - 3.3 * s, hy - 5.5 * s); ctx.lineTo(hx + 3.3 * s, hy - 5.5 * s); ctx.lineTo(hx + 3.9 * s, hy - 2.3 * s);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = P.dot; ctx.fillRect(hx - 2.2 * s, hy - 4.5 * s, 0.9 * s, 0.9 * s); ctx.fillRect(hx + 0.9 * s, hy - 4.5 * s, 0.9 * s, 0.9 * s);
+    }
+    if (k === 'chol') {   // oq soqol va hassa
+      ctx.fillStyle = P.beard; ctx.beginPath();
+      ctx.moveTo(hx + 1 * s, hy + 2.2 * s); ctx.lineTo(hx + 4.1 * s, hy + 1.4 * s); ctx.lineTo(hx + 2.2 * s, hy + 6.8 * s); ctx.closePath(); ctx.fill();
+      if (!umb && !p.lamp && arms !== 1 && arms !== 2) {
+        ctx.strokeStyle = P.cane; ctx.lineWidth = 1.4 * s; ctx.beginPath(); ctx.moveTo(hand[0], hand[1] - 1.5 * s); ctx.lineTo(hand[0] + 1.5 * s, 0); ctx.stroke();
+      }
+    }
+    if (umb && arms !== 1 && arms !== 2) {   // soyabon: gumbaz r 11s, shamolda biroz og'adi
+      const ux = hand[0] + WIND.v * p.dir * 2 * s, uy = shY - 14 * s;
+      ctx.strokeStyle = P.belt; ctx.lineWidth = 1 * s; ctx.beginPath(); ctx.moveTo(hand[0], hand[1]); ctx.lineTo(ux, uy - 2 * s); ctx.stroke();
+      ctx.fillStyle = P.umb; ctx.beginPath(); ctx.arc(ux, uy, 11 * s, Math.PI, 0);
+      for (let i = 4; i >= 0; i--) ctx.quadraticCurveTo(ux - 11 * s + (i + 0.5) * 4.4 * s, uy - 2 * s, ux - 11 * s + i * 4.4 * s, uy);
+      ctx.fill();
+    }
+    if (p.lamp) {   // fonus: qo'lda osilib turadi
+      const lx = hand[0], ly = hand[1] + 3.5 * s;
+      ctx.strokeStyle = P.belt; ctx.lineWidth = 0.8 * s; ctx.beginPath(); ctx.moveTo(hand[0], hand[1]); ctx.lineTo(lx, ly - 2 * s); ctx.stroke();
+      ctx.fillStyle = '#ffd27a'; ctx.fillRect(lx - 1.6 * s, ly - 2 * s, 3.2 * s, 4.2 * s);
+      const ga = ctx.globalAlpha;
+      glowAt('255,200,110', lx, ly, 26, 0.35 * ga);
+      ctx.globalAlpha = ga;
+    }
+    ctx.restore();
+  }
+  // It: tana ellipsi, tumshuq va quloq, 4 oyoq (diagonal juftlar birga), dum likillaydi
+  function drawDog() {
+    const d = DOG, P = LIFEPAL, sniff = d.sn > 0;
+    ctx.save(); ctx.translate(d.x, H - 10); if (d.dir < 0) ctx.scale(-1, 1);
+    ctx.lineCap = 'round'; ctx.lineWidth = 1.9;
+    const sw = Math.sin(d.ph) * 2.6 * d.wk;
+    ctx.strokeStyle = P.dogD; ctx.beginPath();
+    ctx.moveTo(-5, -8); ctx.lineTo(-5 - sw, 0); ctx.moveTo(6, -8); ctx.lineTo(6 + sw, 0); ctx.stroke();
+    ctx.fillStyle = P.dog; ctx.beginPath(); ctx.ellipse(0, -10, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = P.dog; ctx.beginPath();
+    ctx.moveTo(-6.5, -8); ctx.lineTo(-6.5 + sw, 0); ctx.moveTo(4.5, -8); ctx.lineTo(4.5 - sw, 0);
+    ctx.moveTo(-8.5, -11); ctx.quadraticCurveTo(-12, -13, -13.5, -16 + Math.sin(tick * 0.4) * 2.5); ctx.stroke();
+    const hx = sniff ? 11 : 10, hy = sniff ? -6.5 : -14;
+    ctx.beginPath(); ctx.arc(hx, hy, 3.3, 0, Math.PI * 2); ctx.moveTo(hx + 5.6, hy + 1); ctx.ellipse(hx + 3.4, hy + 0.9, 2.4, 1.5, sniff ? 0.5 : 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = P.dogE; ctx.beginPath(); ctx.ellipse(hx - 1.2, hy - 1.2, 1.3, 2.6, 0.45, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  function drawPeople() {
+    if (!PEOPLE_DRAW) return;
+    const day = !DAY.night && DAY.darkK < 0.3;
+    // o'qlash paytida "x11" yozuviga yaqin odamlar xiralashadi
+    const lx = phase === 'aim' ? game.launchX : phase === 'fire' ? firstLandX : null;
+    const g = x => lx !== null && Math.abs(x - lx) < 40 ? 0.35 : 1;
+    if (day) {   // oyoq ostidagi soyalar — bitta to'ldirish
+      ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath();
+      for (const p of PEOPLE) if (p.on && p.st !== 'in' && p.a > 0.5) { ctx.moveTo(p.x + 7 * p.s, p.by); ctx.ellipse(p.x, p.by, 7 * p.s, 1.5 * p.s, 0, 0, Math.PI * 2); }
+      if (DOG.on && DOG.a > 0.5) { ctx.moveTo(DOG.x + 10, H - 10); ctx.ellipse(DOG.x, H - 10, 10, 1.5, 0, 0, Math.PI * 2); }
+      ctx.fill();
+    }
+    for (const p of PEOPLE_DRAW) {
+      if (!p.on || p.st === 'in' || p.a <= 0.01 || !p.pal) continue;
+      ctx.globalAlpha = p.a * g(p.x);
+      drawPerson(p);
+    }
+    if (DOG.on && DOG.a > 0.01) { ctx.globalAlpha = DOG.a * g(DOG.x); drawDog(); }
     ctx.globalAlpha = 1;
   }
+
+  // ---------- Qushlar: soddalashtirilgan "boids" gala, simga qo'nadi, portlashdan qochadi ----------
+  const FLOCK = { b: [], mode: 'fly', t: 900, gx: 300, gy: 110, gT: 0, kind: '', an: null, geese: null, gT2: 900 + rnd(1200) };
+  function initFlock() {
+    const crow = DAY.season === 'winter', n = crow ? 4 : 9, side = Math.random() < 0.5 ? -1 : 1;   // qishda 4 ta qarg'a
+    FLOCK.kind = crow ? 'crow' : 'bird'; FLOCK.b = [];
+    for (let i = 0; i < n; i++) FLOCK.b.push({
+      x: side < 0 ? -30 - Math.random() * 60 : W + 30 + Math.random() * 60, y: 50 + Math.random() * 100,
+      vx: -side * (1.3 + Math.random() * 0.4), vy: (Math.random() - 0.5) * 0.4, ph: Math.random() * 6,
+      fl: 60 + rnd(61), gl: 0, sp: null, on: false, fe: 0, dir: 1, bob: 0,
+    });
+    FLOCK.mode = 'fly'; FLOCK.t = 900 + rnd(901);
+  }
+  function perchSpots(an, n) {
+    const w = an.wire, r = an.roof, out = [];
+    if (w) {   // sim: zanjir chizig'i (o'rtasi osilib turadi); har qushga kamida ~10 px joy
+      n = Math.min(n, Math.floor(Math.abs(w.x1 - w.x0) * 0.76 / 10));
+      for (let i = 0; i < n; i++) {
+        const u = 0.12 + 0.76 * (i + 0.25 + Math.random() * 0.5) / n;
+        out.push({ x: w.x0 + (w.x1 - w.x0) * u, y: w.y0 + (w.y1 - w.y0) * u + w.sag * (1 - ((u - 0.5) * 2) ** 2) });
+      }
+      return out;
+    }
+    if (r) {   // tom: sig'maganlari osmonda aylanib yuradi
+      n = Math.min(n, Math.floor(Math.abs(r[1] - r[0]) / 9));
+      for (let i = 0; i < n; i++) out.push({ x: r[0] + (r[1] - r[0]) * (i + 0.3 + Math.random() * 0.4) / n, y: r[2] });
+    }
+    return out.length ? out : null;
+  }
+  function takeoff() {
+    const F = FLOCK;
+    F.mode = 'fly'; F.t = 900 + rnd(901); F.an = null;
+    for (const b of F.b) { if (b.on) { b.vx = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.random()); b.vy = -1.4 - Math.random(); } b.on = false; b.sp = null; b.fl = 60 + rnd(61); }
+  }
+  function updateFlock() {
+    const F = FLOCK;
+    if (!(DAY.h >= 6 && DAY.h < 19.5)) { F.b.length = 0; F.geese = null; return; }   // qushlar faqat kunduzi
+    if (!F.b.length || F.kind !== (DAY.season === 'winter' ? 'crow' : 'bird')) initFlock();
+    const B = F.b, crow = F.kind === 'crow', vmin = crow ? 0.9 : 1.2, vmax = crow ? 1.6 : 2.2;
+    const an = game.zone === 0 && !zoneAnim ? anchors() : null;
+    if (--F.gT <= 0) { F.gT = 240 + rnd(200); F.gx = 60 + Math.random() * (W - 120); F.gy = 30 + Math.random() * 150; }
+    if (F.mode === 'fly') {
+      if (--F.t <= 0 && !B.some(b => b.fe > 0)) {   // qochayotganda qo'nmaydi
+        const spots = an ? perchSpots(an, B.length) : null;
+        if (spots) { F.mode = 'land'; F.an = an; B.forEach((b, i) => { b.sp = spots[i] || null; }); }
+        else F.t = 900 + rnd(901);
+      }
+    } else if (an !== F.an) takeoff();   // manzara yoki qatlam almashdi
+    else if (F.mode === 'land') { if (B.every(b => b.on || !b.sp)) { F.mode = 'perch'; F.t = 600 + rnd(901); } }
+    else if (F.mode === 'perch' && --F.t <= 0) takeoff();
+    let cx = 0, cy = 0, ax = 0, ay = 0, m = 0;
+    for (const b of B) if (!b.on && !b.sp && !b.fe) { cx += b.x; cy += b.y; ax += b.vx; ay += b.vy; m++; }
+    if (m) { cx /= m; cy /= m; ax /= m; ay /= m; }
+    for (const b of B) {
+      if (b.on) { b.bob = (tick + b.ph * 40) % 170 < 12 ? 1 : 0; continue; }   // qo'nib o'tirib, boshini qimirlatadi
+      if (b.fe > 0) {   // qochish
+        b.fe--; b.vx *= 0.985; b.vy = b.vy * 0.985 + 0.004; b.x += b.vx; b.y += b.vy; b.fl = Math.max(b.fl, 2); b.ph += 0.6;
+        if (!b.fe) b.fl = 60;
+        continue;
+      }
+      if (b.sp) {   // qo'nish joyiga uchib boradi
+        const dx = b.sp.x - b.x, dy = b.sp.y - b.y, d = Math.hypot(dx, dy);
+        if (d < 1.5) { b.on = true; b.x = b.sp.x; b.y = b.sp.y; b.dir = b.vx >= 0 ? 1 : -1; b.vx = b.vy = 0; continue; }
+        if (d < 14) { b.vx = dx * 0.12; b.vy = dy * 0.12; }   // oxirgi qadam: to'g'ri joyiga tushadi
+        else {
+          const sp = Math.min(vmax, Math.max(0.6, d * 0.05));
+          b.vx += (dx / d * sp - b.vx) * 0.15; b.vy += (dy / d * sp - b.vy) * 0.15;
+        }
+        b.fl = Math.max(b.fl, d < 40 ? 2 : 0);
+      } else {
+        if (m > 1) { b.vx += (cx - b.x) * 0.0015 + (ax - b.vx) * 0.04; b.vy += (cy - b.y) * 0.0015 + (ay - b.vy) * 0.04; }
+        for (const o of B) {   // bir-biriga juda yaqinlashmaydi
+          if (o === b || o.on) continue;
+          const dx = b.x - o.x, dy = b.y - o.y, d2 = dx * dx + dy * dy;
+          if (d2 < 196 && d2 > 0.01) { const d = Math.sqrt(d2); b.vx += dx / d * 0.08; b.vy += dy / d * 0.08; }
+        }
+        b.vx += (F.gx - b.x) * 0.0006; b.vy += (F.gy - b.y) * 0.0008;
+        if (b.y < 20) b.vy += 0.05; else if (b.y > 200) b.vy -= 0.05;
+        const v = Math.hypot(b.vx, b.vy) || 1, k = Math.max(vmin, Math.min(vmax, v)) / v;
+        b.vx *= k; b.vy *= k;
+      }
+      b.x += b.vx; b.y += b.vy;
+      // qanot: 60-120 tik qoqadi, keyin sirpanadi
+      if (b.fl > 0) { b.fl--; b.ph += crow ? 0.3 : 0.45; if (!b.fl) b.gl = 40 + rnd(80); }
+      else if (--b.gl <= 0) b.fl = 60 + rnd(61);
+    }
+    // Ko'chmanchi g'ozlar: bahor va kuzda har 60-90 soniyada V shaklida o'tadi
+    if (DAY.season === 'autumn' || DAY.season === 'spring') {
+      if (!F.geese && --F.gT2 <= 0) { const d = Math.random() < 0.5 ? 1 : -1; F.geese = { x: d > 0 ? -60 : W + 60, y: 30 + Math.random() * 50, d, ph: 0 }; }
+      if (F.geese) {
+        const g = F.geese; g.x += g.d * 1.1; g.ph += 0.16;
+        if (g.x < -160 || g.x > W + 160) { F.geese = null; F.gT2 = 3600 + rnd(1801); }
+      }
+    } else F.geese = null;
+  }
+  function flockFlee(x, y) {
+    for (const b of FLOCK.b) {
+      const dx = b.x - x, dy = b.y - y, d = Math.hypot(dx, dy) || 1;
+      b.vx = dx / d * 3.2; b.vy = dy / d * 3.2 - 2; b.fe = 200; b.on = false; b.sp = null;
+    }
+    if (FLOCK.b.length) { FLOCK.mode = 'fly'; FLOCK.t = 900 + rnd(901); FLOCK.an = null; }
+  }
+  // Uchayotgan qush: ikki qanot — ikkita quadraticCurveTo (umumiy yo'lga qo'shiladi)
+  function drawBird(x, y, s, f) {
+    ctx.moveTo(x - s, y - f);
+    ctx.quadraticCurveTo(x - s * 0.45, y - s * 0.3 - f * 0.25, x, y);
+    ctx.quadraticCurveTo(x + s * 0.45, y - s * 0.3 - f * 0.25, x + s, y - f);
+  }
+  function drawFlock() {
+    const F = FLOCK, P = LIFEPAL;
+    if (!F.b.length && !F.geese) return;
+    const crow = F.kind === 'crow', s = crow ? 7 : 5;
+    ctx.globalAlpha = DAY.golden ? 0.85 : 0.75; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = crow ? P.crow : P.bird; ctx.lineWidth = crow ? 2 : 1.6; ctx.beginPath();
+    let perched = 0;
+    for (const b of F.b) { if (b.on) { perched++; continue; } drawBird(b.x, b.y, s, b.fl > 0 ? Math.sin(b.ph) * s * 0.8 : s * 0.12); }
+    ctx.stroke();
+    if (perched) {   // simda o'tirgan qushlar: tana va bosh
+      ctx.fillStyle = crow ? P.crow : P.bird; ctx.beginPath();
+      for (const b of F.b) if (b.on) {
+        const d = b.dir, k = crow ? 1.3 : 1;
+        ctx.moveTo(b.x + 3 * k, b.y - 2.6 * k); ctx.ellipse(b.x, b.y - 2.6 * k, 3 * k, 2 * k, -0.25 * d, 0, Math.PI * 2);
+        ctx.moveTo(b.x + d * 2.6 * k + 1.5 * k, b.y - (4.6 + b.bob) * k); ctx.arc(b.x + d * 2.6 * k, b.y - (4.6 + b.bob) * k, 1.5 * k, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    if (F.geese) {
+      const g = F.geese;
+      ctx.strokeStyle = P.goose; ctx.lineWidth = 1.8; ctx.beginPath();
+      for (let i = 0; i < 7; i++) {
+        const rank = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
+        drawBird(g.x - g.d * rank * 13, g.y + side * rank * 7, 7, Math.sin(g.ph + i * 0.5) * 4.2);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Mayda jonzotlar: kapalaklar, qaldirg'ochlar, ko'rshapalaklar ----------
+  const CRITTERS = { bf: [], sw: [], bat: [] };
+  function initCritters() {
+    for (let i = 0; i < 3; i++) CRITTERS.bf.push({ x: Math.random() * W, y: H - 30 - Math.random() * 40, vx: 0, vy: 0, ph: Math.random() * 6, c: i, land: 0, fe: 0 });
+    for (let i = 0; i < 2; i++) CRITTERS.sw.push({ x: -40, d: 1, ph: Math.random() * 6, w: 60 + rnd(300) });
+    for (let i = 0; i < 2; i++) CRITTERS.bat.push({ x: Math.random() * W, y: 110 + Math.random() * 140, d: Math.random() < 0.5 ? -1 : 1, vy: 0.7, zt: 20, ph: Math.random() * 6 });
+  }
+  function updateCritters() {
+    const S = DAY.season, h = DAY.h, day = h >= 6.5 && h < 19, C = CRITTERS;
+    if ((S === 'spring' || S === 'summer') && day) for (const b of C.bf) {   // kapalaklar: tasodifiy sayr, ba'zan qo'nadi
+      if (b.land > 0) { b.land--; continue; }
+      if (b.fe > 0) { b.fe--; b.vy -= 0.03; }
+      else {
+        b.vx += (Math.random() - 0.5) * 0.18; b.vy += (Math.random() - 0.5) * 0.18;
+        if (b.y < H - 80) b.vy += 0.03; else if (b.y > H - 20) b.vy -= 0.05;
+        const v = Math.hypot(b.vx, b.vy); if (v > 1.1) { b.vx *= 1.1 / v; b.vy *= 1.1 / v; }
+      }
+      b.x += b.vx + WIND.v * 0.3; b.y += b.vy;
+      if (b.x < -10) b.x = W + 10; else if (b.x > W + 10) b.x = -10;
+      if (b.y < -20) { b.y = H - 30; b.fe = 0; b.vy = 0; }
+      if (!b.fe && b.y > H - 32 && Math.random() < 1 / 300) { b.land = 60 + rnd(141); b.y = H - 17 - Math.random() * 6; b.vx = b.vy = 0; }
+    }
+    if (S === 'summer' && day) for (const w of C.sw) {   // qaldirg'ochlar o'tloq ustida sho'ng'iydi
+      if (w.w > 0) { if (--w.w === 0) { w.d = Math.random() < 0.5 ? 1 : -1; w.x = w.d > 0 ? -20 : W + 20; } continue; }
+      w.x += w.d * 3.2; w.ph += 0.03;
+      if (w.x < -30 || w.x > W + 30) w.w = 60 + rnd(240);
+    }
+    if (h >= 19.4 && h < 21 && S !== 'winter') for (const b of C.bat) {   // shomda ko'rshapalaklar zigzag uchadi
+      b.x += b.d * 1.6; b.ph += 0.5;
+      if (--b.zt <= 0) { b.vy = -b.vy; b.zt = 14 + rnd(26); }
+      b.y += b.vy; if (b.y < 70) b.vy = Math.abs(b.vy); else if (b.y > 300) b.vy = -Math.abs(b.vy);
+      if (b.x < -20) b.x = W + 20; else if (b.x > W + 20) b.x = -20;
+    }
+  }
+  function drawCritters() {
+    const S = DAY.season, h = DAY.h, day = h >= 6.5 && h < 19, C = CRITTERS, P = LIFEPAL;
+    const lx = phase === 'aim' ? game.launchX : null;
+    if ((S === 'spring' || S === 'summer') && day) for (const b of C.bf) {
+      const rx = b.land > 0 ? 0.8 + 3 * Math.abs(Math.sin(tick * 0.04 + b.ph)) : 0.5 + 4 * Math.abs(Math.sin(tick * 0.6 + b.ph));
+      ctx.globalAlpha = lx !== null && Math.abs(b.x - lx) < 40 ? 0.35 : 0.95;
+      ctx.fillStyle = P.bf[b.c]; ctx.beginPath();
+      ctx.ellipse(b.x - rx * 0.5, b.y, rx * 0.55 + 0.4, 2.6, -0.35, 0, Math.PI * 2);
+      ctx.moveTo(b.x + rx + 0.4, b.y); ctx.ellipse(b.x + rx * 0.5, b.y, rx * 0.55 + 0.4, 2.6, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (S === 'summer' && day) {
+      ctx.globalAlpha = 0.9; ctx.fillStyle = P.sw; ctx.beginPath();
+      for (const w of C.sw) {
+        if (w.w > 0) continue;
+        const d = w.d, x = w.x, y = H - 60 + Math.sin(x * 0.018 + w.ph) * 30, f = 0.4 + 0.6 * Math.abs(Math.sin(tick * 0.5 + w.ph));
+        ctx.moveTo(x + 5 * d, y); ctx.lineTo(x + d, y - 1.2); ctx.lineTo(x - 3 * d, y - 7 * f); ctx.lineTo(x - d, y - 0.6);
+        ctx.lineTo(x - 7 * d, y - 2.6); ctx.lineTo(x - 4 * d, y); ctx.lineTo(x - 7 * d, y + 2); ctx.lineTo(x - d, y + 0.8); ctx.lineTo(x + d, y + 1.2); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    if (h >= 19.4 && h < 21 && S !== 'winter') {
+      ctx.globalAlpha = 0.85; ctx.fillStyle = P.bat; ctx.beginPath();
+      for (const b of C.bat) {
+        const x = b.x, y = b.y, f = Math.sin(b.ph) * 4;
+        ctx.moveTo(x - 7, y - f); ctx.quadraticCurveTo(x - 5, y + 1, x - 3.5, y + 0.5); ctx.quadraticCurveTo(x - 2, y + 2.5, x, y + 1.5);
+        ctx.quadraticCurveTo(x + 2, y + 2.5, x + 3.5, y + 0.5); ctx.quadraticCurveTo(x + 5, y + 1, x + 7, y - f); ctx.quadraticCurveTo(x, y - 2.5, x - 7, y - f);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Osmon: samolyot, havo sharlari, parallaks bulutlar ----------
+  const PLANE = { t: 600 + rnd(900), on: false, x: 0, y: 0, d: 1, L: 0, spr: null };
+  function buildPlane() {
+    const c = document.createElement('canvas'); c.width = Math.ceil(36 * scale); c.height = Math.ceil(14 * scale);
+    const g = c.getContext('2d'); g.setTransform(scale, 0, 0, scale, 0, 0);
+    g.fillStyle = nat('#c5ccd6'); g.beginPath(); g.moveTo(4, 7); g.lineTo(2, 1.5); g.lineTo(6.5, 1.5); g.lineTo(10, 6.5); g.closePath(); g.fill();   // dum
+    g.fillStyle = nat('#eef1f5'); g.beginPath(); g.ellipse(18.5, 7.6, 15, 2.7, 0, 0, Math.PI * 2); g.fill();   // fyuzelyaj
+    g.fillStyle = nat('#9aa5b4'); g.beginPath(); g.moveTo(15, 8.3); g.lineTo(23, 8.3); g.lineTo(17.5, 12.8); g.lineTo(14, 12.8); g.closePath(); g.fill();   // qanot
+    g.fillStyle = nat('#7f8b9c'); g.fillRect(17, 10, 4, 1.6);   // dvigatel
+    g.fillStyle = nat('#6d86a8'); for (let x = 10; x < 29; x += 2.2) g.fillRect(x, 6.6, 1.1, 1);   // derazalar
+    PLANE.spr = c;
+  }
+  function updatePlane() {
+    const P = PLANE;
+    if (!P.on) {
+      if (--P.t <= 0) { P.on = true; P.d = Math.random() < 0.5 ? 1 : -1; P.x = P.d > 0 ? -30 : W + 30; P.y = 30 + Math.random() * 110; P.L = 0; }
+      return;
+    }
+    P.x += P.d * 0.9; P.L = Math.min(280, P.L + 0.9);
+    if ((P.d > 0 && P.x > W + 30 + P.L) || (P.d < 0 && P.x < -30 - P.L)) { P.on = false; P.t = 1500 + rnd(1201); }
+  }
+  function drawPlane() {
+    const P = PLANE;
+    if (!P.on) return;
+    if (!P.spr) buildPlane();
+    const x = P.x, y = P.y, d = P.d, night = DAY.night;
+    if (!night && P.L > 4) {   // kunduzi oq iz: bitta torayib boruvchi trapetsiya, bitta gradient
+      const tx = x - d * 15, ex = tx - d * P.L;
+      const gr = ctx.createLinearGradient(tx, 0, ex, 0);
+      gr.addColorStop(0, 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.globalAlpha = 0.8; ctx.fillStyle = gr; ctx.beginPath();
+      ctx.moveTo(tx, y - 0.6); ctx.lineTo(ex, y - 2.8); ctx.lineTo(ex, y + 2.8); ctx.lineTo(tx, y + 0.6); ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 0.4;
+    ctx.save(); ctx.translate(x, y); if (d < 0) ctx.scale(-1, 1); ctx.drawImage(P.spr, -18, -7, 36, 14); ctx.restore();
+    if (night) {   // tunda: qizil va yashil chiroqlar, oq chaqnoq
+      ctx.globalAlpha = 0.9; ctx.fillStyle = '#ff3b3b'; ctx.fillRect(x - 1, y + 2, 2, 2);
+      ctx.fillStyle = '#3bff6a'; ctx.fillRect(x + d * 2.5 - 1, y + 3.5, 2, 2);
+      if (tick % 70 < 4) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x - d * 16 - 1.5, y - 6, 3, 3); }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Havo sharlari: 3 ta tayyor 40x60 sprayt (6 bo'lak, yaltiroq, savat, arqonlar)
+  const BALLOON_SPR = [];
+  const BALLOONS = [
+    { k: 0, z: 0.6, x: 150, y0: 400, ph: 0, b: 0, bIn: 200 + rnd(300) },
+    { k: 1, z: 1, x: 440, y0: 708, ph: 2, b: 0, bIn: 300 + rnd(200) },
+    { k: 2, z: 0.6, x: 400, y0: 230, ph: 1, b: 0, bIn: 250 + rnd(200) },   // yer ustidagi (bahor-yoz tongida)
+  ];
+  function buildBalloons() {
+    BALLOON_SPR.length = 0;
+    const hw = y => y <= 21 ? Math.sqrt(Math.max(0, 289 - (y - 21) * (y - 21))) : 17 * (1 - 0.74 * Math.pow((y - 21) / 25, 1.5));
+    for (const [c1, c2] of [['#e63946', '#f1faee'], ['#f4a261', '#2a9d8f'], ['#ffd166', '#118ab2']]) {
+      const c = document.createElement('canvas'); c.width = Math.ceil(40 * scale); c.height = Math.ceil(60 * scale);
+      const g = c.getContext('2d'); g.setTransform(scale, 0, 0, scale, 0, 0);
+      const env = new Path2D();
+      for (let y = 4; y <= 46; y++) env.lineTo(20 + hw(y), y);
+      for (let y = 46; y >= 4; y--) env.lineTo(20 - hw(y), y);
+      env.closePath();
+      g.fillStyle = nat(c2); g.fill(env);
+      g.fillStyle = nat(c1);
+      for (let i = 0; i < 6; i += 2) {   // navbatma-navbat rangli bo'laklar (meridianlar bo'yicha)
+        const s0 = Math.sin(-Math.PI / 2 + i * Math.PI / 6), s1 = Math.sin(-Math.PI / 2 + (i + 1) * Math.PI / 6);
+        g.beginPath();
+        for (let y = 4; y <= 46; y++) g.lineTo(20 + hw(y) * s0, y);
+        for (let y = 46; y >= 4; y--) g.lineTo(20 + hw(y) * s1, y);
+        g.closePath(); g.fill();
+      }
+      g.save(); g.clip(env);
+      const hl = g.createRadialGradient(13, 13, 1, 15, 17, 22);
+      hl.addColorStop(0, 'rgba(255,255,255,.55)'); hl.addColorStop(0.5, 'rgba(255,255,255,.08)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = hl; g.fillRect(0, 0, 40, 50);
+      const sh = g.createLinearGradient(4, 0, 38, 0);
+      sh.addColorStop(0, 'rgba(20,10,40,0)'); sh.addColorStop(0.55, 'rgba(20,10,40,0)'); sh.addColorStop(1, 'rgba(20,10,40,.35)');
+      g.fillStyle = sh; g.fillRect(0, 0, 40, 50);
+      g.restore();
+      g.strokeStyle = nat('#5b4630'); g.lineWidth = 0.7; g.beginPath();
+      g.moveTo(16.5, 46); g.lineTo(17.2, 52); g.moveTo(23.5, 46); g.lineTo(22.8, 52); g.moveTo(20, 46.5); g.lineTo(20, 52); g.stroke();
+      g.fillStyle = nat('#8a5a3a'); g.fillRect(16.5, 52, 7, 5.5);
+      g.fillStyle = nat('#6e4428'); g.fillRect(16.5, 52, 7, 1.2);
+      BALLOON_SPR.push(c);
+    }
+  }
+  // Yer usti shari: bahor-yoz tongida, shamolsiz havoda
+  const surfBalloon = () => (DAY.season === 'spring' || DAY.season === 'summer') && DAY.h >= 6 && DAY.h < 8.5
+    && !rainy(WEATHER.kind) && WEATHER.kind !== 'shamol' && WIND.base < 0.45;
+  function updateBalloons(z0, z1) {
+    const surf = z0 && surfBalloon();
+    for (let i = 0; i < BALLOONS.length; i++) {
+      if (i < 2 ? !z1 : !surf) continue;
+      const b = BALLOONS[i];
+      b.x += (WIND.v * 0.25 + 0.04 * WIND.cd) * b.z;
+      if (b.x > W + 30) b.x = -30; else if (b.x < -30) b.x = W + 30;
+      if (b.b > 0) b.b--;
+      else if (--b.bIn <= 0) { b.b = 40; b.bIn = 300 + rnd(201); }
+    }
+  }
+  function drawBalloons(i0, i1) {
+    if (!BALLOON_SPR.length) buildBalloons();
+    for (let i = i0; i < i1; i++) {
+      const b = BALLOONS[i], z = b.z, w = 40 * z, h = 60 * z, spr = BALLOON_SPR[b.k];
+      const y = b.y0 + Math.sin(tick * 0.012 + b.ph) * 4 * z, x = b.x;
+      const a = y < 700 ? 0.4 : 0.75;   // g'isht qatorlari ustida xira (uzoqda)
+      ctx.globalAlpha = a; ctx.drawImage(spr, x - w / 2, y, w, h);
+      if (DAY.night) {   // tunda gaz alangasi qobiqni ichidan yoritadi
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 * (b.b > 0 ? 1 : 0.3) * (a / 0.75);
+        ctx.drawImage(spr, 0, 0, spr.width, spr.height * 0.78, x - w / 2, y, w, h * 0.78);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      if (b.b > 0) glowAt('255,170,60', x, y + 47 * z, 9 * z, Math.min(1, b.b / 10) * (0.75 + 0.25 * Math.sin(tick * 1.3)) * a * 1.4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Bulutlar: A qismining CLOUD_SPR spraytlari (bo'lmasa eski cloudShape)
+  const cloudSpr = () => typeof CLOUD_SPR !== 'undefined' && CLOUD_SPR && CLOUD_SPR.cumulus && CLOUD_SPR.cumulus.length ? CLOUD_SPR.cumulus : null;
+  const SURF_CL = [0, 1, 2].map(i => ({ x: i * 230 + 60, y: 62 + i * 48 + Math.random() * 12, sp: 0.15 + i * 0.06, k: 0.7 + 0.12 * i, s: i }));
+  const SKY_CL = [];
+  function initSkyClouds() {   // uzoq 6, o'rta 3, yaqin 2 (parallaks)
+    const r = prng(4242);
+    const add = (n, k, sp, a, y0, y1) => { for (let i = 0; i < n; i++) SKY_CL.push({ x: r() * (W + 200) - 100, y: y0 + r() * (y1 - y0), k: k * (0.85 + r() * 0.3), sp: sp * (0.8 + r() * 0.4), a, s: i % 3 }); };
+    add(6, 0.5, 0.05, 0.4, 40, 430); add(3, 0.8, 0.2, 0.4, 200, 600); add(2, 1.3, 0.45, 0.35, 420, 700);
+  }
+  function moveClouds(list) {
+    const m = (0.6 + 0.5 * Math.abs(WIND.v)) * WIND.cd;
+    for (const c of list) { c.x += c.sp * m; if (c.x > W + 190) c.x = -190; else if (c.x < -190) c.x = W + 190; }
+  }
+  let CL_FALL = null;
+  function fallbackClouds() {
+    CL_FALL = [0, 1, 2].map(i => {
+      const c = document.createElement('canvas'); c.width = Math.ceil(120 * scale); c.height = Math.ceil(64 * scale);
+      const g = c.getContext('2d'); g.setTransform(scale, 0, 0, scale, 0, 0);
+      cloudShape(g, 56 + i * 2, 34 - i, 1 - i * 0.08, LIFEPAL.cloud);
+      return { c, w: 120, h: 64 };
+    });
+  }
+  function drawCloudSp(c, cs) {
+    if (!cs) { if (!CL_FALL) fallbackClouds(); cs = CL_FALL; }
+    const e = cs[c.s % cs.length], w = e.w * c.k, h = e.h * c.k;
+    ctx.drawImage(e.c, c.x - w / 2, c.y - h / 2, w, h);
+  }
+
+  // ---------- Mushakbozlik (boss yengilganda yoki katta kombo — kechqurun) ----------
+  const FW = { q: [], p: [], fl: [] };
+  const FW_COL = ['255,96,96', '255,214,90', '120,200,255', '150,255,140', '255,140,230', '255,170,80'];
+  function launchFireworks() {
+    for (let i = 0; i < 3; i++) FW.q.push({ x: W * (0.2 + Math.random() * 0.6), y: H - 330 + Math.random() * 110, d: 26 + i * 22 + rnd(12), rise: 26, c: FW_COL[rnd(FW_COL.length)] });
+  }
+  function updateFireworks() {
+    for (let i = FW.q.length - 1; i >= 0; i--) {
+      const b = FW.q[i];
+      if (--b.d > 0) continue;
+      FW.q.splice(i, 1);
+      FW.fl.push({ x: b.x, y: b.y, c: b.c, life: 10 });
+      for (let j = 0; j < 36; j++) {
+        const a = j / 36 * Math.PI * 2 + Math.random() * 0.15, sp = 2 + Math.random();
+        FW.p.push({ x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 70, c: b.c });
+      }
+      if (vis(0) || vis(1)) beep(80 + Math.random() * 40, 0.25, 0.04, 'sine');
+    }
+    for (let i = FW.fl.length - 1; i >= 0; i--) if (--FW.fl[i].life <= 0) FW.fl.splice(i, 1);
+    let n = 0;
+    for (const p of FW.p) {
+      p.vx *= 0.985; p.vy = p.vy * 0.985 + 0.04; p.x += p.vx; p.y += p.vy;
+      if (--p.life > 0) FW.p[n++] = p;
+    }
+    FW.p.length = n;
+  }
+  function drawFireworks() {
+    if (!FW.p.length && !FW.q.length) return;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of FW.fl) glowAt(f.c, f.x, f.y, 46, f.life / 10 * 0.5);   // portlash chaqnashi
+    for (const b of FW.q) if (b.d <= b.rise) {   // ko'tarilayotgan raketa
+      const t = 1 - b.d / b.rise;
+      ctx.globalAlpha = 0.8; ctx.fillStyle = `rgb(${b.c})`; ctx.fillRect(b.x - 1, H - 60 + (b.y - H + 60) * t - 2, 2, 4);
+    }
+    let last = '';
+    for (const p of FW.p) {
+      if (p.c !== last) { last = p.c; ctx.fillStyle = `rgb(${p.c})`; }
+      const r = p.life > 40 ? 1.4 : 1;
+      ctx.globalAlpha = p.life / 70; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- Old o'tlar (shamolda to'lqinlanadi) va tuman spraytlari ----------
+  let TUFT_SPR = null, FOG_SPR = null;
+  function buildTufts() {
+    TUFT_SPR = [];
+    const S = DAY.season;
+    if (S === 'winter') return;   // qishda qor ostida
+    const cols = { summer: ['#3f8a2c', '#4f9a35', '#6dbf4b', '#8fd468'], spring: ['#4f9a35', '#68b443', '#7fcc58', '#a2de7a'], autumn: ['#6f6a2a', '#8a8a3a', '#a4a548', '#c4b45c'] }[S].map(nat);
+    for (let k = 0; k < 4; k++) {
+      const c = document.createElement('canvas'); c.width = Math.ceil(40 * scale); c.height = Math.ceil(24 * scale);
+      const g = c.getContext('2d'); g.setTransform(scale, 0, 0, scale, 0, 0); g.lineCap = 'round';
+      const r = prng(500 + k * 31), n = 11 + Math.floor(r() * 6);
+      for (let j = 0; j < n; j++) {   // qorong'idan yorug'ga — oldingi barglar ochroq
+        const x = 2 + r() * 36, h = 5 + r() * 9 + (j % 4 === 0 ? 4 : 0), lean = (r() - 0.45) * 8;
+        g.strokeStyle = cols[Math.min(3, Math.floor(j / n * 4))]; g.lineWidth = 1.3 + r() * 0.8;
+        g.beginPath(); g.moveTo(x, 24); g.quadraticCurveTo(x + lean * 0.15, 24 - h * 0.6, x + lean, 24 - h); g.stroke();
+      }
+      if (S !== 'autumn' && k === 1) { g.fillStyle = nat(S === 'spring' ? '#e8322e' : '#ffffff'); g.beginPath(); g.arc(24, 12, 1.8, 0, Math.PI * 2); g.fill(); }
+      TUFT_SPR.push(c);
+    }
+  }
+  function drawTufts() {
+    if (!TUFT_SPR) buildTufts();
+    if (!TUFT_SPR.length) return;
+    const t = tick, dir = WIND.dir, gu = 0.18 * WIND.gust * dir;
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 24; i++) {
+      const x = i * 25 + 12;
+      let k = 0.12 * Math.sin(t / 45 - dir * x / 90) + 0.25 * WIND.v + gu * Math.sin(x * 0.035 - dir * t * 0.09);
+      k = Math.max(-0.85, Math.min(0.85, k));
+      ctx.save(); ctx.translate(x, H - 4); ctx.transform(1, 0, -k, 1, 0, 0);
+      ctx.drawImage(TUFT_SPR[(i * 5 + (i >> 2)) % 4], -20, -24, 40, 24);
+      ctx.restore();
+    }
+  }
+  function buildFog() {   // 600x120: 14 ta yumshoq oq bo'lak, chetlari bir-biriga ulanadi
+    const c = document.createElement('canvas'); c.width = 600; c.height = 120;
+    const g = c.getContext('2d'), r = prng(77);
+    for (let i = 0; i < 14; i++) {
+      const x = (i + r() * 0.8) * 600 / 14, y = 50 + r() * 22, rr = 40 + r() * 26;
+      for (const ox of [-600, 0, 600]) {
+        if (x + ox + rr * 1.9 < 0 || x + ox - rr * 1.9 > 600) continue;
+        g.setTransform(1.9, 0, 0, 0.75, x + ox, y);
+        const gr = g.createRadialGradient(0, 0, 0, 0, 0, rr);
+        gr.addColorStop(0, 'rgba(255,255,255,.3)'); gr.addColorStop(0.55, 'rgba(255,255,255,.2)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr; g.fillRect(-rr, -rr, rr * 2, rr * 2);
+      }
+    }
+    FOG_SPR = c;
+  }
+
+  // Ob-havoning old qismi: kamalak, chaqmoq, tuman, yomg'ir, ko'lmaklar, shamol chiziqlari
+  const RAINBOW = ['#ff4b4b', '#ff9a3c', '#ffe45c', '#5fd36a', '#4aa3ff', '#9b6bff'];
+  function drawWeather(z) {
+    const w = WEATHER, night = DAY.night, S = w.st;
+    if (z === 0 && w.after > 0 && !night && DAY.sun !== null) {
+      const f = Math.min(1, w.after / 240, (900 - w.after) / 120);
+      ctx.lineWidth = 5;
+      for (let i = 0; i < 6; i++) {
+        ctx.globalAlpha = 0.16 * f; ctx.strokeStyle = RAINBOW[i];
+        ctx.beginPath(); ctx.arc(W / 2, H + 80, 550 - i * 6, Math.PI, 0); ctx.stroke();
+      }
+    }
+    if (S.life > 0 && S.pts) {   // uzoq chaqmoq (8 bo'lak)
+      const y0 = z === 1 ? 230 : 30, y1 = z === 1 ? H - 140 : H - 205;
+      const sy = (y1 - y0) / 8;
+      ctx.globalAlpha = z === 1 ? 0.6 : 0.85; ctx.lineJoin = 'round'; ctx.beginPath();
+      S.pts.forEach((x, i) => { const y = y0 + sy * i; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      const bx = S.pts[S.br], by = y0 + sy * S.br;
+      ctx.moveTo(bx, by); ctx.lineTo(bx + S.bx * 0.5, by + sy * 0.6); ctx.lineTo(bx + S.bx, by + sy * 1.3);
+      ctx.strokeStyle = 'rgba(190,205,255,.3)'; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = '#f4f6ff'; ctx.lineWidth = 1.6; ctx.stroke();
+    }
+    if (S.flash > 0) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(0, 0, W, H); }
+    if (z === 0) {
+      if (w.fog > 0.01) {   // ikki qatlam tuman turli tezlikda suzadi
+        if (!FOG_SPR) buildFog();
+        ctx.globalAlpha = 0.55 * w.fog * (night ? 0.45 : 1);
+        ctx.drawImage(FOG_SPR, w.fo1 - 600, H - 210, 600, 120); ctx.drawImage(FOG_SPR, w.fo1, H - 210, 600, 120);
+        ctx.drawImage(FOG_SPR, w.fo2 - 600, H - 150, 600, 120); ctx.drawImage(FOG_SPR, w.fo2, H - 150, 600, 120);
+      }
+      if (w.wet > 0.01 && w.drops) {
+        const n = Math.round(70 * w.wet), sx = WIND.v * 3.4;
+        ctx.globalAlpha = night ? 0.6 : 1; ctx.lineCap = 'butt';
+        ctx.strokeStyle = 'rgba(200,215,235,.35)'; ctx.lineWidth = 1.2; ctx.beginPath();
+        for (let i = 0; i < n; i++) { const d = w.drops[i]; ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - sx, d.y - 12); }
+        ctx.stroke();
+        if (w.pud) {   // ko'lmaklar (to'p turgan joydan uzoqda)
+          const lx = game.launchX;
+          ctx.fillStyle = 'rgba(165,185,215,.24)'; ctx.globalAlpha = Math.min(1, w.wet * 1.5) * (night ? 0.6 : 1); ctx.beginPath();
+          for (const p of w.pud) if (Math.abs(p.x - lx) > 50) { ctx.moveTo(p.x + p.rx, H - 6); ctx.ellipse(p.x, H - 6, p.rx, 2.6, 0, 0, Math.PI * 2); }
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(230,240,255,.45)'; ctx.lineWidth = 0.8; ctx.beginPath();
+          for (const r of w.rip) if (Math.abs(r.x - lx) > 50) { ctx.moveTo(r.x + r.r * 2, H - 6); ctx.ellipse(r.x, H - 6, r.r * 2, r.r * 0.45, 0, 0, Math.PI * 2); }
+          ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(220,232,248,.55)'; ctx.lineWidth = 1; ctx.beginPath();   // chachrashlar: ^ shaklida
+        for (const s of w.spl) { const u = (8 - s.life) * 0.5; ctx.moveTo(s.x - 2 - u * 0.4, H - 8 + 0.5); ctx.lineTo(s.x, H - 10 - u); ctx.lineTo(s.x + 2 + u * 0.4, H - 8 + 0.5); }
+        ctx.stroke();
+      }
+    }
+    if (WIND.str) {   // "Shamol" hodisasi: oq chiziq + yorug' osmonda ham ko'rinishi uchun xira soya
+      ctx.globalAlpha = 1; ctx.lineCap = 'round';
+      for (const [dy, col, lw] of [[1.3, 'rgba(50,70,100,.12)', 1.4], [0, 'rgba(255,255,255,.25)', 1.2]]) {
+        ctx.beginPath();
+        for (const s of WIND.str) { ctx.moveTo(s.x, s.y + dy); ctx.quadraticCurveTo(s.x - WIND.dir * s.l * 0.5, s.y - 2 + dy, s.x - WIND.dir * s.l, s.y + 1 + dy); }
+        ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Yangilash: D qismining sikli har tikda updateLife() ni chaqiradi ----------
+  let lifeT = -1, lifeLv = null, lifeZ = null;
+  function onWorld(e) {
+    const t = e.type;
+    if (t === 'boom' || t === 'quake') {
+      flockFlee(e.x, t === 'quake' ? H : e.y);
+      for (const b of CRITTERS.bf) { b.fe = 90; b.vy = -2.2; b.land = 0; }
+      peopleReact(e);
+    } else if (t === 'cheer') {
+      peopleReact(e);
+      if (e.p >= 3) fireworksIf();
+    } else if (t === 'bossDown') fireworksIf();
+  }
+  function fireworksIf() { if (DAY.darkK > 0.2 && (game.zone === 0 || game.zone === 1)) launchFireworks(); }
+  function updateLife() {
+    lifeT = tick;
+    if (!PEOPLE.length) { initPeople(); initCritters(); initSkyClouds(); }
+    if (LIFEPAL.key !== DAY.key || LIFEPAL.sc !== scale) buildLifePal();
+    // Ob-havo: har 6 levelda va yangi qatlamga kirganda qayta tanlanadi
+    const lb = Math.floor(game.level / 6), z = game.zone;
+    if (lifeLv === null) { lifeLv = lb; lifeZ = z; rollWeather(true); }
+    else if (lb !== lifeLv || z !== lifeZ) { lifeLv = lb; lifeZ = z; rollWeather(); }
+    else if (tick % 600 === 0 && ((DAY.h >= 5.6 && DAY.h < 8.2) !== WEATHER.forced || DAY.season !== WEATHER.season)) rollWeather();
+    updateSeason();
+    updateWind();
+    for (const e of WORLD_Q) onWorld(e);
+    WORLD_Q.length = 0;
+    // Maydonda boss turganda xavotir saqlanadi (odamlar uyda qoladi)
+    if (tick % 30 === 0 && World.alarm > 0.05 && World.alarm < 0.75 && game.grid.some(r => r.some(c => c && c.t === 'boss'))) World.alarm = 0.75;
+    const z0 = vis(0), z1 = vis(1);
+    if (z0) { updatePeople(); updateDog(); updateCritters(); moveClouds(SURF_CL); }
+    if (z0 || z1) updateFlock();
+    if (z1) { updatePlane(); moveClouds(SKY_CL); }
+    updateBalloons(z0, z1);
+    updateFireworks();
+    updateWeather();
+    World.fear *= 0.985; World.joy *= 0.99; World.alarm *= 0.999; World.surge *= 0.97;
+  }
+
+  // ---------- Chizish: liveBg g'ishtlardan oldin chiziladi (hammasi g'isht, to'p va raqamlar ortida) ----------
+  function liveBg(z) {
+    if (z === 0) liveSurface();
+    else if (z === 1) liveSky();
+    else if (z === 2) { if (typeof liveSpace === 'function') liveSpace(); }
+    else if (z === -1) { if (typeof liveSoil === 'function') liveSoil(); }
+    else if (z === -2) { if (typeof liveDeep === 'function') liveDeep(); }
+  }
+  function liveSurface() {
+    if (!PEOPLE.length) return;
+    const P = LIFEPAL, an = anchors(), night = DAY.night, w = WEATHER;
+    // (a) bulutli osmon
+    if (w.over > 0.01) { ctx.globalAlpha = 0.2 * w.over; ctx.fillStyle = 'rgb(70,85,105)'; ctx.fillRect(0, 0, W, H); }
+    // (b) suzuvchi bulutlar va ularning tepaliklarga soyasi
+    const cs = cloudSpr();
+    ctx.globalAlpha = night ? 0.25 : 0.55;
+    for (const c of SURF_CL) drawCloudSp(c, cs);
+    if (DAY.sun !== null && !night) {   // soya: 90x14 ellips, chetlari yumshoq (tayyor sprayt)
+      ctx.globalAlpha = 0.11 * (1 - 0.7 * w.over);
+      const sh = glowSprite('30,40,60');
+      for (const c of SURF_CL) ctx.drawImage(sh, c.x + (0.5 - DAY.sun) * 80 - 60, H - 139, 120, 18);
+    }
+    // (c) manzara langarlari: tutun, ko'l jilosi, sharshara ko'pigi, derazalar
+    if (an.smoke && (DAY.season === 'winter' || DAY.season === 'autumn' || DAY.darkK > 0 || DAY.h < 9)) {
+      const [cx, cy] = an.smoke, v = WIND.v, ga = 1 - 0.4 * Math.min(1, WIND.gust), rise = 1 - 0.25 * Math.min(1, Math.abs(v));
+      for (let i = 0; i < 6; i++) {
+        const t = ((tick * 0.5 + i * 40) % 240) / 240;
+        ctx.globalAlpha = (1 - t) * 0.35 * ga;
+        puff(ctx, cx + Math.sin(t * 6 + i) * 6 * (1 - t) + t * 12 + t * t * v * 90, cy - t * 120 * rise, 4 + t * 14, P.smoke);
+      }
+    }
+    const pd = an.pond;
+    if (pd && DAY.season !== 'winter') {
+      ctx.strokeStyle = night ? '#cfd8ff' : '#ffffff'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+      for (let i = 0; i < 5; i++) {
+        const u = (((i * 0.37 + tick * 0.0015 * (i % 2 ? 1 : -0.7)) % 1) + 1) % 1, dx = (u * 2 - 1) * pd.rx * 0.7, dy = (i / 4 * 2 - 1) * pd.ry * 0.55;
+        const L = Math.min(pd.rx * 0.1, pd.rx * Math.sqrt(Math.max(0, 1 - (dy / pd.ry) ** 2)) - Math.abs(dx) - 1);   // ellips ichida qoladi
+        if (L < 1) continue;
+        ctx.globalAlpha = 0.35 * (0.5 + 0.5 * Math.sin(tick * 0.05 + i * 1.7));
+        ctx.beginPath(); ctx.moveTo(pd.x + dx - L, pd.y + dy); ctx.lineTo(pd.x + dx + L, pd.y + dy); ctx.stroke();
+      }
+      if (night) {   // suvda oyning uzuq-uzuq aksi
+        const L = lightPos(0);
+        if (L && L.moon && Math.abs(L.x - pd.x) < pd.rx * 0.8) {
+          ctx.globalAlpha = 0.5; ctx.strokeStyle = '#eef2ff'; ctx.lineWidth = 1.2; ctx.beginPath();
+          for (let k = 0; k < 4; k++) {
+            const y = pd.y - pd.ry * 0.5 + k * pd.ry * 0.33, hl = 1.5 + 2.5 * Math.abs(Math.sin(tick * 0.08 + k * 1.3));
+            const lim = pd.rx * Math.sqrt(Math.max(0, 1 - ((y - pd.y) / pd.ry) ** 2)) - Math.abs(L.x - pd.x) - 1;
+            if (lim > 1) { ctx.moveTo(L.x - Math.min(hl, lim), y); ctx.lineTo(L.x + Math.min(hl, lim), y); }
+          }
+          ctx.stroke();
+        }
+      }
+    }
+    const fa = an.fall;
+    if (fa && fa.y1 > fa.y0) {   // sharshara: pastga tushayotgan oq chiziqlar va ko'pik
+      const len = fa.y1 - fa.y0;
+      ctx.globalAlpha = 0.5; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const y = fa.y0 + ((tick * 2.2 + i * len / 6) % len), x = fa.x + ((i * 0.37) % 1 - 0.5) * fa.w * 0.7;
+        ctx.moveTo(x, y); ctx.lineTo(x, Math.min(fa.y1, y + 8));
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 0.35; ctx.fillStyle = '#ffffff'; ctx.beginPath();
+      for (let k = 0; k < 3; k++) { const x = fa.x + (k - 1) * fa.w * 0.6, r = 3 + 1.5 * Math.sin(tick * 0.15 + k * 2); ctx.moveTo(x + r, fa.y1); ctx.arc(x, fa.y1, r, 0, Math.PI * 2); }
+      ctx.fill();
+    }
+    const lit = DAY.night || DAY.h >= 18.6 || DAY.h < 6.6;
+    if (lit && an.lights && an.lights.length) {   // tungi derazalar sekin miltillaydi
+      const Ls = an.lights;
+      for (let i = 0; i < Math.min(3, Ls.length); i++) {
+        const q = Ls[(i * 7 + 3) % Ls.length];
+        glowAt('255,200,110', q[0], q[1], 9, (0.6 + 0.4 * Math.sin(tick * 0.04 + i * 2.1)) * 0.45);
+      }
+    }
+    // havo shari (bahor-yoz tongida), qushlar
+    if (surfBalloon()) drawBalloons(2, 3);
+    drawFlock();
+    // (e) odamlar va it, (f) old o'tlar, (g) mayda jonzotlar
+    drawPeople();
+    drawTufts();
+    drawCritters();
+    // (h) ob-havo, (i) mushakbozlik
+    drawWeather(0);
+    drawFireworks();
+    ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+  function liveSky() {
+    if (!SKY_CL.length) return;
+    const night = DAY.night, cs = cloudSpr(), w = WEATHER;
+    if (w.over > 0.01 && w.kind === 'momaqaldiroq') { ctx.globalAlpha = 0.2 * w.over; ctx.fillStyle = 'rgb(70,85,105)'; ctx.fillRect(0, 0, W, H); }
+    // uzoq va o'rta bulutlar (g'isht qatorlari ustida 40% dan oshmaydi)
+    for (let i = 0; i < 9; i++) { const c = SKY_CL[i]; ctx.globalAlpha = c.a * (night ? 0.7 : 1); drawCloudSp(c, cs); }
+    drawPlane();
+    drawBalloons(0, 1);
+    drawFlock();
+    drawBalloons(1, 2);
+    for (let i = 9; i < SKY_CL.length; i++) { const c = SKY_CL[i]; ctx.globalAlpha = Math.min(0.35, c.a) * (night ? 0.7 : 1); drawCloudSp(c, cs); }
+    drawWeather(1);
+    drawFireworks();
+    ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+  // Sinov uchun: ob-havo va dunyo reaksiyalarini tashqaridan majburlash
+  window.__life = { worldReact, setWeather: k => setWeather(k, 0, false), WEATHER, World, WIND, FLOCK, PEOPLE, PLANE, BALLOONS, FW, DOG };
 
   // ---------- Ovoz ----------
   let actx = null;
@@ -2997,7 +4082,7 @@
       arp: { steps: [0, 3, 6, 8, 11, 14], seq: [0, 2, 1, 2, 0, 1], oct: 1, inst: 'marimba', vol: 0.06 },
       lead: { inst: 'marimba', vol: 0.045, oct: 2, every: 2 },
       drums: { kick: [0, 8], kv: 0.1, knock: [4, 12, 15], nv: 0.05 },
-      amb: { drip: 0.04 } },
+      amb: { drip: 0.01 } },   // tomchilar asosan ko'rinadigan tomchilar bilan (Music.drip)
     // Chuqurlik: past va qorong'i — yurak urishi ritmi, gumburlash, lava bilqillashi
     '-2': { gain: 1.7, bpm: 68, root: 45, scale: 'phrygian', prog: [0, 1, 0, 6], seventh: false,
       pad: { type: 'sawtooth', vol: 0.03, att: 1.2, cut: 600 },
@@ -3005,7 +4090,7 @@
       arp: { steps: [0, 6, 10], seq: [0, 2, 1], oct: 1, inst: 'pluck', vol: 0.04, cut: 1200 },
       lead: { inst: 'bell', vol: 0.02, oct: 1, every: 4 },
       drums: { kick: [0, 3], kv: 0.16 },
-      amb: { rumble: 0.11, bubble: 0.03 } },
+      amb: { rumble: 0.11, bubble: 0 } },   // pufakcha ovozi ko'rinadigan pufakchalar bilan (Music.bubble)
   };
 
   function MusicEngine(ac) {
@@ -3078,33 +4163,50 @@
     };
     function kick(t, v) { voice('sine', 130, t, 0.32, v, { perc: true, glide: 42, gt: 0.25 }); }
 
-    // Uzluksiz tabiat ovozlari (shamol, gumburlash, mayin shabada)
+    // Uzluksiz shovqin halqasi (filtr + ixtiyoriy sekin tebranish); GainNode qaytaradi
+    function ambLoop(b, t, vol, type, freq, q, lfo) {
+      const src = ac.createBufferSource(); src.buffer = nbuf; src.loop = true;
+      const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
+      const g = ac.createGain(); g.gain.value = vol;
+      src.connect(fl); fl.connect(g); g.connect(b.dry);
+      let l = null;
+      if (lfo) {
+        l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = freq * 0.6;
+        l.connect(lg); lg.connect(fl.frequency); l.start(t);
+      }
+      src.start(t);
+      b.stops.push(tt => { try { src.stop(tt); l && l.stop(tt); } catch {} });
+      return g;
+    }
+    // Uzluksiz tabiat ovozlari (shamol, gumburlash, mayin shabada).
+    // Shamol/shabada halqasining GainNode'i saqlanadi — ekrandagi shamol kuchiga ergashadi (setWind).
     function startAmb(b, z, t) {
       const A = SONGS[z].amb;
-      const loop = (vol, type, freq, q, lfo) => {
-        const src = ac.createBufferSource(); src.buffer = nbuf; src.loop = true;
-        const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
-        const g = ac.createGain(); g.gain.value = vol;
-        src.connect(fl); fl.connect(g); g.connect(b.dry);
-        let l = null;
-        if (lfo) {
-          l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = freq * 0.6;
-          l.connect(lg); lg.connect(fl.frequency); l.start(t);
-        }
-        src.start(t);
-        b.stops.push(tt => { try { src.stop(tt); l && l.stop(tt); } catch {} });
-      };
-      if (A.wind) loop(A.wind, 'bandpass', 600, 0.8, 0.07);
-      if (A.breeze) loop(A.breeze, 'bandpass', 900, 0.5, 0.05);
-      if (A.rumble) loop(A.rumble, 'lowpass', 110, 1, 0.04);
+      if (A.wind) { b.windGain = ambLoop(b, t, A.wind, 'bandpass', 600, 0.8, 0.07); b.windBase = A.wind; }
+      if (A.breeze) { b.windGain = ambLoop(b, t, A.breeze, 'bandpass', 900, 0.5, 0.05); b.windBase = A.breeze; }
+      if (A.rumble) ambLoop(b, t, A.rumble, 'lowpass', 110, 1, 0.04);
+    }
+    // Ko'rinadigan voqealarga bog'langan ovozlar: tomchi, pufakcha, uzoq momaqaldiroq
+    const drip = t => voice('sine', 1300 + Math.random() * 500, t, 0.14, 0.035, { perc: true, glide: 420, gt: 0.08, rev: 0.6, del: 0.4 });
+    const bubble = t => voice('sine', 70 + Math.random() * 40, t, 0.18, 0.06, { perc: true, glide: 160 + Math.random() * 80, gt: 0.15 });
+    function thunder(t) {
+      const src = ac.createBufferSource(); src.buffer = nbuf;
+      const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.Q.value = 0.8;
+      fl.frequency.setValueAtTime(260, t); fl.frequency.exponentialRampToValueAtTime(70, t + 1.8);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.11, t + 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+      src.connect(fl); fl.connect(g); route(g, 0.45);
+      src.start(t, Math.random() * 0.15); src.stop(t + 1.85);
     }
     function ambEvents(t, S) {
       const A = S.amb, r = Math.random;
-      if (A.bird && r() < A.bird) { const f = 2200 + r() * 1800, n = 2 + Math.floor(r() * 3); for (let i = 0; i < n; i++) voice('sine', f, t + i * 0.09, 0.07, 0.02, { perc: true, glide: f * (1.3 + r() * 0.4), gt: 0.06, rev: 0.3 }); }
-      if (A.drip && r() < A.drip) voice('sine', 1300 + r() * 500, t, 0.14, 0.035, { perc: true, glide: 420, gt: 0.08, rev: 0.6, del: 0.4 });
+      // tunda yer ustida qushlar sayramaydi
+      if (A.bird && !(zone === 0 && DAY.night) && r() < A.bird) { const f = 2200 + r() * 1800, n = 2 + Math.floor(r() * 3); for (let i = 0; i < n; i++) voice('sine', f, t + i * 0.09, 0.07, 0.02, { perc: true, glide: f * (1.3 + r() * 0.4), gt: 0.06, rev: 0.3 }); }
+      if (A.drip && r() < A.drip) drip(t);
       if (A.sparkle && r() < A.sparkle) INST.bell(t, S.root + 24 + SCALES[S.scale][Math.floor(r() * 7)], 0.012);
       if (A.ping && r() < A.ping) voice('sine', 1760, t, 1.6, 0.02, { perc: true, rev: 0.8, del: 0.6 });
-      if (A.bubble && r() < A.bubble) voice('sine', 70 + r() * 40, t, 0.18, 0.06, { perc: true, glide: 160 + r() * 80, gt: 0.15 });
+      if (A.bubble && r() < A.bubble) bubble(t);
     }
 
     const deg = (S, d) => S.root + 12 * Math.floor(d / 7) + SCALES[S.scale][((d % 7) + 7) % 7];
@@ -3167,6 +4269,16 @@
       },
       stop(t) { if (cur) fadeOut(cur, t, 0.6); cur = null; },
       setTension(v) { tension = v; },
+      // Jonli dunyo bilan sinxron ovozlar (joriy qatlam "shina"si orqali)
+      setWind(g, t) { if (cur && cur.windGain) cur.windGain.gain.setTargetAtTime(cur.windBase * (1 + 1.8 * Math.min(1.2, g)), t, 0.3); },
+      setRain(k, t) {   // 2.5 kHz dan yuqori shovqin — yomg'ir shitirlashi
+        if (!cur) return;
+        if (!cur.rainGain) { if (k < 0.01) return; cur.rainGain = ambLoop(cur, t, 0.0001, 'highpass', 2500, 0.7, 0); }
+        cur.rainGain.gain.setTargetAtTime(Math.max(0.0001, 0.02 * k), t, 0.6);
+      },
+      thunder(t) { if (cur) thunder(t); },
+      drip(t) { if (cur) drip(t); },
+      bubble(t) { if (cur) bubble(t); },
     };
   }
 
@@ -3191,6 +4303,12 @@
     },
     setZone(z) { if (this.on) try { this.eng.setZone(z, actx.currentTime); } catch {} },
     setTension(v) { if (this.eng) this.eng.setTension(v); },
+    // Musiqa o'chiq yoki dvigatel ishlamayotgan bo'lsa — hech narsa qilmaydi
+    drip() { if (this.on && this.eng) try { this.eng.drip(actx.currentTime); } catch {} },
+    bubble() { if (this.on && this.eng) try { this.eng.bubble(actx.currentTime); } catch {} },
+    setWind(g) { if (this.on && this.eng) try { this.eng.setWind(g, actx.currentTime); } catch {} },
+    setRain(k) { if (this.on && this.eng) try { this.eng.setRain(k, actx.currentTime); } catch {} },
+    thunder() { if (this.on && this.eng) try { this.eng.thunder(actx.currentTime + 0.02); } catch {} },
   };
 
   // ---------- Fizika ----------
