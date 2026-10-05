@@ -437,6 +437,7 @@
     profile.games++;
     phase = 'aim';
     zoneAnim = null;
+    if (bgBuiltV[0] !== bgVariant(0)) bgCache[0] = renderBg(0);   // yer usti foni boshqa qatlamda turganda eskirgan bo'lishi mumkin
     applyZoneColors(0);
     Music.setZone(0);
     resetTurn();
@@ -756,6 +757,7 @@
   const nat = c => shade(c, 0);
   const skyTop = () => lerpHex(DAY.top, '#1d5fc4', DAY.dark ? 0.12 : 0.62);
 
+  let seamBase = null, seamSet = '';   // ob-havosiz chok rangi va oxirgi qo'yilgan --seam (bo'ron qoraytirishi uchun)
   function applyZoneColors(z) {
     const Z = ZONES[z], st = document.documentElement.style;
     let top = Z.top, ink = Z.ink, ink2 = Z.ink2;
@@ -774,6 +776,7 @@
       if (n) band[0] = rgbHex(s.map(q => q / n));
     } catch {}
     st.setProperty('--top', top); st.setProperty('--ground', band[1]);
+    seamBase = band[0]; seamSet = band[0];
     st.setProperty('--seam', band[0]); st.setProperty('--ground2', band[2]);
     st.setProperty('--ink', ink); st.setProperty('--ink2', ink2);
     paintGround.z = z; paintGround();
@@ -784,7 +787,10 @@
     if (nd.key === DAY.key) return;
     DAY = nd;
     buildCloudSprites();   // bulutlar ham yangi yorug'likda
-    bgCache[0] = renderBg(0); bgCache[1] = renderBg(1); bgCache[2] = renderBg(2);   // koinotdagi Yer ham kun/tunga ergashadi
+    // Faqat ko'rinib turgan qatlam qayta chiziladi (koinotdagi Yer ham kun/tunga ergashadi);
+    // qolganlari eskirgan deb belgilanadi — finishShift ularni kirishda baribir yangidan chizadi
+    for (const z of [0, 1, 2]) bgBuiltV[z] = -1;
+    if (game.zone >= 0) bgCache[game.zone] = renderBg(game.zone);
     if (!zoneAnim && game.zone >= 0) applyZoneColors(game.zone);
   }, 60000);
 
@@ -896,10 +902,12 @@
   }
   // Level 10 ga karrali chegarani kesib o'tganda: yangi manzara chiziladi, eskisi 1 soniyada so'nadi
   function drawBgFade() {
-    if (tick % 30 === 0 && bgVariant(0) !== bgBuiltV[0]) {
-      const old = game.zone === 0 || game.zone === 1 ? bgCache[game.zone] : null;
-      bgCache[0] = renderBg(0); bgCache[1] = renderBg(1);
-      if (old) { bgPrev = old; bgFade = 60; toast('🌄 Yangi manzil: ' + BG_NAME[game.zone]); }
+    // faqat joriy qatlam (yer usti yoki osmon) — boshqa qatlamlar fonini finishShift kirishda chizadi
+    const z = game.zone;
+    if ((z === 0 || z === 1) && tick % 30 === 0 && bgVariant(z) !== bgBuiltV[z]) {
+      const old = bgCache[z];
+      bgCache[z] = renderBg(z);
+      if (old) { bgPrev = old; bgFade = 60; toast('🌄 Yangi manzil: ' + BG_NAME[z]); }
     }
     if (bgFade > 0 && bgPrev) {
       if (game.zone === 0 || game.zone === 1) { ctx.globalAlpha = bgFade / 60; ctx.drawImage(bgPrev, 0, 0, W, H); ctx.globalAlpha = 1; }
@@ -3267,6 +3275,12 @@
     const toward = (key, t) => { const d = t - w[key]; w[key] += Math.abs(d) <= sp ? d : Math.sign(d) * sp; };
     toward('wet', W_WET[kd] || 0); toward('fog', kd === 'tuman' ? 1 : 0); toward('over', W_OVER[kd] || 0);
     if (w.after > 0) w.after--;
+    // Bulutli/bo'ronli ob-havoda kanvas qorayadi (liveSurface/liveSky) — chok rangi ham shunday qorayadi, chiziq ko'rinmaydi
+    if (tick % 30 === 0 && seamBase && !zoneAnim && (game.zone === 0 || game.zone === 1)) {
+      const a = w.over > 0.01 && (game.zone === 0 || kd === 'momaqaldiroq') ? 0.2 * w.over : 0;
+      const sc = a ? lerpHex(seamBase, '#465569', a) : seamBase;
+      if (sc !== seamSet) { seamSet = sc; document.documentElement.style.setProperty('--seam', sc); }
+    }
     w.fo1 = (w.fo1 + 0.1 * WIND.cd + 600) % 600; w.fo2 = (w.fo2 + 0.22 * WIND.cd + 600) % 600;
     // Yomg'ir: 70 tomchi, yerga tekkanda chachrash, ko'lmaklarda doiralar
     if (w.wet > 0.01 && vis(0)) {
