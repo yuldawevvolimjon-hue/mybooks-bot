@@ -2069,15 +2069,14 @@
   // ---------- G'isht spraytlari (statik qatlamlar bir marta chiziladi) ----------
   // SPR — LRU kesh: kalit → kanvas. Har kadrda faqat bir nechta yangi sprayt chiziladi (qolgani keyingi kadrda).
   const SPR = new Map(), LAST_SPR = new WeakMap();
+  // shisha yoriqlari shisha old qatlami bilan birga pishiriladi: cb — shikast bosqichi (boshqa materiallarda 0)
+  function glassCb(st, cell) { const dm = st === 'liquid' ? dmgOf(cell) : 0; return dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS); }
   function sprKey(st, cell, t, sz) {
     const tb = Math.round(Math.min(2, Math.max(0, t)) * 8);
-    // shisha yoriqlari shisha old qatlami bilan birga pishiriladi (cb — shikast bosqichi)
-    const dm = st === 'liquid' ? dmgOf(cell) : 0, cb = dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS);
-    return `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${cb}`;
+    return `${st}|${cell.s}|${cell.v || 0}|${cell.tr || 0}|${tb}|${sz}|${LIGHT.key}|${glassCb(st, cell)}`;
   }
   function brickSprite(st, cell, t, sz) {
-    const s = sz - GAP * 2, key = sprKey(st, cell, t, sz);
-    const dm = st === 'liquid' ? dmgOf(cell) : 0, cb = dm < 0.12 ? 0 : Math.round(dm * CRACK_STEPS);
+    const s = sz - GAP * 2, key = sprKey(st, cell, t, sz), cb = glassCb(st, cell);
     let c = SPR.get(key);
     if (c) { SPR.delete(key); SPR.set(key, c); LAST_SPR.set(cell, c); return c; }
     if (sprBudget <= 0) {   // bu kadrda chizish navbati tugagan — eski spraytni vaqtincha ishlatamiz
