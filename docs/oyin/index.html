@@ -1183,7 +1183,7 @@
     if (!autoRecall && turnTime > 30 && turnTime % 10 === 0 && !game.grid.some(row => row.some(isSolid))) {
       autoRecall = true;
       recall();
-      pushFx({ k: 'tag', str: '✨ Maydon toza!', life: 90 });
+      pushFx({ k: 'tag', str: '✨ Maydon toza!', life: 90, x: W / 2, y: 180, color: '#ffffff' });
     }
     if (shotsLeft === 0 && flying.every(b => b.s === 'done' || b.s === 'gone')) endTurn();
     if (turnTime === 60) updateCtrl();
@@ -1466,7 +1466,7 @@
       if (cell.t === 'brick' && cell.k === 'chest') {   // sandiq yiqitmaydi — shunchaki yo'qoladi
         last[c] = null;
         pushFx({ k: 'c', x, y, life: 26, size: 24 });
-        pushFx({ k: 'tag', str: "🎁 Sandiq yo'qoldi", life: 90 });
+        pushFx({ k: 'tag', str: "🎁 Sandiq yo'qoldi", life: 90, x: W / 2, y: 230, color: '#ffcf3a' });
       } else if (isSolid(cell)) fell = true;
       else {   // pastga yetgan halqa va tangalar avtomatik yig'iladi, boshqalari yo'qoladi
         if (cell.t === 'ring') { game.balls++; profile.rings++; track('rings', 1); }
@@ -2809,7 +2809,9 @@
     let sum = 0;
     for (const A of ACH) if (!profile.ach.includes(A.id) && (+A.val() || 0) >= A.need) { profile.ach.push(A.id); profile.coins += A.rw; sum += A.rw; got.push(A); }
     if (!got.length) return 0;
-    toast(got.length === 1 ? `🏆 ${got[0].name} · +${sum} S` : `🏆 ${got.length} ta yutuq: ${got.map(A => A.name).join(', ')} · +${sum} S`);
+    // har biri alohida xabar; birdaniga ko'p ochilsa (eski saqlanma) — bitta umumiy xabar
+    if (got.length <= 3) for (const A of got) toast(`🏆 ${A.name} · +${A.rw} S`);
+    else toast(`🏆 ${got.length} ta yutuq: ${got.map(A => A.name).join(', ')} · +${sum} S`);
     beep(784, 0.12, 0.05, 'triangle'); setTimeout(() => beep(1046, 0.2, 0.05, 'triangle'), 120);
     updateHud();
     return got.length;
