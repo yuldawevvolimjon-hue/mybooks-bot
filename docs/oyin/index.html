@@ -1750,7 +1750,7 @@
   let FX_BUSY = false;   // juda ko'p to'p uchayotganda (60+) mayda jonli bezaklar o'tkazib yuboriladi
   function ensureCaches() {
     if (scale !== SPR_SCALE) {
-      SPR_SCALE = scale; SPR.clear(); BALL_SPR.clear(); BOSS_HALO = null; CRYSTAL_SPR = {};
+      SPR_SCALE = scale; SPR.clear(); BALL_SPR.clear(); BOSS_HALO = null; CRYSTAL_SPR = {}; LIQ_SPR = {};
       crystalSpr('#9b7bff', 0); crystalSpr('#5fe0ff', 0);
     }
     const lz = zoneAnim && zoneAnim.t < 0.5 ? zoneAnim.from : game.zone;
@@ -2442,6 +2442,40 @@
     BUBBLES.set(cell, b);
     return b;
   }
+  // Suyuqlikning mayda jonli qismlari uchun spraytlar: pufakcha halqasi va tubdagi kaustika tasmasi.
+  // Har kadrda chiziq (stroke) o'rniga bitta drawImage — rasterlash ancha arzon.
+  let LIQ_SPR = {};
+  function bubbleSpr() {
+    let c = LIQ_SPR.bub;
+    if (c) return c;
+    c = LIQ_SPR.bub = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 4;
+    g.beginPath(); g.arc(16, 16, 13.5, 0, Math.PI * 2); g.stroke();
+    return c;
+  }
+  // Kaustika: ikki siniq yorug' chiziq, gorizontal takrorlanadi (davr P = 6 qadam); oyna tasma bo'ylab suriladi
+  function causticSpr(s) {
+    const key = 'c' + s;
+    let o = LIQ_SPR[key];
+    if (o) return o;
+    const k = s / 94, d = s * 0.88 / 7, P = d * 6, y0 = s * 0.84 - 3 * k - 3, h = s * 0.09 + 6 * k + 6, wid = d * 13;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(wid * scale) + 2; c.height = Math.ceil(h * scale);
+    const g = c.getContext('2d');
+    g.setTransform(scale, 0, 0, scale, 0, 0);
+    g.lineJoin = 'bevel'; g.lineCap = 'butt'; g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2;
+    g.beginPath();
+    for (let n = 0; n < 2; n++) {
+      const yb = s * (0.84 + n * 0.09) - y0;
+      for (let j = 0; j <= 13; j++) {
+        const px = j * d, py = yb + Math.sin(j * Math.PI / 3 + n * 2.1) * 3 * k;
+        if (j) g.lineTo(px, py); else g.moveTo(px, py);
+      }
+    }
+    g.stroke();
+    return (LIQ_SPR[key] = { c, d, P, y0, h });
+  }
   const WAVE_P = new Float32Array(34);
   function wavePath(off) {
     ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1] + off);
@@ -2480,16 +2514,9 @@
     ctx.lineTo(s, s - BR); ctx.arcTo(s, s, s - BR, s, BR); ctx.lineTo(BR, s); ctx.arcTo(0, s, 0, s - BR, BR); ctx.closePath();
     ctx.fillStyle = li.g; ctx.fill();
     ctx.lineJoin = 'bevel'; ctx.lineCap = 'butt';
-    if (!FX_BUSY) {   // tubdagi yorug' to'rlar (kaustika); to'p juda ko'p uchganda mayda bezaklar chizilmaydi
-      ctx.beginPath();
-      for (let n = 0; n < 2; n++) {
-        const yb = s * (0.84 + n * 0.09);
-        for (let j = 0; j < 8; j++) {
-          const px = s * (0.06 + j * 0.88 / 7), py = yb + Math.sin(j * 1.3 + tick * 0.05 + cell.s + n * 2.1) * 3 * k;
-          if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py);
-        }
-      }
-      ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.stroke();
+    if (!FX_BUSY) {   // tubdagi yorug' to'rlar (kaustika) — siljiyotgan tasma; to'p juda ko'p uchganda mayda bezaklar chizilmaydi
+      const cs = causticSpr(s), off = (tick * 0.56 * k + (cell.s | 0) * 13) % cs.P;
+      ctx.drawImage(cs.c, off * scale, 0, cs.d * 7 * scale, cs.h * scale, s * 0.06, cs.y0, cs.d * 7, cs.h);
     }
     // sath ostidagi quyuqroq qatlam (to'lqin bo'ylab 1..7 px chuqurlikdagi yo'l), gazlida ko'pik, so'ng sath chizig'i
     ctx.beginPath(); ctx.moveTo(WAVE_P[0], WAVE_P[1] + 1);
@@ -2507,15 +2534,13 @@
       ctx.beginPath(); ctx.moveTo(WAVE_P[ci * 2 - 2], WAVE_P[ci * 2 - 1]); ctx.lineTo(WAVE_P[ci * 2], WAVE_P[ci * 2 + 1]); ctx.lineTo(WAVE_P[ci * 2 + 2], WAVE_P[ci * 2 + 3]);
       ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.5; ctx.stroke();
       // pufakchalar (halqa ko'rinishida)
-      const bub = bubblesOf(cell, s, v === 1), range = Math.max(10, s - top - 10 * k);
-      ctx.beginPath();
+      const bub = bubblesOf(cell, s, v === 1), range = Math.max(10, s - top - 10 * k), bs = bubbleSpr();
       for (let i = 0; i < bub.a.length; i++) {
         const b = bub.a[i], by = s - 6 * k - ((tick * 0.45 * b.sp + b.ph) % range);
         if (by - b.r < top + 3) continue;
-        const bx = b.x + Math.sin(tick * 0.1 + i) * 1.5;
-        ctx.moveTo(bx + b.r, by); ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+        const bx = b.x + Math.sin(tick * 0.1 + i) * 1.5, h = b.r * 1.185;   // halqa — keshlangan sprayt
+        ctx.drawImage(bs, bx - h, by - h, h * 2, h * 2);
       }
-      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
     }
     if (v === 2) {   // mevali: to'lqinda chayqalayotgan limon bo'lagi
       const fx = (L.lx >= 0 ? 0.15 : 0.85) * s, [fy, fa] = waveAt(fx, s), r = 8 * k;
